@@ -275,11 +275,13 @@ uv run cbpdf --config config/example.toml one incoming/example.pdf --force
 
 ## GitHub
 
-The planned public repository is:
+The public repository is:
 
 ```text
 15699122/BabelCodex
 ```
+
+The initial public baseline was published on September 8, 2026. Local `main` tracks `origin/main`.
 
 The repository will contain source code and documentation only. User PDFs, generated outputs, state, logs, caches, credentials and private glossary data must remain ignored or outside the repository.
 

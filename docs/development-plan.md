@@ -13,7 +13,7 @@
 
 项目名称：**BabelCodex**
 
-规划中的公开仓库：`15699122/BabelCodex`
+公开仓库：`15699122/BabelCodex`
 
 产品定位：主要面向个人、本地 PDF 翻译，不以多租户 SaaS、公共翻译 API 或商业级 SLA 为目标。MIT License 允许修改、再分发和商业使用；“个人使用”是产品定位，不是额外的许可证限制。
 
@@ -114,6 +114,8 @@ BabelDOC 0.6.x Python 高层 API
 
 **优先级：P0 | 复杂度：M | 预计：0.5–1 个开发日**
 
+**状态：已完成（2026 年 9 月 8 日）**
+
 任务：
 
 1. 确定产品名为 BabelCodex
@@ -134,6 +136,14 @@ BabelDOC 0.6.x Python 高层 API
 - 工作树干净
 - secret scan 通过
 - 不上传用户 PDF、译文、日志、状态、缓存、token 或私有 glossary
+
+完成记录：
+
+- 公开仓库已创建；
+- 初始提交：`a2ee931d09b0911080fc40f7079f50f89963dd66`；
+- 本地 `main` 已跟踪 `origin/main`；
+- 首次推送后本地与远程 SHA 一致；
+- staged credential scan 和禁止路径检查通过。
 
 ### Phase 0B：开发环境与依赖基线
 
@@ -555,6 +565,8 @@ W-1 GitHub 公开仓库与本地同步
 ## 5. 里程碑
 
 ### M-1：Public Repository Baseline
+
+**状态：已完成（2026 年 9 月 8 日）**
 
 - 产品名确定为 BabelCodex
 - 创建公开仓库 `15699122/BabelCodex`

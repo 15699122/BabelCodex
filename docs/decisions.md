@@ -296,7 +296,7 @@ UNKNOWN
 
 **状态：已接受**
 
-产品名称采用 **BabelCodex**，规划中的公开仓库为 `15699122/BabelCodex`。
+产品名称采用 **BabelCodex**，公开仓库为 `15699122/BabelCodex`。仓库已于 2026 年 9 月 8 日创建并完成首次推送。
 
 名称同时覆盖 BabelDOC PDF 引擎与 Codex 翻译能力，适用于 CLI、桌面 GUI 和 MCP Server。
 
