@@ -29,6 +29,11 @@ packages = ["src/codex_babeldoc"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+addopts = "-m 'not integration'"
+markers = [
+    "integration: tests that use real PDF engines or external processes (deselect with '-m \"not integration\"')",
+    "codex_usage: tests that consume real Codex/ChatGPT model usage (never run by default)",
+]
 
 [tool.ruff]
 line-length = 100

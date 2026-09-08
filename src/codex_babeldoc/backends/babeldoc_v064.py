@@ -274,9 +274,15 @@ def _build_babeldoc_translator(adapter: object, lang_in: str, lang_out: str) -> 
             super().__init__(lang_in=lang_in, lang_out=lang_out, ignore_cache=False)
 
         def do_translate(self, text: str, rate_limit_params: dict | None = None) -> str:
+            if text is None:
+                # BabelDOC probes the engine with do_translate/do_llm_translate(None)
+                # to detect capabilities; respond with a benign sentinel.
+                return ""
             return adapter.translate(text)  # type: ignore[attr-defined]
 
         def do_llm_translate(self, text: str, rate_limit_params: dict | None = None) -> str:
+            if text is None:
+                return ""
             return adapter.translate(text)  # type: ignore[attr-defined]
 
     return AdapterTranslator()

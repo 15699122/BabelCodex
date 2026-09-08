@@ -116,6 +116,11 @@ class Orchestrator:
         if job.status is JobStatus.COMPLETED and not force:
             return "skipped"
 
+        # A forced re-run of an already-completed job must reset the attempt
+        # counter, otherwise the retry loop range is empty and we never run.
+        if force:
+            job.attempts = 0
+
         t = self.cfg.translation
         b = self.cfg.babeldoc
         last_error = None
