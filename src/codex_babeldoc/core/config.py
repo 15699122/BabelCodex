@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
+from hashlib import sha256
 from pathlib import Path
 
 
@@ -76,6 +78,18 @@ class AppConfig:
             self.babeldoc.working_dir,
         ):
             path.mkdir(parents=True, exist_ok=True)
+
+    def fingerprint(self) -> str:
+        """Hash translation-affecting configuration without machine-specific paths."""
+        values = {
+            "translation": asdict(self.translation),
+            "babeldoc": {
+                key: value for key, value in asdict(self.babeldoc).items() if key != "working_dir"
+            },
+            "codex": asdict(self.codex),
+        }
+        payload = json.dumps(values, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _construct(cls, values: dict):

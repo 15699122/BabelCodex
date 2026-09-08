@@ -6,7 +6,8 @@ from pathlib import Path
 
 from codex_babeldoc.backends.babeldoc_internal import BabelDocInternalBackend
 from codex_babeldoc.core.config import AppConfig
-from codex_babeldoc.core.state import StateStore
+from codex_babeldoc.core.errors import classify_exception
+from codex_babeldoc.core.state import JobStage, JobStatus, StateStore
 from codex_babeldoc.translators.codex_sdk import CodexSdkTranslator
 from codex_babeldoc.translators.mock import MockTranslator
 
@@ -38,9 +39,19 @@ class Orchestrator:
             )
         raise ValueError(f"Unknown translator: {t.translator}")
 
-    def run_one(self, source: Path, *, force: bool = False) -> str:
-        job = self.state.load(source)
-        if job.status == "completed" and not force:
+    def run_one(
+        self,
+        source: Path,
+        *,
+        force: bool = False,
+        invocation_source: str = "cli",
+    ) -> str:
+        job = self.state.load(source, config_fingerprint=self.cfg.fingerprint())
+        job.invocation_source = invocation_source
+        job.backend_name = self.cfg.babeldoc.backend
+        job.translator_name = self.cfg.translation.translator
+        job.model = self.cfg.translation.model
+        if job.status is JobStatus.COMPLETED and not force:
             return "skipped"
 
         t = self.cfg.translation
@@ -48,9 +59,17 @@ class Orchestrator:
         last_error = None
         for attempt in range(job.attempts + 1, t.max_retries + 1):
             job.attempts = attempt
-            job.status = "running"
+            job.status = JobStatus.RUNNING
+            job.stage = JobStage.PREPARING_RUNTIME
+            job.error_category = None
+            job.error_code = None
+            job.safe_error_message = None
+            if not job.started_at:
+                job.started_at = job.updated_at
             self.state.save(job)
             try:
+                job.stage = JobStage.TRANSLATING
+                self.state.save(job)
                 self.backend.translate(
                     source,
                     self.cfg.project.output_dir,
@@ -69,18 +88,27 @@ class Orchestrator:
                     enhance_compatibility=b.enhance_compatibility,
                     translate_table_text=b.translate_table_text,
                 )
-                job.status = "completed"
-                job.last_error = None
+                job.status = JobStatus.COMPLETED
+                job.stage = JobStage.COMPLETED
+                job.completed_at = job.updated_at
+                job.safe_error_message = None
                 self.state.save(job)
                 return "completed"
             except Exception as exc:
-                last_error = str(exc)
-                job.status = "failed"
-                job.last_error = last_error
+                error = classify_exception(exc)
+                last_error = error.safe_message
+                job.status = JobStatus.FAILED
+                job.error_category = error.category
+                job.error_code = error.code
+                job.safe_error_message = error.safe_message
                 self.state.save(job)
                 log.exception("Translation attempt %s failed for %s", attempt, source)
-                if attempt < t.max_retries:
+                if attempt < t.max_retries and error.retryable:
+                    job.status = JobStatus.RETRY_PENDING
+                    self.state.save(job)
                     time.sleep(min(2 ** (attempt - 1), 8))
+                else:
+                    break
         raise RuntimeError(f"Translation failed after {t.max_retries} attempts: {last_error}")
 
     def run_all(self, *, force: bool = False) -> dict[str, str]:

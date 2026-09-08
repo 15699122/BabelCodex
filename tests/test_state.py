@@ -1,4 +1,4 @@
-from codex_babeldoc.core.state import StateStore
+from codex_babeldoc.core.state import JobStatus, StateStore
 
 
 def test_state_roundtrip(tmp_path):
@@ -6,8 +6,8 @@ def test_state_roundtrip(tmp_path):
     pdf.write_bytes(b"%PDF-test")
     store = StateStore(tmp_path / "state")
     job = store.load(pdf)
-    job.status = "completed"
+    job.status = JobStatus.COMPLETED
     store.save(job)
     again = store.load(pdf)
-    assert again.status == "completed"
+    assert again.status is JobStatus.COMPLETED
     assert again.fingerprint == job.fingerprint
