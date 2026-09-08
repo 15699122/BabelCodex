@@ -368,7 +368,7 @@ Windows 首期发布 `BabelCodex-Windows-x64.zip`，Linux 首期发布 portable 
 
 ### ADR-017：GUI 采用 Tauri 2 + React/TypeScript
 
-**状态：已接受，需先通过技术验证**
+**状态：已接受，Tauri 2 host spike 已通过技术验证；正式平台打包仍待完成**
 
 GUI 参考 `15699122/CopyPolish` 的工程实践，采用 Tauri 2、React、TypeScript、Vite、Tailwind CSS、shadcn/ui/Radix UI、Lucide Icons，并使用 Vitest、React Testing Library 和 WebdriverIO 进行测试。
 
@@ -380,6 +380,11 @@ GUI 参考 `15699122/CopyPolish` 的工程实践，采用 Tauri 2、React、Type
 - 适合构建任务中心、诊断页、设置页和多状态进度界面。
 
 如果 Tauri sidecar 无法稳定承载 BabelCodex 发布包，再评估 PySide6 等 Python 原生 GUI 方案。
+
+2026 年 9 月 8 日的 host spike 已验证 Tauri 2 Rust host、React/TypeScript
+前端、Vite 构建、固定 `externalBin` sidecar 配置和最小 capability allowlist
+可以在 Linux 开发环境中编译检查。正式 Windows/Linux target triple 二进制、
+签名/发布包和桌面 E2E 不属于本次 spike 的完成范围。
 
 ### ADR-018：GUI 通过固定 Python sidecar 调用 Application Service
 

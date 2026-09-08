@@ -11,6 +11,9 @@ htmlcov/
 !.env.example
 *.log
 dist/
+gui/dist/
+gui/node_modules/
+gui/src-tauri/target/
 build/
 *.egg-info/
 incoming/*.pdf

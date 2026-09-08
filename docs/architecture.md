@@ -194,6 +194,12 @@ CLI、GUI 和 MCP 共用的应用服务层。提供任务启动、查询、取�
 - `gui/`：Windows/Linux 桌面 UI，不直接导入 BabelDOC。
 - `mcp/`：本地 stdio MCP Server，仅暴露受限的翻译和任务管理工具。
 
+GUI host 技术验证位于仓库根目录的 `gui/`：Tauri 2 只启动固定的
+`babelcodex-service` sidecar，React/TypeScript 前端通过版本化 JSONL 协议
+调用 Application Service。Vite 浏览器开发模式使用 mock transport，不连接
+系统 Python；打包后的 Tauri capability 只允许固定 sidecar、受控 TOML 配置
+参数、stdin 写入和 sidecar kill。
+
 ### `backends/`
 
 唯一允许接触 BabelDOC 内部 API 的区域。

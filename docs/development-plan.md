@@ -367,7 +367,7 @@ Fixture 内容：
 
 **优先级：P1 | 复杂度：L | 预计：4–7 个开发日**
 
-**状态：Python sidecar 协议与进度事件转发已完成；Tauri、跨平台打包和桌面端 E2E 待完成（2026 年 9 月 8 日）**
+**状态：Python sidecar、事件/取消协议与 Tauri 2 host spike 已完成；跨平台打包和桌面端 E2E 待完成（2026 年 9 月 8 日）**
 
 任务：
 
@@ -393,7 +393,9 @@ Fixture 内容：
 - worker 支持通过受控 `cancel_event` 终止 subprocess，取消任务持久化为 `cancelled` 且不进入 retry；
 - sidecar 重启后可通过共享 state store 查询已持久化任务状态；
 - 已覆盖协议往返、非法 JSON、协议错误、路径越界、shutdown、进度事件、后台失败、取消和无 shell 暴露测试；
-- 尚未实现 Tauri 2 host、Windows/Linux target triple 打包、sidecar 自身重启编排和桌面 E2E。
+- 已新增 Tauri 2 + React/TypeScript host spike、固定 `babelcodex-service` externalBin、最小 capability allowlist 和 mock transport；
+- 已验证 GUI 的 Vitest/Vite 构建与 Tauri Rust host 的 `cargo check`；
+- 尚未实现 Windows/Linux target triple 正式打包、sidecar 自身重启编排和桌面 E2E。
 
 验收：GUI 不直接导入 BabelDOC；前端不执行系统 Python 或任意 shell；翻译期间界面不冻结；Windows 和 Linux 最小 GUI 可运行；sidecar 只允许固定二进制和受控参数。
 
