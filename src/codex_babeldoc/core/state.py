@@ -2,17 +2,21 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 from hashlib import sha256
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from threading import RLock
 
 from codex_babeldoc.core.artifacts import Artifact
 from codex_babeldoc.core.errors import ErrorCategory, ErrorCode
 
 SCHEMA_VERSION = 2
+STATE_REPLACE_RETRIES = 5
+STATE_REPLACE_BACKOFF_SECONDS = 0.02
 
 
 class JobStatus(StrEnum):
@@ -195,6 +199,7 @@ def job_id_for(source_fingerprint: str, config_fingerprint: str) -> str:
 class StateStore:
     def __init__(self, root: Path):
         self.root = root
+        self._save_lock = RLock()
         self.root.mkdir(parents=True, exist_ok=True)
 
     def _path(self, job_id: str) -> Path:
@@ -238,22 +243,30 @@ class StateStore:
         return sorted(jobs, key=lambda job: job.updated_at, reverse=True)
 
     def save(self, job: JobState) -> None:
-        job.touch()
-        target = self._path(job.job_id)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        with NamedTemporaryFile(
-            "w",
-            encoding="utf-8",
-            dir=target.parent,
-            prefix=f".{job.job_id}.",
-            suffix=".tmp",
-            delete=False,
-        ) as temporary:
-            json.dump(job.to_dict(), temporary, ensure_ascii=False, indent=2)
-            temporary.flush()
-            os.fsync(temporary.fileno())
-            temporary_path = Path(temporary.name)
-        try:
-            os.replace(temporary_path, target)
-        finally:
-            temporary_path.unlink(missing_ok=True)
+        with self._save_lock:
+            job.touch()
+            target = self._path(job.job_id)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with NamedTemporaryFile(
+                "w",
+                encoding="utf-8",
+                dir=target.parent,
+                prefix=f".{job.job_id}.",
+                suffix=".tmp",
+                delete=False,
+            ) as temporary:
+                json.dump(job.to_dict(), temporary, ensure_ascii=False, indent=2)
+                temporary.flush()
+                os.fsync(temporary.fileno())
+                temporary_path = Path(temporary.name)
+            try:
+                for attempt in range(STATE_REPLACE_RETRIES):
+                    try:
+                        os.replace(temporary_path, target)
+                        break
+                    except PermissionError:
+                        if attempt == STATE_REPLACE_RETRIES - 1:
+                            raise
+                        time.sleep(STATE_REPLACE_BACKOFF_SECONDS * (2**attempt))
+            finally:
+                temporary_path.unlink(missing_ok=True)

@@ -133,6 +133,31 @@ def test_atomic_save_no_tmp_left_and_file_is_json(tmp_path):
             raise AssertionError(f"{path} is not valid JSON: {exc}")
 
 
+def test_atomic_save_retries_transient_permission_error(tmp_path, monkeypatch):
+    import codex_babeldoc.core.state as state_module
+
+    pdf = tmp_path / "retry.pdf"
+    pdf.write_bytes(b"%PDF")
+    store = StateStore(tmp_path / "state")
+    job = store.load(pdf, config_fingerprint="f")
+    real_replace = state_module.os.replace
+    calls = 0
+
+    def flaky_replace(source, target):
+        nonlocal calls
+        calls += 1
+        if calls < 3:
+            raise PermissionError("transient lock")
+        return real_replace(source, target)
+
+    monkeypatch.setattr(state_module.os, "replace", flaky_replace)
+    monkeypatch.setattr(state_module.time, "sleep", lambda _seconds: None)
+    store.save(job)
+
+    assert calls == 3
+    assert store.load(pdf, config_fingerprint="f").job_id == job.job_id
+
+
 def test_list_jobs_skips_corrupt_state(tmp_path):
     pdf = tmp_path / "z.pdf"
     pdf.write_bytes(b"%PDF")

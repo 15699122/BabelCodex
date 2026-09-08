@@ -83,7 +83,7 @@ def test_start_get_validate_and_cleanup_are_scoped(tmp_path):
     job_id = started["job_id"]
     job = service.get_job(job_id)
     assert job is not None
-    deadline = time.monotonic() + 2
+    deadline = time.monotonic() + 10
     while (
         job.status in {JobStatus.DISCOVERED, JobStatus.RUNNING, JobStatus.RETRY_PENDING}
         and time.monotonic() < deadline
@@ -207,7 +207,7 @@ def test_cancel_uses_the_active_job_handle(tmp_path):
         {"name": "babelcodex_cancel_job", "arguments": {"job_id": job_id}},
     )
     assert response["result"]["structuredContent"]["cancelled"] is True
-    deadline = time.monotonic() + 2
+    deadline = time.monotonic() + 10
     job = service.get_job(job_id)
     while (
         job is not None

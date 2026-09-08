@@ -451,6 +451,10 @@ Windows 专属执行清单：
 Windows 验收依赖原生 Windows GUI 运行结果；Linux 或 WSL 上的同名构建、Rust `cargo check` 和浏览器端测试只能作为先决检查。
 Windows 本轮执行记录与边界（2026 年 9 月 8 日）：
 
+- 本次 E 盘复核中，完整 uv run pytest -q 两次均在 test_cancel_uses_the_active_job_handle 失败：一次超时后仍为 RUNNING，一次因 Windows os.replace 返回 PermissionError: [WinError 5] 而为 FAILED；单独重跑一次通过，故 Python 全套质量门禁暂记为部分通过，需修复取消/状态持久化时序后复验。
+- 已针对该 Windows 回归增加 StateStore 保存锁、短暂 `PermissionError` 退避重试和 10 秒 terminal 状态轮询测试；Windows 原生完整 pytest 仍需重新复验。
+- Linux 侧修复后完整 pytest 已通过（123 passed，3 deselected）；该结果验证跨平台代码路径，但不能替代 Windows 原生复验。
+
 - 已处理的验证错误：相对路径排除参数导致首次同步未完整排除生成目录；Tauri 首次 bundle 缺少 icons/icon.ico；PyInstaller 直接模块入口触发相对导入错误；旧 bundle 中 sidecar 过期；sidecar 从解包目录启动时未显式传入配置导致 FileNotFoundError；以及一次 PowerShell args 参数转发错误导致 uv 只显示帮助。上述问题均已通过绝对排除路径、生成构建图标、临时包级入口、限定范围清理/重建、项目根目录加受控 --config 和显式命令调用处理。
 - 未执行完整桌面 GUI 交互、干净用户目录、Defender/SmartScreen、签名/SBOM、正式 portable 发布审计和目标 Linux 机器 smoke；原因分别是本轮只覆盖自动化测试/协议 smoke/进程级启动、仍依赖项目根配置、使用 unsigned 开发包、尚未进入发布审计流程，以及 WSL/Linux 不能代表目标 Linux 机器。
 - 文档与 Linux bundle 脚本同步后未重复 Windows NSIS/MSI 构建，因为本轮没有 Windows GUI/Rust/sidecar 源代码变化；已复核现有 bundle 哈希、包内 sidecar JSONL smoke 和 cargo check。

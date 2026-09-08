@@ -74,7 +74,7 @@ Windows 原生验证已于 2026-09-08 在 E 盘 checkout 完成一轮。以下�
 已完成：
 
 1. `uv sync --locked --extra runtime --extra dev` 成功，解析并安装 95 个包；
-2. `uv lock --locked`、Ruff format/check 和 `uv run pytest -q` 通过（112 passed，3 deselected）；
+2. uv lock --locked、Ruff format/check 通过；完整 uv run pytest -q 本次复核未全通过（1 failed，121 passed，3 deselected），失败项见下方 Windows 回归记录。
 3. `npm ci` 成功（158 packages，0 vulnerabilities），GUI Vitest 14 tests 通过，`npm run build` 通过；
 4. Windows 原生 `cargo check` 通过；
 5. `babelcodex-service-x86_64-pc-windows-msvc.exe` 已构建并通过 JSONL `list_jobs` smoke test，sidecar 退出码为 0；
@@ -111,7 +111,7 @@ WSL/Linux 的 `cargo check`、浏览器端 Vitest、Vite build、bundle audit �
 - 首次 PyInstaller 直接以模块文件作为入口时出现 attempted relative import with no known parent package；改用临时的包级入口完成 sidecar 构建，临时入口未作为项目源文件保留。
 - 首次使用的旧生成 bundle 包含过期或不匹配的 sidecar；删除范围仅限 gui/src-tauri/target/release/bundle 和 build/windows-msi-extract，随后重新构建并核对包内 sidecar 与 target-triple sidecar 哈希一致。
 - 一次 sidecar smoke 从 binaries 或 MSI 解包目录启动且未提供配置，出现 FileNotFoundError，原因是相对路径寻找 config/example.toml；改在项目根工作目录启动，并显式传入受控 --config config/example.toml 后，目标 sidecar 和 MSI 解包 sidecar 的 list_jobs JSONL smoke 均退出码 0。
-- 一次自动检查脚本错误使用 PowerShell 保留变量 args，导致 uv 只打印帮助；改为显式调用后，uv lock --locked、Ruff、pytest 和 doctor 均重新执行并通过。这是调用脚本错误，不是项目检查失败。
+- 一次自动检查脚本错误使用 PowerShell 保留变量 args，导致 uv 只打印帮助；改为显式调用后，uv lock --locked、Ruff 和 doctor 均通过，但完整 pytest 后续发现 Windows 取消测试回归，详见下方复核记录。
 
 本轮未执行及原因：
 
@@ -124,6 +124,18 @@ WSL/Linux 的 `cargo check`、浏览器端 Vitest、Vite build、bundle audit �
 
 证据文件：build/windows-tauri-final2.log、build/windows-artifacts.sha256，以及 compatibility.md 中列出的 sidecar、NSIS 和 MSI SHA-256。
 
+
+## Windows validation rerun and regression status
+
+追加复核日期：2026-09-08。以下结果来自本次 E 盘 Windows checkout 复核：
+
+- 通过：uv lock --locked、Ruff format/check、doctor、GUI Vitest（14 tests）、Vite build、Windows cargo check。
+- 通过：Windows target-triple sidecar 与 MSI 解包 sidecar 在项目根工作目录、显式传入受控 --config config/example.toml 后执行 list_jobs JSONL smoke，均退出码 0；解包 GUI 进程级启动 8 秒后已停止。
+- 通过：现有 sidecar、NSIS 和 MSI 产物哈希保持与 windows-artifacts.sha256 一致，三项产物均为 NotSigned。
+- 待复验：完整 uv run pytest -q 两次复核曾失败于 tests/test_mcp.py::test_cancel_uses_the_active_job_handle；一次在 2 秒等待后仍为 RUNNING，一次因 state.py 的 os.replace 返回 PermissionError: [WinError 5] 而变为 FAILED。
+- 处置：已增加 StateStore 单实例保存锁、Windows 短暂 PermissionError 的有限退避重试，并将 MCP 取消回归测试改为最长 10 秒的 terminal 状态轮询；Windows 原生完整测试仍需重新执行确认。
+- Linux 侧复验：上述修复后的完整 uv run pytest -q 已通过（123 passed，3 deselected），Ruff、compileall 和相关协议测试均通过。
+- 结论：Windows 原生构建、GUI、sidecar 和打包 smoke 仍通过；Windows 原生完整 pytest 仍需重新执行后，才能将跨平台 Python 质量门禁标记为稳定通过。
 ## Upgrade policy
 
 Changing Python, BabelDOC, openai-codex or uv requires:
