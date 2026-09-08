@@ -97,6 +97,14 @@ export class JobStore {
     await this.pollOnce();
   }
 
+  async getJob(jobId: string): Promise<JobState | null> {
+    const result = await this.request<{ job: JobState | null }>("get_job", { job_id: jobId });
+    if (!result.job) return null;
+    const jobs = this.snapshot.jobs.map((job) => (job.job_id === jobId ? { ...job, ...result.job } : job));
+    this.setSnapshot({ jobs });
+    return result.job;
+  }
+
   async close(): Promise<void> {
     this.stopPolling();
     await this.transport.close();

@@ -44,6 +44,22 @@ describe("BabelCodex GUI shell", () => {
     expect(await screen.findByText("cancelled")).toBeTruthy();
   });
 
+  it("opens job details through get_job and shows reported artifacts", async () => {
+    render(<App />);
+    fireEvent.change(screen.getByLabelText("Input path"), {
+      target: { value: "/workspace/incoming/details.pdf" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Queue translation/ }));
+    expect(await screen.findByRole("heading", { name: "Recent jobs" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Open details for mock-job-1" }));
+    expect(await screen.findByRole("heading", { name: "details.pdf" })).toBeTruthy();
+    expect(screen.getByText("mock-babeldoc")).toBeTruthy();
+    expect(screen.getByText("mono pdf")).toBeTruthy();
+    expect(screen.getByText("validated")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "← Back to jobs" }));
+    expect(screen.getByRole("heading", { name: "Recent jobs" })).toBeTruthy();
+  });
+
   it("queues a PDF through the transport boundary", async () => {
     render(<App />);
     fireEvent.change(screen.getByLabelText("Input path"), {

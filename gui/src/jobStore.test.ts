@@ -41,4 +41,16 @@ describe("JobStore", () => {
     expect(second.requests.find((request) => request.method === "poll_events")?.params.after_sequence).toBe(0);
     await store.close();
   });
+
+  it("refreshes a selected job with optional artifact metadata", async () => {
+    const transport = new MockSidecarTransport();
+    const store = new JobStore(() => transport);
+    await store.connect();
+    const jobId = await store.startTranslation("/workspace/incoming/detail.pdf");
+    const job = await store.getJob(jobId);
+    expect(job?.artifacts?.[0].artifact_type).toBe("mono_pdf");
+    expect(job?.qa_status).toBe("pending");
+    expect(transport.requests.map((request) => request.method)).toContain("get_job");
+    await store.close();
+  });
 });

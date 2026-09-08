@@ -10,11 +10,21 @@ export type JobStatus =
 
 export type JobStage =
   | "discovered"
+  | "validating_input"
   | "preparing_runtime"
   | "translating"
   | "rendering"
   | "validating_output"
   | "completed";
+
+export interface Artifact {
+  artifact_type: string;
+  path: string;
+  size: number;
+  sha256?: string;
+  created_at?: string;
+  validated?: boolean;
+}
 
 export interface JobState {
   job_id: string;
@@ -25,6 +35,20 @@ export interface JobState {
   safe_error_message: string | null;
   updated_at: string;
   completed_at: string;
+  source_fingerprint?: string;
+  config_fingerprint?: string;
+  schema_version?: number;
+  error_category?: string | null;
+  error_code?: string | null;
+  backend_name?: string;
+  backend_version?: string;
+  translator_name?: string;
+  model?: string;
+  codex_thread_id?: string | null;
+  invocation_source?: string;
+  started_at?: string;
+  artifacts?: Artifact[];
+  qa_status?: string;
 }
 
 export interface JobEvent {

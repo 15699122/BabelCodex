@@ -116,7 +116,29 @@ export class MockSidecarTransport implements SidecarTransport {
     }
     if (method === "get_job") {
       const jobId = String(params.job_id ?? "");
-      return { job: this.state.jobs.find((job) => job.job_id === jobId) ?? null } as T;
+      const job = this.state.jobs.find((candidate) => candidate.job_id === jobId) ?? null;
+      return {
+        job: job
+          ? {
+              ...job,
+              backend_name: "mock-babeldoc",
+              translator_name: "mock",
+              model: "mock-local",
+              started_at: job.started_at || job.updated_at,
+              artifacts: job.status === "cancelled" ? [] : [
+                {
+                  artifact_type: "mono_pdf",
+                  path: `/workspace/translated/${job.job_id}.mono.pdf`,
+                  size: 24832,
+                  sha256: "mock-sha256",
+                  created_at: job.updated_at,
+                  validated: true,
+                },
+              ],
+              qa_status: job.status === "completed" ? "passed" : "pending",
+            }
+          : null,
+      } as T;
     }
     if (method === "shutdown") return { closing: true } as T;
     return {} as T;
