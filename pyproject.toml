@@ -22,6 +22,7 @@ dev = ["pytest>=8", "ruff>=0.9"]
 [project.scripts]
 babelcodex = "codex_babeldoc.cli:main"
 cbpdf = "codex_babeldoc.cli:main"
+babelcodex-service = "codex_babeldoc.application.sidecar:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/codex_babeldoc"]

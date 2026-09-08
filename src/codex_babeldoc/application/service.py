@@ -46,3 +46,9 @@ class BabelCodexService:
 
     def list_jobs(self) -> list[JobState]:
         return self.orchestrator.state.list_jobs()
+
+    def close(self) -> None:
+        """Release resources owned by the shared application service."""
+        close = getattr(self.orchestrator, "close", None)
+        if callable(close):
+            close()

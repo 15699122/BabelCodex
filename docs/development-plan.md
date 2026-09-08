@@ -367,6 +367,8 @@ Fixture 内容：
 
 **优先级：P1 | 复杂度：L | 预计：4–7 个开发日**
 
+**状态：Python sidecar 协议切片已完成；Tauri、跨平台打包和桌面端 E2E 待完成（2026 年 9 月 8 日）**
+
 任务：
 
 1. 采用 CopyPolish 已验证的 Tauri 2 + React + TypeScript 方向
@@ -379,6 +381,15 @@ Fixture 内容：
 8. 验证打包体积、动态库、模型和字体资源
 9. 验证 Tauri capability 与 shell 权限最小化
 10. 完成 GUI 框架和 sidecar 许可证审查
+
+当前完成记录：
+
+- 新增固定 `babelcodex-service` JSONL 入口；
+- sidecar 复用 `BabelCodexService`，不复制 PDF 编排逻辑；
+- 支持受控的启动、查询、列表、取消请求和关闭请求；
+- 输入 PDF 强制限制在配置的 input allowlist 内；
+- 已覆盖协议往返、非法 JSON、协议错误、路径越界、shutdown 和无 shell 暴露测试；
+- 尚未实现 Tauri 2 host、Windows/Linux target triple 打包、实时事件流和桌面 E2E。
 
 验收：GUI 不直接导入 BabelDOC；前端不执行系统 Python 或任意 shell；翻译期间界面不冻结；Windows 和 Linux 最小 GUI 可运行；sidecar 只允许固定二进制和受控参数。
 
