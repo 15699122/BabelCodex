@@ -586,6 +586,8 @@ babelcodex-service
 
 GUI 不直接执行系统 Python，也不允许前端传入任意可执行文件或 shell 参数。发布包应包含固定名称的 sidecar，并通过 Tauri capability 限制其可执行范围和参数。
 
+Windows 发布包必须将 Python service 预构建为 Windows sidecar executable，而不是要求用户安装或由 GUI 启动系统 Python。Tauri 的 `externalBin` 逻辑名称保持为 `binaries/babelcodex-service`；实际资源文件必须按 Tauri target triple 命名，并在 Windows bundle 构建前校验 `.exe` 文件、资源清单和 SHA-256。Windows 原生启动、文件选择器、路径 allowlist、输出目录打开、sidecar 终止和干净用户环境运行属于平台验收，不能由 WSL/Linux 的 Rust 编译检查替代。
+
 ### 12.7 Sidecar 通信协议
 
 请求示例：
@@ -723,3 +725,9 @@ Linux: BabelCodex-Linux-x86_64.tar.gz
 ```
 
 首期不优先采用单文件 executable。发布流程应包括依赖检查、sidecar 资源清单、许可证清单、SBOM 和 SHA-256 校验。
+
+平台验证边界：
+
+- Linux/WSL：可验证 React/Vitest、Python contract、JSONL 协议、Rust 编译和 Linux bundle 准备；
+- Windows 原生：已验证 Windows `.exe` sidecar、Tauri NSIS/MSI packaged bundle、WebView2 探测、MSI 解包后的 sidecar JSONL smoke 和 GUI 进程级启动；文件对话框、完整路径语义、权限 allowlist、退出清理和干净用户环境 GUI 交互仍未完成；
+- Windows 当前状态为“原生构建与包内 sidecar smoke 通过”，不是“可发布”；只有目标平台完整 packaged GUI smoke、签名/发布审计和剩余路径矩阵通过后，才能标记对应平台为可发布。

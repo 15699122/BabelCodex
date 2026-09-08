@@ -367,7 +367,7 @@ Fixture 内容：
 
 **优先级：P1 | 复杂度：L | 预计：4–7 个开发日**
 
-**状态：Python sidecar、事件/取消协议与 Tauri 2 host spike 已完成；跨平台打包和桌面端 E2E 待完成（2026 年 9 月 8 日）**
+**状态：Python sidecar、事件/取消协议、Tauri 2 host spike，以及一轮 Windows 原生 sidecar/package 验证已完成；GUI 交互矩阵和干净用户环境桌面 E2E 待完成（2026 年 9 月 8 日）**
 
 任务：
 
@@ -395,13 +395,35 @@ Fixture 内容：
 - 已覆盖协议往返、非法 JSON、协议错误、路径越界、shutdown、进度事件、后台失败、取消和无 shell 暴露测试；
 - 已新增 Tauri 2 + React/TypeScript host spike、固定 `babelcodex-service` externalBin、最小 capability allowlist 和 mock transport；
 - 已验证 GUI 的 Vitest/Vite 构建与 Tauri Rust host 的 `cargo check`；
-- 尚未实现 Windows/Linux target triple 正式打包、sidecar 自身重启编排和桌面 E2E。
+- 已在 Windows 原生环境用 target triple sidecar 完成 `cargo check`、NSIS/MSI bundle 构建、MSI 隔离解包和 sidecar JSONL `list_jobs` smoke；
+- 已完成解包 GUI 的进程级启动检查；
+- 尚未完成 sidecar 自身重启编排、GUI 文件选择/allowlist/取消/输出目录等交互 E2E、干净用户目录验收、Defender/SmartScreen 矩阵、签名/SBOM 和 Linux target bundle；
+- 本轮 Tauri bundle 通过命令行 `bundle.icon` 覆盖构建，源配置的可重复图标声明仍待整理。
+
+Phase 8 的以下步骤已完成：
+
+- Windows Rust/MSVC、WebView2、Node.js/npm 和 Python sidecar 构建工具链；
+- Windows target triple sidecar、Tauri externalBin 资源命名、`cargo check`；
+- NSIS/MSI bundle、MSI 隔离解包、sidecar 受控 `--config` 启动和 JSONL smoke；
+- bundle 与 sidecar SHA-256 记录，以及解包 GUI 的进程级启动检查。
+
+仍需在原生 Windows 环境完成，不能由 WSL 或 Linux `cargo check` 替代：
+
+- 干净 Windows 用户目录中的真实 GUI 启动与 sidecar handshake；
+- 文件选择器、输入目录 allowlist、输出目录打开、窗口关闭、取消和完成产物；
+- Defender/SmartScreen、路径空格、反斜杠、非 ASCII 用户目录和无 Codex 登录错误显示；
+- 可重复的源配置、签名/SBOM、Linux target bundle 和正式 portable 发布验收。
+
+Linux/WSL 可以提前完成 React/Vitest、Vite build、Python contract tests、协议测试、Rust 静态检查和 Linux bundle 准备，但这些结果不能标记 Windows 验收为完成。
+
 
 验收：GUI 不直接导入 BabelDOC；前端不执行系统 Python 或任意 shell；翻译期间界面不冻结；Windows 和 Linux 最小 GUI 可运行；sidecar 只允许固定二进制和受控参数。
 
 ### Phase 9：GUI Alpha 与 Windows/Linux 打包
 
 **优先级：P1 | 复杂度：XL | 预计：8–15 个开发日**
+
+**状态：Windows unsigned NSIS/MSI bundle 和包内 sidecar smoke 已完成；正式 portable/clean-user GUI 验收、签名/SBOM 和 Linux bundle 待完成（2026 年 9 月 8 日）**
 
 任务：
 
@@ -416,6 +438,17 @@ Fixture 内容：
 - Linux portable bundle 或 AppImage
 - sidecar target triple 和资源清单
 - GitHub Release workflow、SBOM 和 SHA-256 checksums
+
+Windows 专属执行清单：
+
+1. [已完成，未签名] 在 Windows 原生环境构建 GUI 与 `babelcodex-service.exe`；
+2. [已完成] 使用 Tauri target-triple sidecar 执行 NSIS/MSI `tauri build`；
+3. [部分完成] MSI 已隔离解包并运行 sidecar；干净用户环境安装/解压运行仍待完成；
+4. [部分完成] 已验证 JSONL handshake、sidecar 退出和 GUI 进程级启动；文件选择、allowlist、进度、取消、完成产物和诊断 UI 仍待完成；
+5. [部分完成] MSI 解包仅含 GUI 与 sidecar 可执行文件，未完成完整绝对路径/敏感内容审计；
+6. [部分完成] 已生成 bundle/sidecar SHA-256 和构建日志；SBOM、签名和正式发布附件仍待完成。
+
+Windows 验收依赖原生 Windows GUI 运行结果；Linux 或 WSL 上的同名构建、Rust `cargo check` 和浏览器端测试只能作为先决检查。
 
 首期不承诺所有 Linux 发行版原生安装包，也不优先采用单文件 executable。
 
@@ -440,7 +473,8 @@ GUI 必须通过 Application Service 访问任务；Tauri Rust 层只负责窗�
 - 任务详情页已增加阶段时间线，并通过可清理的 `JobStore.watchJob` 周期刷新选中任务；
 - sidecar 断线后进入 reconnect 状态，重连时重置事件游标，并使用 `list_jobs` 与活动任务 `get_job` 做状态校准；
 - 已覆盖 GUI 初始连接、任务创建、事件应用、取消、重连校准和 cleanup 测试；
-- 尚未实现真实 packaged desktop smoke test、Windows/Linux 发布包和自动重连退避策略；Tauri 文件选择、任务详情、阶段时间线和详情自动刷新已接入，但真实 packaged allowlist 仍需随 sidecar 二进制一起验证。
+- 已完成一轮 Windows 原生 packaged 验证：Windows target-triple sidecar、NSIS/MSI bundle、MSI 隔离解包后的 sidecar JSONL smoke 和解包 GUI 进程级启动检查均通过；Tauri 文件选择、任务详情、阶段时间线和详情自动刷新已接入；
+- 尚未完成完整 GUI 交互 E2E、干净用户环境验收、输入/输出 allowlist 与 Windows 路径矩阵、sidecar 自身重启编排、自动重连退避、Linux target bundle、签名/SBOM 和正式发布验收。
 
 ### Phase 10：Codex MCP Server Alpha
 
