@@ -103,6 +103,11 @@ function App() {
     });
   };
 
+  useEffect(() => {
+    if (view !== "details" || !selectedJobId) return;
+    return store.watchJob(selectedJobId);
+  }, [selectedJobId, store, view]);
+
   return (
     <main className="app-shell">
       <aside className="rail">
@@ -161,10 +166,21 @@ function Jobs({ jobs, onCancel, cancelling, onOpen }: { jobs: JobState[]; onCanc
   return <div className="content-column reveal"><div className="section-heading"><div><span className="eyebrow">WORK QUEUE / 02</span><h2>Recent jobs</h2></div><span className="queue-badge">{jobs.filter(isActiveJob).length} active</span></div><div className="job-list">{jobs.length === 0 && <div className="empty-state">No translations yet. Queue a PDF from New translation.</div>}{jobs.map((job) => <article className="job-row" key={job.job_id}><button className="job-open" aria-label={`Open details for ${job.job_id}`} onClick={() => onOpen(job.job_id)}><div className={`status-dot ${job.status}`} /><div className="job-main"><strong>{job.source_path.split("/").pop()}</strong><span>{job.job_id} · {job.stage.replaceAll("_", " ")}</span>{job.safe_error_message && <small className="job-error">{job.safe_error_message}</small>}</div><div className="job-progress">{isActiveJob(job) ? <><div className="progress-track"><span style={{ width: job.status === "running" ? "68%" : "22%" }} /></div><small>{job.status.replaceAll("_", " ")}</small></> : <span className="done-label">{job.status}</span>}</div></button>{isActiveJob(job) ? <button className="cancel-action" disabled={cancelling === job.job_id} onClick={() => onCancel(job.job_id)}>{cancelling === job.job_id ? "stopping" : "cancel"}</button> : <ArrowUpRight size={17} className="muted-icon" />}</article>)}</div></div>;
 }
 
+const TIMELINE_STAGES: Array<{ stage: JobState["stage"]; label: string }> = [
+  { stage: "discovered", label: "Discovered" },
+  { stage: "validating_input", label: "Validate input" },
+  { stage: "preparing_runtime", label: "Prepare runtime" },
+  { stage: "translating", label: "Translate" },
+  { stage: "rendering", label: "Render PDF" },
+  { stage: "validating_output", label: "Validate output" },
+  { stage: "completed", label: "Completed" },
+];
+
 function JobDetails({ job, onBack, onCancel, cancelling }: { job: JobState | null; onBack: () => void; onCancel: (jobId: string) => void; cancelling: string | null }) {
   if (!job) return <div className="content-column reveal"><button className="back-action" onClick={onBack}>← Back to jobs</button><div className="empty-state">This job is no longer available.</div></div>;
   const artifacts = job.artifacts ?? [];
-  return <div className="content-column reveal"><div className="section-heading"><div><button className="back-action" onClick={onBack}>← Back to jobs</button><span className="eyebrow">JOB DETAIL / 02</span><h2>{job.source_path.split("/").pop()}</h2></div><div className={`detail-status ${job.status}`}>{job.status.replaceAll("_", " ")}</div></div><div className="detail-grid"><section className="detail-card card"><span className="card-label">RUN STATE</span><div className="detail-facts"><Fact label="Job ID" value={job.job_id} /><Fact label="Stage" value={job.stage.replaceAll("_", " ")} /><Fact label="Attempts" value={String(job.attempts)} /><Fact label="QA" value={job.qa_status ?? "pending"} /><Fact label="Backend" value={job.backend_name || "not reported"} /><Fact label="Translator" value={job.translator_name || "not reported"} /><Fact label="Started" value={formatDate(job.started_at)} /><Fact label="Updated" value={formatDate(job.updated_at)} /></div>{job.safe_error_message && <div className="detail-error">{job.safe_error_message}</div>}{isActiveJob(job) && <button className="cancel-action detail-cancel" disabled={cancelling === job.job_id} onClick={() => onCancel(job.job_id)}>{cancelling === job.job_id ? "stopping" : "cancel job"}</button>}</section><section className="detail-card card"><span className="card-label">OUTPUT ARTIFACTS</span>{artifacts.length === 0 ? <div className="empty-state">No output artifacts reported yet.</div> : <div className="artifact-list">{artifacts.map((artifact) => <ArtifactRow artifact={artifact} key={`${artifact.artifact_type}-${artifact.path}`} />)}</div>}</section></div></div>;
+  const activeIndex = TIMELINE_STAGES.findIndex((item) => item.stage === job.stage);
+  return <div className="content-column reveal"><div className="section-heading"><div><button className="back-action" onClick={onBack}>← Back to jobs</button><span className="eyebrow">JOB DETAIL / 02</span><h2>{job.source_path.split("/").pop()}</h2></div><div className={`detail-status ${job.status}`}>{job.status.replaceAll("_", " ")}</div></div><section className="timeline-card card"><span className="card-label">STAGE TIMELINE</span><div className="timeline">{TIMELINE_STAGES.map((item, index) => { const state = job.status === "completed" || index < activeIndex ? "complete" : index === activeIndex ? "current" : "pending"; return <div className={`timeline-step ${state}`} key={item.stage}><span className="timeline-marker">{state === "complete" ? "✓" : String(index + 1).padStart(2, "0")}</span><div><strong>{item.label}</strong><small>{state === "complete" ? "complete" : state === "current" ? "in progress" : "waiting"}</small></div></div>; })}</div></section><div className="detail-grid"><section className="detail-card card"><span className="card-label">RUN STATE</span><div className="detail-facts"><Fact label="Job ID" value={job.job_id} /><Fact label="Stage" value={job.stage.replaceAll("_", " ")} /><Fact label="Attempts" value={String(job.attempts)} /><Fact label="QA" value={job.qa_status ?? "pending"} /><Fact label="Backend" value={job.backend_name || "not reported"} /><Fact label="Translator" value={job.translator_name || "not reported"} /><Fact label="Started" value={formatDate(job.started_at)} /><Fact label="Updated" value={formatDate(job.updated_at)} /></div>{job.safe_error_message && <div className="detail-error">{job.safe_error_message}</div>}{isActiveJob(job) && <button className="cancel-action detail-cancel" disabled={cancelling === job.job_id} onClick={() => onCancel(job.job_id)}>{cancelling === job.job_id ? "stopping" : "cancel job"}</button>}</section><section className="detail-card card"><span className="card-label">OUTPUT ARTIFACTS</span>{artifacts.length === 0 ? <div className="empty-state">No output artifacts reported yet.</div> : <div className="artifact-list">{artifacts.map((artifact) => <ArtifactRow artifact={artifact} key={`${artifact.artifact_type}-${artifact.path}`} />)}</div>}</section></div></div>;
 }
 
 function Fact({ label, value }: { label: string; value: string }): React.ReactElement { return <div><span>{label}</span><strong>{value}</strong></div>; }

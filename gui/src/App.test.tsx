@@ -56,6 +56,9 @@ describe("BabelCodex GUI shell", () => {
     expect(screen.getByText("mock-babeldoc")).toBeTruthy();
     expect(screen.getByText("mono pdf")).toBeTruthy();
     expect(screen.getByText("validated")).toBeTruthy();
+    expect(screen.getByText("STAGE TIMELINE")).toBeTruthy();
+    expect(screen.getByText("Prepare runtime")).toBeTruthy();
+    expect(screen.getByText("in progress")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "← Back to jobs" }));
     expect(screen.getByRole("heading", { name: "Recent jobs" })).toBeTruthy();
   });

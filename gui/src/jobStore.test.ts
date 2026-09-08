@@ -1,8 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { JobStore } from "./jobStore";
 import { MockSidecarTransport } from "./sidecar";
 
 describe("JobStore", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("connects, starts polling, and applies sidecar events", async () => {
     const transports: MockSidecarTransport[] = [];
     const store = new JobStore(() => {
@@ -13,7 +21,7 @@ describe("JobStore", () => {
     await store.connect("config/test.toml");
     expect(store.getSnapshot().connection.status).toBe("ready");
     const jobId = await store.startTranslation("/workspace/incoming/paper.pdf");
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await vi.advanceTimersByTimeAsync(0);
     await store.cancel(jobId);
     const job = store.getSnapshot().jobs.find((candidate) => candidate.job_id === jobId);
     expect(job?.status).toBe("cancelled");
@@ -51,6 +59,23 @@ describe("JobStore", () => {
     expect(job?.artifacts?.[0].artifact_type).toBe("mono_pdf");
     expect(job?.qa_status).toBe("pending");
     expect(transport.requests.map((request) => request.method)).toContain("get_job");
+    await store.close();
+  });
+
+  it("refreshes a watched job immediately and stops after cleanup", async () => {
+    const transport = new MockSidecarTransport();
+    const store = new JobStore(() => transport);
+    await store.connect();
+    const jobId = await store.startTranslation("/workspace/incoming/watch.pdf");
+    const beforeWatch = transport.requests.filter((request) => request.method === "get_job").length;
+    const stopWatching = store.watchJob(jobId, 1000);
+    await Promise.resolve();
+    expect(transport.requests.filter((request) => request.method === "get_job").length).toBe(beforeWatch + 1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(transport.requests.filter((request) => request.method === "get_job").length).toBe(beforeWatch + 2);
+    stopWatching();
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(transport.requests.filter((request) => request.method === "get_job").length).toBe(beforeWatch + 2);
     await store.close();
   });
 });

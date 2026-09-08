@@ -101,6 +101,17 @@ input:focus { border-color: var(--lime); box-shadow: 0 0 0 3px rgba(216, 232, 11
 .detail-status.running { border-color: rgba(233, 152, 87, .4); color: var(--orange); }
 .detail-status.completed { border-color: rgba(142, 199, 156, .4); color: var(--green); }
 .detail-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, .9fr); gap: 14px; }
+.timeline-card { margin-bottom: 14px; padding: 24px; }
+.timeline { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0; margin-top: 22px; }
+.timeline-step { position: relative; display: grid; justify-items: center; gap: 10px; min-width: 0; text-align: center; }
+.timeline-step:not(:last-child)::after { position: absolute; top: 13px; left: calc(50% + 14px); width: calc(100% - 28px); height: 1px; background: var(--line); content: ""; }
+.timeline-step.complete:not(:last-child)::after { background: rgba(142, 199, 156, .55); }
+.timeline-marker { z-index: 1; display: grid; place-items: center; width: 27px; height: 27px; border: 1px solid var(--line); border-radius: 50%; color: var(--muted); background: var(--panel); font-size: 9px; }
+.timeline-step.complete .timeline-marker { border-color: rgba(142, 199, 156, .55); color: var(--green); }
+.timeline-step.current .timeline-marker { border-color: var(--lime); color: var(--lime); box-shadow: 0 0 0 5px rgba(216, 232, 117, .08); }
+.timeline-step strong { color: var(--muted); font-size: 9px; font-weight: 400; text-transform: uppercase; }
+.timeline-step.current strong { color: var(--lime); }
+.timeline-step small { color: #65705f; font-size: 8px; text-transform: uppercase; }
 .detail-card { min-height: 310px; padding: 24px; }
 .detail-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 28px; margin-top: 24px; }
 .detail-facts div { display: grid; gap: 7px; min-width: 0; }

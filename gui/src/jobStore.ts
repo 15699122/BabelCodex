@@ -105,6 +105,22 @@ export class JobStore {
     return result.job;
   }
 
+  watchJob(jobId: string, intervalMs = 1000): () => void {
+    let stopped = false;
+    const refresh = async (): Promise<void> => {
+      if (stopped || this.snapshot.connection.status !== "ready") return;
+      await this.getJob(jobId).catch(() => undefined);
+    };
+    void refresh();
+    const timer = setInterval(() => {
+      void refresh();
+    }, intervalMs);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }
+
   async close(): Promise<void> {
     this.stopPolling();
     await this.transport.close();

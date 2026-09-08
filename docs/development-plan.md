@@ -437,9 +437,10 @@ GUI 必须通过 Application Service 访问任务；Tauri Rust 层只负责窗�
 - 已实现 `start_translation`、`list_jobs`、`poll_events`、`get_job`、`cancel_job` 的前端 contract；
 - 新建翻译页已接入受控 PDF 文件选择：Tauri 使用 dialog plugin，浏览器使用原生 file input/drag-and-drop fallback，并在 GUI 边界拒绝非 PDF；
 - Jobs 页面已支持通过 `get_job` 打开详情，展示状态、阶段、尝试次数、时间、QA 状态和 sidecar 返回的 artifact 元数据；
+- 任务详情页已增加阶段时间线，并通过可清理的 `JobStore.watchJob` 周期刷新选中任务；
 - sidecar 断线后进入 reconnect 状态，重连时重置事件游标，并使用 `list_jobs` 与活动任务 `get_job` 做状态校准；
 - 已覆盖 GUI 初始连接、任务创建、事件应用、取消、重连校准和 cleanup 测试；
-- 尚未实现真实 packaged desktop smoke test、Windows/Linux 发布包和自动重连退避策略；Tauri 文件选择与任务详情已接入，但真实 packaged allowlist 仍需随 sidecar 二进制一起验证。
+- 尚未实现真实 packaged desktop smoke test、Windows/Linux 发布包和自动重连退避策略；Tauri 文件选择、任务详情、阶段时间线和详情自动刷新已接入，但真实 packaged allowlist 仍需随 sidecar 二进制一起验证。
 
 ### Phase 10：Codex MCP Server Alpha
 
