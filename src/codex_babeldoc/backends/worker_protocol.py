@@ -39,6 +39,11 @@ class TranslatorSpec:
     cache_enabled: bool = True
     cache_store_plaintext: bool = True
     cache_ttl_seconds: int | None = None
+    glossary_prompt: str = ""
+    glossary_version: str | None = None
+    context_version: str | None = None
+    thread_state_path: str | None = None
+    document_id: str | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -78,6 +83,11 @@ class WorkerRequest:
                 cache_enabled=bool(t.get("cache_enabled", True)),
                 cache_store_plaintext=bool(t.get("cache_store_plaintext", True)),
                 cache_ttl_seconds=t.get("cache_ttl_seconds"),
+                glossary_prompt=str(t.get("glossary_prompt", "")),
+                glossary_version=t.get("glossary_version"),
+                context_version=t.get("context_version"),
+                thread_state_path=t.get("thread_state_path"),
+                document_id=t.get("document_id"),
             ),
             protocol_version=PROTOCOL_VERSION,
         )

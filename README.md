@@ -87,7 +87,7 @@ BabelCodex 主要面向个人、本地使用。用户需要自行确认待翻译
 
 ### Implemented
 
-- Project CLI (`cbpdf`, planned primary command: `babelcodex`)
+- Project CLI (`cbpdf`, primary command: `babelcodex`)
 - TOML configuration
 - PDF discovery from `incoming/`
 - SHA-256 based job identity
@@ -103,7 +103,16 @@ BabelCodex 主要面向个人、本地使用。用户需要自行确认待翻译
 - monolingual / bilingual output switches
 - OCR/layout compatibility settings exposed in config
 - mock translator for pipeline tests
-- shared Application Service planned for CLI, GUI and MCP
+- shared Application Service for CLI, GUI and MCP
+- versioned glossary/context guidance with bounded Codex prompt input
+- `babelcodex glossary list|import|export` local glossary management
+- bounded PDF metadata/opening-page context extraction
+- provider-neutral Codex thread identity persistence and resume contract
+- placeholder and structured-output validation
+- exact-output retry on validation failure
+- BabelDOC worker process and versioned protocol
+- paragraph translation cache independent of BabelDOC cache
+- scoped local stdio MCP Server
 
 ### Experimental / needs validation on your machine
 
@@ -113,21 +122,15 @@ BabelCodex 主要面向个人、本地使用。用户需要自行确认待翻译
 - Formula/rich-text placeholder integrity under Codex translation
 - Scanned-PDF OCR quality
 - Terminology consistency for very long books
+- real Codex account/thread resume behavior and long-thread stability
 
 ### Planned
 
-- placeholder and structured-output validation
-- accidental Markdown fence/explanation detection
-- exact-output retry on validation failure
-- BabelDOC worker process and versioned protocol
 - batch translation requests to reduce Codex turn overhead
-- per-document glossary memory
-- glossary import/export (CSV)
-- paragraph cache independent of BabelDOC cache
 - worker recovery and PDF QA pass (missing glyphs, overflow, untranslated text)
 - experimental two-phase extract/translate/render mode
-- Windows/Linux GUI executable packaging
-- Codex-callable local MCP Server
+- remaining Windows/Linux GUI release audit and target-machine validation
+- Codex client registration and packaged MCP smoke validation
 
 ## Planned interfaces
 

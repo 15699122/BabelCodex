@@ -453,7 +453,7 @@ Windows 本轮执行记录与边界（2026 年 9 月 8 日）：
 
 - 本次 E 盘复核中，完整 uv run pytest -q 两次均在 test_cancel_uses_the_active_job_handle 失败：一次超时后仍为 RUNNING，一次因 Windows os.replace 返回 PermissionError: [WinError 5] 而为 FAILED；单独重跑一次通过，故 Python 全套质量门禁暂记为部分通过，需修复取消/状态持久化时序后复验。
 - 已针对该 Windows 回归增加 StateStore 保存锁、短暂 `PermissionError` 退避重试和 10 秒 terminal 状态轮询测试；Windows 原生完整 pytest 仍需重新复验。
-- Linux 侧修复后完整 pytest 已通过（123 passed，3 deselected）；该结果验证跨平台代码路径，但不能替代 Windows 原生复验。
+- Linux 侧修复后完整 pytest 已通过（123 passed，3 deselected）；该结果验证跨平台代码路径，但不能替代 Windows 原生复验。新增 glossary/context/thread state 后的最终 Linux/WSL 结果为 135 passed，3 deselected。
 
 - 已处理的验证错误：相对路径排除参数导致首次同步未完整排除生成目录；Tauri 首次 bundle 缺少 icons/icon.ico；PyInstaller 直接模块入口触发相对导入错误；旧 bundle 中 sidecar 过期；sidecar 从解包目录启动时未显式传入配置导致 FileNotFoundError；以及一次 PowerShell args 参数转发错误导致 uv 只显示帮助。上述问题均已通过绝对排除路径、生成构建图标、临时包级入口、限定范围清理/重建、项目根目录加受控 --config 和显式命令调用处理。
 - 未执行完整桌面 GUI 交互、干净用户目录、Defender/SmartScreen、签名/SBOM、正式 portable 发布审计和目标 Linux 机器 smoke；原因分别是本轮只覆盖自动化测试/协议 smoke/进程级启动、仍依赖项目根配置、使用 unsigned 开发包、尚未进入发布审计流程，以及 WSL/Linux 不能代表目标 Linux 机器。
@@ -489,7 +489,8 @@ GUI 必须通过 Application Service 访问任务；Tauri Rust 层只负责窗�
 - 已增加跨平台 GUI bundle 审计脚本：校验 target-triple sidecar、拒绝用户状态/凭据/缓存/开发目录和疑似机器绝对路径，并生成 SHA-256 manifest；GitHub Actions 已加入 Linux GUI test/build job；
 - 已增加跨平台 GUI bundle 审计脚本、Linux bundle 构建脚本、512×512 方形 Tauri 图标和 Linux CI GUI test/build job；
 - 已完成 Linux `.deb`/AppImage bundle、512×512 方形图标、bundle audit、Linux bundle 构建脚本和 Linux CI GUI test/build job；
-- 尚未完成完整 GUI 交互 E2E、干净用户环境验收、输入/输出 allowlist 与 Windows 路径矩阵、sidecar 自身重启编排、Linux 目标机 smoke、签名/SBOM 和正式发布验收；重试、输出目录打开、cleanup 和 `validate_output` 仍需先扩展 Application Service/sidecar contract。
+- 尚未完成完整 GUI 交互 E2E、干净用户环境验收、输入/输出 allowlist 与 Windows 路径矩阵、sidecar 自身重启编排、Linux 目标机 smoke、签名/SBOM 和正式发布验收；GUI 的重试、输出目录打开、cleanup 和 `validate_output` 仍需扩展 sidecar/Application Service contract，MCP 侧 scoped cleanup/validate 已完成。
+- Linux/WSL 可完成的 glossary/context 基础接入已完成；剩余 GUI packaged 交互、目标机运行、签名/SBOM 和正式发布验收继续保留在 Windows/目标平台清单中。
 
 ### Phase 10：Codex MCP Server Alpha
 
@@ -538,6 +539,8 @@ MCP 与 GUI 共用 Python Application Service、JobState、事件和错误码；
 
 **优先级：P2 | 复杂度：L | 预计：5–8 个开发日**
 
+**状态：已完成 Linux/WSL 可验证的 glossary/context 与 thread identity contract；真实 Codex 账户行为、compact 策略、长文档 benchmark、GUI 编辑页面及 Windows GUI 交互仍待完成（2026 年 9 月 8 日）**
+
 任务：
 
 1. CSV 导入导出
@@ -557,6 +560,19 @@ MCP 与 GUI 共用 Python Application Service、JobState、事件和错误码；
 - thread 重启后术语保持
 - glossary 变化不会错误命中缓存
 - 上下文不会无限增长
+
+当前非 Windows 完成记录：
+
+- 配置新增 `project.glossary_dir`、`project.context_dir` 和 `codex.context_max_chars`；
+- glossary 支持 `global.csv` 与 `documents/<document-stem>.csv`，文档级条目覆盖全局同名条目；
+- glossary 支持 CSV 导入/导出、稳定版本 hash、enabled 标志、notes 和有上限的 terminology prompt；
+- context 支持 UTF-8 文本 sidecar 的标题/摘要提取、空白归一化、边界截断和稳定版本 hash；
+- `babelcodex glossary list|import|export` 已提供本地 CLI 管理入口；
+- glossary/context prompt 与版本已接入 in-process/subprocess 共用的 `TranslatorSpec`、TranslationGateway cache key 和 Codex thread prime；
+- PDF metadata/opening-page context adapter、provider-neutral `ThreadStateStore`、官方 SDK `thread_resume` 接入和成功 prime 后持久化已完成；
+- contract tests 已覆盖覆盖规则、导入导出、禁用术语、长度边界、文本/PDF context 提取、版本隔离、thread state rotation、mocked thread resume 和 worker protocol round-trip。
+
+仍需后续完成：真实 Codex 账户下的 thread resume/rotation 行为验收、thread compact 的策略接入、长文档稳定性 benchmark、真实 Codex-plan integration，以及 GUI glossary/context 编辑页面；这些不应通过单元测试伪造或消耗默认测试额度。
 
 ### Phase 12：恢复、Part 与任务运维
 

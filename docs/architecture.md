@@ -230,7 +230,10 @@ GUI host 技术验证位于仓库根目录的 `gui/`：Tauri 2 只启动固定�
 - `validation.py`：检查输出格式和占位符完整性。
 - `retry.py`：根据错误类型决定重试方式。
 - `cache.py`：SQLite 段落缓存。
-- `glossary.py`：用户术语和自动术语。
+- `glossary.py`：读取 `glossary/global.csv` 与 `glossary/documents/<pdf-stem>.csv`，执行文档级覆盖、CSV 管理、稳定版本 hash 和有界 terminology prompt。
+- `context.py`：从 `context/<pdf-stem>.txt` 提取标题/摘要，归一化并限制上下文长度，生成稳定版本 hash。
+
+glossary、context 和 thread state 均属于用户本地数据，不得提交到公开仓库。Orchestrator 按 PDF stem 构造合并 guidance，将 glossary/context 版本写入 `TranslationRequest` 和 cache key，并通过统一 `TranslatorSpec` 传给 in-process 与 subprocess translator。Codex thread prime 只接收已经截断的合并 prompt；thread state 只保存 provider、document ID、thread ID 和 generation，成功 prime 后才落盘。
 
 ### `translators/`
 

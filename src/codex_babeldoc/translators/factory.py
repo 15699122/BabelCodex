@@ -29,6 +29,8 @@ def build_translator(spec: TranslatorSpec) -> object:
             context_prompt=spec.context_prompt,
             model=spec.model,
             effort=spec.effort,
+            thread_state_path=spec.thread_state_path,
+            document_id=spec.document_id,
         )
     raise ValueError(f"Unknown translator: {spec.name}")
 
@@ -58,4 +60,6 @@ def build_gateway_translator(spec: TranslatorSpec) -> TranslationGateway:
         model=spec.model or "",
         effort=spec.effort or "",
         prompt_version=spec.context_prompt or "",
+        glossary_version=spec.glossary_version,
+        context_version=spec.context_version,
     )

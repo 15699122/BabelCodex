@@ -3,6 +3,8 @@ input_dir = "incoming"
 output_dir = "translated"
 state_dir = "state"
 log_dir = "logs"
+glossary_dir = "glossary"
+context_dir = "context"
 
 [translation]
 lang_in = "en"
@@ -36,3 +38,4 @@ thread_mode = "per-document"
 sandbox = "read_only"
 strict_output = true
 context_prompt = "Translate faithfully and preserve terminology. Do not explain the translation."
+context_max_chars = 4000

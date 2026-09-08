@@ -13,6 +13,8 @@ class ProjectConfig:
     output_dir: Path = Path("translated")
     state_dir: Path = Path("state")
     log_dir: Path = Path("logs")
+    glossary_dir: Path = Path("glossary")
+    context_dir: Path = Path("context")
 
 
 @dataclass(slots=True)
@@ -53,6 +55,7 @@ class CodexConfig:
     context_prompt: str = (
         "Translate faithfully and preserve terminology. Do not explain the translation."
     )
+    context_max_chars: int = 4000
 
 
 @dataclass(slots=True)
@@ -65,7 +68,10 @@ class AppConfig:
 
     def resolve_paths(self) -> None:
         for obj, names in [
-            (self.project, ("input_dir", "output_dir", "state_dir", "log_dir")),
+            (
+                self.project,
+                ("input_dir", "output_dir", "state_dir", "log_dir", "glossary_dir", "context_dir"),
+            ),
             (self.babeldoc, ("working_dir",)),
         ]:
             for name in names:
@@ -79,6 +85,8 @@ class AppConfig:
             self.project.output_dir,
             self.project.state_dir,
             self.project.log_dir,
+            self.project.glossary_dir,
+            self.project.context_dir,
             self.babeldoc.working_dir,
         ):
             path.mkdir(parents=True, exist_ok=True)
@@ -113,7 +121,10 @@ def load_config(path: str | Path) -> AppConfig:
     )
     # Dataclass accepts strings for Path annotations; normalize them here.
     for obj, names in [
-        (cfg.project, ("input_dir", "output_dir", "state_dir", "log_dir")),
+        (
+            cfg.project,
+            ("input_dir", "output_dir", "state_dir", "log_dir", "glossary_dir", "context_dir"),
+        ),
         (cfg.babeldoc, ("working_dir",)),
     ]:
         for name in names:

@@ -41,3 +41,27 @@ def test_doctor_fails_when_codex_is_not_authenticated(monkeypatch, capsys):
     assert doctor(cfg) == 1
     output = json.loads(capsys.readouterr().out)
     assert output["codex_authenticated"] is False
+
+
+def test_glossary_cli_import_and_list(tmp_path, monkeypatch, capsys):
+    from codex_babeldoc.cli import main
+
+    source = tmp_path / "terms.csv"
+    source.write_text("source,target\nmodel,模型\n", encoding="utf-8")
+    isolated = tmp_path / "config.toml"
+    isolated.write_text(
+        "[project]\n"
+        f'input_dir = "{tmp_path / "incoming"}"\n'
+        f'output_dir = "{tmp_path / "translated"}"\n'
+        f'state_dir = "{tmp_path / "state"}"\n'
+        f'log_dir = "{tmp_path / "logs"}"\n'
+        f'glossary_dir = "{tmp_path / "glossary"}"\n'
+        f'context_dir = "{tmp_path / "context"}"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    assert main(["--config", str(isolated), "glossary", "import", str(source)]) == 0
+    capsys.readouterr()
+    assert main(["--config", str(isolated), "glossary", "list"]) == 0
+    listed = json.loads(capsys.readouterr().out)
+    assert listed["entries"][0]["target"] == "模型"

@@ -23,6 +23,10 @@ state/*
 !state/.gitkeep
 logs/*
 !logs/.gitkeep
+glossary/*
+!glossary/.gitkeep
+context/*
+!context/.gitkeep
 
 # generated test fixtures
 tests/fixtures/*.pdf

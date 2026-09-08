@@ -13,6 +13,8 @@ from codex_babeldoc.backends.worker_protocol import TranslatorSpec
 from codex_babeldoc.core.config import AppConfig
 from codex_babeldoc.core.errors import classify_exception
 from codex_babeldoc.core.state import JobStage, JobStatus, StateStore
+from codex_babeldoc.translation.context import ContextExtractor, DocumentContext
+from codex_babeldoc.translation.glossary import GlossaryStore
 from codex_babeldoc.translators.factory import build_gateway_translator
 
 log = logging.getLogger(__name__)
@@ -28,36 +30,55 @@ class Orchestrator:
     def discover(self) -> list[Path]:
         return sorted(self.cfg.project.input_dir.glob("*.pdf"))
 
-    def translator_factory(self):
+    def translator_factory(self, source: Path | None = None):
         t = self.cfg.translation
-        c = self.cfg.codex
         if t.translator not in {"mock", "codex-sdk"}:
             raise ValueError(f"Unknown translator: {t.translator}")
-        return build_gateway_translator(
-            TranslatorSpec(
-                name=t.translator,
-                lang_in=t.lang_in,
-                lang_out=t.lang_out,
-                context_prompt=c.context_prompt or None,
-                model=t.model or None,
-                effort=t.effort or None,
-                cache_path=str(self.cfg.project.state_dir / "translation-cache.db")
-                if t.cache_enabled
-                else None,
-                cache_enabled=t.cache_enabled,
-                cache_store_plaintext=t.cache_store_plaintext,
-                cache_ttl_seconds=t.cache_ttl_seconds,
-            )
-        )
+        spec = self._translator_spec(source)
+        return build_gateway_translator(spec)
 
-    def _translator_spec(self) -> TranslatorSpec:
+    def _document_guidance(self, source: Path | None) -> tuple[str, str | None, str, str | None]:
+        if source is None:
+            return "", None, "", None
+        stem = source.stem
+        glossary = GlossaryStore(self.cfg.project.glossary_dir)
+        glossary_prompt = glossary.guidance(stem, max_chars=self.cfg.codex.context_max_chars)
+        glossary_version = glossary.version(stem)
+        context = DocumentContext()
+        context_file = self.cfg.project.context_dir / f"{stem}.txt"
+        if context_file.is_file():
+            context = ContextExtractor(max_chars=self.cfg.codex.context_max_chars).from_file(
+                context_file
+            )
+        else:
+            try:
+                context = ContextExtractor(max_chars=self.cfg.codex.context_max_chars).from_pdf(
+                    source
+                )
+            except Exception as exc:  # noqa: BLE001 - optional context must not block translation
+                log.warning(
+                    "Unable to extract optional PDF context for %s: %s",
+                    source.name,
+                    type(exc).__name__,
+                )
+                context = DocumentContext()
+        context_prompt = context.prompt(max_chars=self.cfg.codex.context_max_chars)
+        return glossary_prompt, glossary_version, context_prompt, context.version
+
+    def _translator_spec(self, source: Path | None = None) -> TranslatorSpec:
         t = self.cfg.translation
         c = self.cfg.codex
+        glossary_prompt, glossary_version, context_prompt, context_version = (
+            self._document_guidance(source)
+        )
+        combined_prompt = "\n\n".join(
+            part for part in (c.context_prompt, glossary_prompt, context_prompt) if part
+        )[: max(0, c.context_max_chars)]
         return TranslatorSpec(
             name=t.translator,
             lang_in=t.lang_in,
             lang_out=t.lang_out,
-            context_prompt=c.context_prompt or None,
+            context_prompt=combined_prompt or None,
             model=t.model or None,
             effort=t.effort or None,
             cache_path=str(self.cfg.project.state_dir / "translation-cache.db")
@@ -66,6 +87,11 @@ class Orchestrator:
             cache_enabled=t.cache_enabled,
             cache_store_plaintext=t.cache_store_plaintext,
             cache_ttl_seconds=t.cache_ttl_seconds,
+            glossary_prompt=glossary_prompt,
+            glossary_version=glossary_version,
+            context_version=context_version,
+            thread_state_path=str(self.cfg.project.state_dir / "threads"),
+            document_id=source.stem if source is not None else None,
         )
 
     def _translate_via_worker(
@@ -96,7 +122,7 @@ class Orchestrator:
             "enhance_compatibility": b.enhance_compatibility,
             "translate_table_text": b.translate_table_text,
         }
-        spec = self._translator_spec()
+        spec = self._translator_spec(source)
         worker_request = build_worker_request(
             request,
             {
@@ -110,6 +136,11 @@ class Orchestrator:
                 "cache_enabled": spec.cache_enabled,
                 "cache_store_plaintext": spec.cache_store_plaintext,
                 "cache_ttl_seconds": spec.cache_ttl_seconds,
+                "glossary_prompt": spec.glossary_prompt,
+                "glossary_version": spec.glossary_version,
+                "context_version": spec.context_version,
+                "thread_state_path": spec.thread_state_path,
+                "document_id": spec.document_id,
             },
         )
         run_worker(
@@ -185,7 +216,7 @@ class Orchestrator:
                     backend_kwargs = {
                         "lang_in": t.lang_in,
                         "lang_out": t.lang_out,
-                        "translator_factory": self.translator_factory,
+                        "translator_factory": lambda: self.translator_factory(source),
                         "no_mono": t.no_mono,
                         "no_dual": t.no_dual,
                         "qps": t.qps,

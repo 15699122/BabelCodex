@@ -101,6 +101,28 @@ Windows 原生验证已于 2026-09-08 在 E 盘 checkout 完成一轮。以下�
 
 WSL/Linux 的 `cargo check`、浏览器端 Vitest、Vite build、bundle audit 和 Linux `.deb`/AppImage 构建已通过，可作为先决检查，但不能替代原生 Windows packaged GUI smoke test 或目标 Linux 机器运行验证。Windows 桌面边界测试应继续使用 mock transport/fixture；真实 Codex 集成另行标记为付费或 ChatGPT-plan integration test。
 
+## Non-Windows implementation boundary
+
+在 Linux/WSL 可完成并已纳入当前代码门禁的内容包括：
+
+- glossary CSV 导入/导出、全局与文档级合并、稳定版本 hash 和 bounded terminology prompt；
+- UTF-8 文档 context sidecar 的标题/摘要提取、归一化、截断和稳定版本 hash；
+- glossary/context 到 TranslationGateway cache key、worker `TranslatorSpec` 和 Codex thread prime 的接入；
+- CLI glossary 管理、MCP/CLI 共用 Application Service、状态保存跨平台加固以及相关 contract/regression tests。
+
+仍强制依赖 Windows 原生环境的内容包括：
+
+- packaged GUI 文件选择、真实路径 allowlist、窗口关闭、取消、完成产物和输出目录交互矩阵；
+- 干净 Windows 用户目录首次启动、WebView2/Defender/SmartScreen、非 ASCII 用户目录和路径空格/反斜杠验证；
+- Windows 签名、SBOM、portable 发布验收、正式资源审计和目标用户环境 smoke；
+- Windows 原生完整 pytest 复验，特别是 `tests/test_mcp.py::test_cancel_uses_the_active_job_handle`；
+
+需要认证 Codex/目标集成环境、但不属于 Windows-only 的内容包括：
+
+- Codex 客户端实际注册和 stdio MCP discovery；
+- 真实 Codex thread resume/rotation、thread compact 和 ChatGPT-plan PDF 翻译；
+- 长文档术语一致性与真实账户下的 throughput/usage benchmark。
+
 
 ## Windows native validation incidents and execution boundary
 
@@ -134,8 +156,21 @@ WSL/Linux 的 `cargo check`、浏览器端 Vitest、Vite build、bundle audit �
 - 通过：现有 sidecar、NSIS 和 MSI 产物哈希保持与 windows-artifacts.sha256 一致，三项产物均为 NotSigned。
 - 待复验：完整 uv run pytest -q 两次复核曾失败于 tests/test_mcp.py::test_cancel_uses_the_active_job_handle；一次在 2 秒等待后仍为 RUNNING，一次因 state.py 的 os.replace 返回 PermissionError: [WinError 5] 而变为 FAILED。
 - 处置：已增加 StateStore 单实例保存锁、Windows 短暂 PermissionError 的有限退避重试，并将 MCP 取消回归测试改为最长 10 秒的 terminal 状态轮询；Windows 原生完整测试仍需重新执行确认。
-- Linux 侧复验：上述修复后的完整 uv run pytest -q 已通过（123 passed，3 deselected），Ruff、compileall 和相关协议测试均通过。
+- Linux 侧历史复验：上述修复后的完整 uv run pytest -q 已通过（123 passed，3 deselected），Ruff、compileall 和相关协议测试均通过；本轮新增 glossary/context/thread state 后的最终结果见下方 Current Linux/WSL implementation verification。
 - 结论：Windows 原生构建、GUI、sidecar 和打包 smoke 仍通过；Windows 原生完整 pytest 仍需重新执行后，才能将跨平台 Python 质量门禁标记为稳定通过。
+
+## Current Linux/WSL implementation verification
+
+本轮非 Windows 开发完成后，在 2026-09-08 的 Linux/WSL 工作区复验：
+
+- `uv run pytest -q`：135 passed，3 deselected；
+- GUI `npm test -- --run`：14 passed；`npm run build`：通过；
+- Ruff format/check、Python compileall、JSON/YAML/Markdown checks：通过；
+- glossary CLI `list` smoke、MCP stdio smoke 和 glossary/context contract tests：通过；
+- PDF metadata/opening-page context adapter、thread identity persistence 和 mocked Codex `thread_resume` contract：通过；
+- 未生成或提交 glossary/context 用户文件；配置目录仅在本地运行时创建为空目录。
+
+上述结果不能替代 Windows 原生 packaged GUI、Windows 完整 pytest、Codex 客户端实际注册、真实 Codex thread resume/rotation 行为、目标 Linux 机器 smoke 或正式签名/发布验收。
 ## Upgrade policy
 
 Changing Python, BabelDOC, openai-codex or uv requires:

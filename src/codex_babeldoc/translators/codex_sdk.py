@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import threading
+from pathlib import Path
+
+from codex_babeldoc.translation.thread_state import ThreadStateStore
 
 from .base import TranslatorAdapter
 
@@ -21,9 +24,11 @@ class CodexSdkTranslator(TranslatorAdapter):
         lang_in: str,
         lang_out: str,
         *,
-        context_prompt: str,
+        context_prompt: str | None = None,
         model: str = "",
         effort: str = "low",
+        thread_state_path: str | None = None,
+        document_id: str | None = None,
     ) -> None:
         try:
             from openai_codex import Codex, Sandbox
@@ -34,26 +39,26 @@ class CodexSdkTranslator(TranslatorAdapter):
 
         self.lang_in = lang_in
         self.lang_out = lang_out
-        self.context_prompt = context_prompt
+        self.context_prompt = context_prompt or ""
         self.model = model or None
         self.effort = effort or None
         self._lock = threading.Lock()
         self._codex = Codex()
-        self._thread = self._codex.thread_start(sandbox=Sandbox.read_only)
+        self._thread_store = (
+            ThreadStateStore(Path(thread_state_path)) if thread_state_path else None
+        )
+        self._document_id = document_id
+        saved = self._thread_store.load(document_id) if self._thread_store and document_id else None
+        if saved is not None:
+            self._thread = self._codex.thread_resume(saved.thread_id, sandbox=Sandbox.read_only)
+        else:
+            self._thread = self._codex.thread_start(sandbox=Sandbox.read_only)
         self._prime_thread()
+        if self._thread_store is not None and self._document_id:
+            self._thread_store.rotate(self._document_id, self._thread.id)
 
     def _prime_thread(self) -> None:
-        prompt = (
-            "You are acting only as a machine-translation component inside a PDF "
-            "typesetting pipeline. "
-            f"Source language: {self.lang_in}. Target language: {self.lang_out}. "
-            f"{self.context_prompt} "
-            "For all subsequent translation turns, output ONLY the translated text. "
-            "Preserve placeholders such as <b1>, </b1>, {1}, formula tokens, URLs, "
-            "citation labels, and intentional line structure exactly when they are not "
-            "natural-language content. Never add markdown fences, commentary, notes, "
-            "or quotation marks around the answer. Reply exactly: READY"
-        )
+        prompt = build_prime_prompt(self.lang_in, self.lang_out, self.context_prompt)
         result = self._thread.run(
             prompt,
             model=self.model,
@@ -86,3 +91,18 @@ class CodexSdkTranslator(TranslatorAdapter):
         close = getattr(self._codex, "close", None)
         if callable(close):
             close()
+
+
+def build_prime_prompt(lang_in: str, lang_out: str, context_prompt: str = "") -> str:
+    """Build the exact-output prompt used to prime a Codex translation thread."""
+    return (
+        "You are acting only as a machine-translation component inside a PDF "
+        "typesetting pipeline. "
+        f"Source language: {lang_in}. Target language: {lang_out}. "
+        f"{context_prompt} "
+        "For all subsequent translation turns, output ONLY the translated text. "
+        "Preserve placeholders such as <b1>, </b1>, {1}, formula tokens, URLs, "
+        "citation labels, and intentional line structure exactly when they are not "
+        "natural-language content. Never add markdown fences, commentary, notes, "
+        "or quotation marks around the answer. Reply exactly: READY"
+    )

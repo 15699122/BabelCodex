@@ -7,6 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 from threading import Event
+from typing import ClassVar
 
 import pytest
 
@@ -24,6 +25,7 @@ from codex_babeldoc.backends.worker_protocol import (
     WorkerRequest,
     WorkerResult,
 )
+from codex_babeldoc.translators.codex_sdk import build_prime_prompt
 
 
 class TestProtocolRoundTrip:
@@ -78,6 +80,95 @@ class TestProtocolRoundTrip:
         assert spec.context_prompt is None
         assert spec.cache_enabled is True
         assert spec.cache_path is None
+
+    def test_translator_spec_context_fields_round_trip(self) -> None:
+        spec = TranslatorSpec(
+            name="mock",
+            lang_in="en",
+            lang_out="zh",
+            context_prompt="base\n\nterms",
+            glossary_prompt="terms",
+            glossary_version="g1",
+            context_version="c1",
+            thread_state_path="/tmp/threads",
+            document_id="paper",
+        )
+        restored = WorkerRequest.from_json(
+            WorkerRequest(request={"job_id": "job-1"}, translator=spec).to_json()
+        ).translator
+        assert restored.context_prompt == "base\n\nterms"
+        assert restored.glossary_prompt == "terms"
+        assert restored.glossary_version == "g1"
+        assert restored.context_version == "c1"
+        assert restored.thread_state_path == "/tmp/threads"
+        assert restored.document_id == "paper"
+
+    def test_codex_prime_prompt_contains_document_guidance(self) -> None:
+        prompt = build_prime_prompt("en", "zh", "Terms: model -> 模型\nTitle: A Paper")
+        assert "model -> 模型" in prompt
+        assert "Title: A Paper" in prompt
+        assert "Reply exactly: READY" in prompt
+        assert "markdown fences" in prompt
+
+    def test_codex_sdk_persists_thread_only_after_successful_prime(self, monkeypatch, tmp_path):
+        import sys
+        import types
+
+        class Result:
+            final_response = "READY"
+
+        class FakeThread:
+            def __init__(self, thread_id):
+                self.id = thread_id
+                self.prompts = []
+
+            def run(self, prompt, **kwargs):
+                self.prompts.append(prompt)
+                return Result()
+
+        class FakeCodex:
+            created: ClassVar[list[FakeThread]] = []
+            resumed: ClassVar[list[str]] = []
+
+            def thread_start(self, **kwargs):
+                thread = FakeThread("thread-new")
+                self.created.append(thread)
+                return thread
+
+            def thread_resume(self, thread_id, **kwargs):
+                self.resumed.append(thread_id)
+                return FakeThread(thread_id)
+
+            def close(self):
+                pass
+
+        fake_module = types.SimpleNamespace(
+            Codex=FakeCodex, Sandbox=types.SimpleNamespace(read_only="read_only")
+        )
+        monkeypatch.setitem(sys.modules, "openai_codex", fake_module)
+
+        from codex_babeldoc.translation.thread_state import ThreadStateStore
+        from codex_babeldoc.translators.codex_sdk import CodexSdkTranslator
+
+        state_root = tmp_path / "threads"
+        translator = CodexSdkTranslator(
+            "en",
+            "zh",
+            context_prompt="Title: Paper",
+            thread_state_path=str(state_root),
+            document_id="paper",
+        )
+        translator.close()
+        assert ThreadStateStore(state_root).load("paper").thread_id == "thread-new"
+
+        translator = CodexSdkTranslator(
+            "en",
+            "zh",
+            thread_state_path=str(state_root),
+            document_id="paper",
+        )
+        translator.close()
+        assert FakeCodex.resumed == ["thread-new"]
 
 
 class TestWorkerEntry:

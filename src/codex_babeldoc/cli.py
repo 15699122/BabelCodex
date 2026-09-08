@@ -7,11 +7,13 @@ import os
 import shutil
 import subprocess
 import sys
+from dataclasses import asdict
 from pathlib import Path
 
 from codex_babeldoc.application.service import BabelCodexService
 from codex_babeldoc.core.config import load_config
 from codex_babeldoc.core.orchestrator import Orchestrator
+from codex_babeldoc.translation.glossary import GlossaryStore
 
 
 def _configure_logging(log_dir: Path, verbose: bool) -> None:
@@ -116,6 +118,15 @@ def main(argv=None) -> int:
     mcp = sub.add_parser("mcp")
     mcp_sub = mcp.add_subparsers(dest="mcp_command", required=True)
     mcp_sub.add_parser("serve")
+    glossary = sub.add_parser("glossary")
+    glossary_sub = glossary.add_subparsers(dest="glossary_command", required=True)
+    glossary_sub.add_parser("list")
+    glossary_import = glossary_sub.add_parser("import")
+    glossary_import.add_argument("csv_path")
+    glossary_import.add_argument("--document")
+    glossary_export = glossary_sub.add_parser("export")
+    glossary_export.add_argument("csv_path")
+    glossary_export.add_argument("--document")
     args = parser.parse_args(argv)
 
     cfg = load_config(args.config)
@@ -127,6 +138,19 @@ def main(argv=None) -> int:
         from codex_babeldoc.application.mcp import serve
 
         serve(BabelCodexService(cfg), sys.stdin, sys.stdout)
+        return 0
+
+    if args.command == "glossary":
+        store = GlossaryStore(cfg.project.glossary_dir)
+        if args.glossary_command == "list":
+            entries = store.load()
+            print(json.dumps({"entries": [asdict(entry) for entry in entries]}, ensure_ascii=False))
+        elif args.glossary_command == "import":
+            count = store.import_csv(Path(args.csv_path).resolve(), document_stem=args.document)
+            print(json.dumps({"imported": count, "document": args.document}, ensure_ascii=False))
+        else:
+            count = store.export_csv(Path(args.csv_path).resolve(), document_stem=args.document)
+            print(json.dumps({"exported": count, "document": args.document}, ensure_ascii=False))
         return 0
 
     orch = Orchestrator(cfg)

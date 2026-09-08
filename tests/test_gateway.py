@@ -111,3 +111,27 @@ def test_gateway_translate_request_model():
     assert result.translated_text == "结果"
     assert result.validation_status == "valid"
     gw.close()
+
+
+def test_gateway_cache_isolated_by_glossary_and_context_versions(tmp_path):
+    cache_path = tmp_path / "cache.db"
+    first = _FakeTranslator("first")
+    first_gateway = TranslationGateway(
+        first,
+        cache=TranslationCache(cache_path),
+        glossary_version="g1",
+        context_version="c1",
+    )
+    first_gateway.translate("same")
+    first_gateway.close()
+
+    second = _FakeTranslator("second")
+    second_gateway = TranslationGateway(
+        second,
+        cache=TranslationCache(cache_path),
+        glossary_version="g2",
+        context_version="c1",
+    )
+    assert second_gateway.translate("same") == "second"
+    assert second.calls == ["same"]
+    second_gateway.close()

@@ -40,6 +40,8 @@ class TranslationGateway:
         model: str = "",
         effort: str = "",
         prompt_version: str = _PROMPT_VERSION,
+        glossary_version: str | None = None,
+        context_version: str | None = None,
     ) -> None:
         self._translator = translator
         self._cache = cache
@@ -51,6 +53,8 @@ class TranslationGateway:
         self._model = model
         self._effort = effort
         self._prompt_version = prompt_version or _PROMPT_VERSION
+        self._glossary_version = glossary_version
+        self._context_version = context_version
 
     # ------------------------------------------------------------------
     def translate(self, source_text: str) -> str:
@@ -64,6 +68,8 @@ class TranslationGateway:
             lang_in=self._lang_in,
             lang_out=self._lang_out,
             placeholders=inventory_from_text(source_text),
+            glossary_version=self._glossary_version,
+            context_version=self._context_version,
         )
         result = self.translate_request(request)
         return result.translated_text
