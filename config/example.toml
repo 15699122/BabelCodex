@@ -1,0 +1,35 @@
+[project]
+input_dir = "incoming"
+output_dir = "translated"
+state_dir = "state"
+log_dir = "logs"
+
+[translation]
+lang_in = "en"
+lang_out = "zh"
+translator = "codex-sdk"
+model = ""
+effort = "low"
+qps = 1
+min_text_length = 5
+no_mono = false
+no_dual = false
+watermark_output_mode = "no_watermark"
+auto_extract_glossary = false
+max_retries = 3
+
+[babeldoc]
+backend = "python-internal"
+working_dir = "state/babeldoc-work"
+translate_table_text = false
+ocr_workaround = false
+auto_enable_ocr_workaround = true
+enhance_compatibility = true
+
+[codex]
+# Reuses the existing Codex / ChatGPT login state.
+# Run `codex` or use the SDK login flow once before translation.
+thread_mode = "per-document"
+sandbox = "read_only"
+strict_output = true
+context_prompt = "Translate faithfully and preserve terminology. Do not explain the translation."
