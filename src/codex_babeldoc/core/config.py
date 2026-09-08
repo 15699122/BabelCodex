@@ -35,6 +35,7 @@ class TranslationConfig:
 class BabelDocConfig:
     backend: str = "python-internal"
     working_dir: Path = Path("state/babeldoc-work")
+    worker_mode: str = "subprocess"  # "subprocess" | "inprocess"
     translate_table_text: bool = False
     ocr_workaround: bool = False
     auto_enable_ocr_workaround: bool = True

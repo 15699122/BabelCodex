@@ -5,6 +5,8 @@ import time
 from pathlib import Path
 
 from codex_babeldoc.backends.babeldoc_internal import BabelDocInternalBackend
+from codex_babeldoc.backends.worker_client import build_worker_request, run_worker
+from codex_babeldoc.backends.worker_protocol import TranslatorSpec
 from codex_babeldoc.core.config import AppConfig
 from codex_babeldoc.core.errors import classify_exception
 from codex_babeldoc.core.state import JobStage, JobStatus, StateStore
@@ -46,6 +48,59 @@ class Orchestrator:
             lang_out=t.lang_out,
         )
 
+    def _translator_spec(self) -> TranslatorSpec:
+        t = self.cfg.translation
+        c = self.cfg.codex
+        return TranslatorSpec(
+            name=t.translator,
+            lang_in=t.lang_in,
+            lang_out=t.lang_out,
+            context_prompt=c.context_prompt or None,
+            model=t.model or None,
+            effort=t.effort or None,
+        )
+
+    def _translate_via_worker(self, source: Path) -> None:
+        b = self.cfg.babeldoc
+        t = self.cfg.translation
+        request = {
+            "job_id": f"job-{source.stem}",
+            "source_path": str(source),
+            "output_dir": str(self.cfg.project.output_dir),
+            "working_dir": str(b.working_dir / f"job-{source.stem}"),
+            "lang_in": t.lang_in,
+            "lang_out": t.lang_out,
+            "backend_name": b.backend,
+            "produce_mono": not t.no_mono,
+            "produce_dual": not t.no_dual,
+            "qps": t.qps,
+            "min_text_length": t.min_text_length,
+            "watermark_output_mode": t.watermark_output_mode,
+            "auto_extract_glossary": t.auto_extract_glossary,
+            "ocr_workaround": b.ocr_workaround,
+            "auto_enable_ocr_workaround": b.auto_enable_ocr_workaround,
+            "enhance_compatibility": b.enhance_compatibility,
+            "translate_table_text": b.translate_table_text,
+        }
+        spec = self._translator_spec()
+        worker_request = build_worker_request(
+            request,
+            {
+                "name": spec.name,
+                "lang_in": spec.lang_in,
+                "lang_out": spec.lang_out,
+                "context_prompt": spec.context_prompt,
+                "model": spec.model,
+                "effort": spec.effort,
+            },
+        )
+        run_worker(
+            worker_request,
+            working_dir=b.working_dir / f"job-{source.stem}",
+            job_id=f"job-{source.stem}",
+            on_progress=lambda event: log.info("worker %s: %s", event.stage, event.message or ""),
+        )
+
     def run_one(
         self,
         source: Path,
@@ -77,24 +132,27 @@ class Orchestrator:
             try:
                 job.stage = JobStage.TRANSLATING
                 self.state.save(job)
-                self.backend.translate(
-                    source,
-                    self.cfg.project.output_dir,
-                    lang_in=t.lang_in,
-                    lang_out=t.lang_out,
-                    translator_factory=self.translator_factory,
-                    no_mono=t.no_mono,
-                    no_dual=t.no_dual,
-                    qps=t.qps,
-                    min_text_length=t.min_text_length,
-                    working_dir=b.working_dir,
-                    watermark_output_mode=t.watermark_output_mode,
-                    auto_extract_glossary=t.auto_extract_glossary,
-                    ocr_workaround=b.ocr_workaround,
-                    auto_enable_ocr_workaround=b.auto_enable_ocr_workaround,
-                    enhance_compatibility=b.enhance_compatibility,
-                    translate_table_text=b.translate_table_text,
-                )
+                if b.worker_mode == "subprocess":
+                    self._translate_via_worker(source)
+                else:
+                    self.backend.translate(
+                        source,
+                        self.cfg.project.output_dir,
+                        lang_in=t.lang_in,
+                        lang_out=t.lang_out,
+                        translator_factory=self.translator_factory,
+                        no_mono=t.no_mono,
+                        no_dual=t.no_dual,
+                        qps=t.qps,
+                        min_text_length=t.min_text_length,
+                        working_dir=b.working_dir,
+                        watermark_output_mode=t.watermark_output_mode,
+                        auto_extract_glossary=t.auto_extract_glossary,
+                        ocr_workaround=b.ocr_workaround,
+                        auto_enable_ocr_workaround=b.auto_enable_ocr_workaround,
+                        enhance_compatibility=b.enhance_compatibility,
+                        translate_table_text=b.translate_table_text,
+                    )
                 job.status = JobStatus.COMPLETED
                 job.stage = JobStage.COMPLETED
                 job.completed_at = job.updated_at
