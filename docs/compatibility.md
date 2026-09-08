@@ -94,12 +94,12 @@ Windows 原生验证已于 2026-09-08 在 E 盘 checkout 完成一轮。以下�
 
 - 文件选择器、输入/输出 allowlist、路径空格、反斜杠、非 ASCII 用户目录、窗口关闭和输出目录打开的完整 GUI 交互矩阵；
 - 没有开发依赖、仓库目录或预置配置的干净 Windows 用户环境验收；本轮只完成 MSI 隔离解包、sidecar smoke 和 GUI 进程级启动；
-- Defender/SmartScreen 行为、签名发布、SBOM，以及 Linux target bundle；
-- 可重复的无覆盖参数 `tauri build` 配置。本轮 bundle 使用了命令行 `bundle.icon` JSON 覆盖，未修改 WSL 源配置。
+- Defender/SmartScreen 行为、签名发布、SBOM，以及 Linux 目标机实际 smoke/发布验收；Linux `.deb`/AppImage 构建脚本和 bundle audit 已在 WSL/Linux 侧完成并通过 fixture/实际构建验证；
+- 目标机运行矩阵和正式发布资源审计；512×512 方形图标已写入源配置，当前不再依赖命令行 `bundle.icon` 覆盖。
 
 原生 Windows 仍是必要条件，WSL/Linux 结果不能替代上述尚未完成的 GUI 交互验收：
 
-WSL/Linux 的 `cargo check`、浏览器端 Vitest 和 Vite build 可以作为先决检查，但不能替代原生 Windows packaged GUI smoke test。Windows 桌面边界测试应继续使用 mock transport/fixture；真实 Codex 集成另行标记为付费或 ChatGPT-plan integration test。
+WSL/Linux 的 `cargo check`、浏览器端 Vitest、Vite build、bundle audit 和 Linux `.deb`/AppImage 构建已通过，可作为先决检查，但不能替代原生 Windows packaged GUI smoke test 或目标 Linux 机器运行验证。Windows 桌面边界测试应继续使用 mock transport/fixture；真实 Codex 集成另行标记为付费或 ChatGPT-plan integration test。
 
 ## Upgrade policy
 

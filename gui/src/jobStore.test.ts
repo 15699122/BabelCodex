@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { JobStore } from "./jobStore";
 import { MockSidecarTransport } from "./sidecar";
+import type { SidecarTransport } from "./protocol";
 
 describe("JobStore", () => {
   beforeEach(() => {
@@ -77,5 +78,52 @@ describe("JobStore", () => {
     await vi.advanceTimersByTimeAsync(3000);
     expect(transport.requests.filter((request) => request.method === "get_job").length).toBe(beforeWatch + 2);
     await store.close();
+  });
+
+  it("schedules exponential reconnect after a polling failure and resets after success", async () => {
+    class FlakyTransport extends MockSidecarTransport implements SidecarTransport {
+      failPoll = true;
+
+      override async request<T>(method: string, params: Record<string, unknown> = {}): Promise<T> {
+        if (method === "poll_events" && this.failPoll) throw new Error("connection lost");
+        return super.request<T>(method, params);
+      }
+    }
+
+    const first = new FlakyTransport();
+    const second = new FlakyTransport();
+    first.failPoll = false;
+    second.failPoll = false;
+    const queued = [first, second];
+    const reconnectingStore = new JobStore(() => queued.shift() ?? new FlakyTransport());
+    await reconnectingStore.connect();
+    first.failPoll = true;
+    await vi.advanceTimersByTimeAsync(750);
+    expect(reconnectingStore.getSnapshot().connection.status).toBe("reconnecting");
+    expect(reconnectingStore.getSnapshot().notice).toContain("scheduled in 1s");
+    await vi.advanceTimersByTimeAsync(999);
+    expect(second.requests.map((request) => request.method)).not.toContain("start");
+    await vi.advanceTimersByTimeAsync(1);
+    await Promise.resolve();
+    expect(reconnectingStore.getSnapshot().connection.status).toBe("ready");
+    await reconnectingStore.close();
+  });
+
+  it("cleans a pending reconnect timer when closed", async () => {
+    class FailingPollTransport extends MockSidecarTransport {
+      override async request<T>(method: string, params: Record<string, unknown> = {}): Promise<T> {
+        if (method === "poll_events") throw new Error("offline");
+        return super.request<T>(method, params);
+      }
+    }
+
+    const transport = new FailingPollTransport();
+    const store = new JobStore(() => transport);
+    await store.connect();
+    await vi.advanceTimersByTimeAsync(750);
+    expect(store.getSnapshot().connection.status).toBe("reconnecting");
+    await store.close();
+    await vi.advanceTimersByTimeAsync(30000);
+    expect(transport.requests.filter((request) => request.method === "start")).toHaveLength(1);
   });
 });

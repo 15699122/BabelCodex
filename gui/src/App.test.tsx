@@ -59,6 +59,11 @@ describe("BabelCodex GUI shell", () => {
     expect(screen.getByText("STAGE TIMELINE")).toBeTruthy();
     expect(screen.getByText("Prepare runtime")).toBeTruthy();
     expect(screen.getByText("in progress")).toBeTruthy();
+    expect(screen.getByText("RESULT SUMMARY")).toBeTruthy();
+    expect(screen.getByText("1 · 24.3 KB")).toBeTruthy();
+    expect(screen.getByText("sha256 · mock-sha256")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Refresh job details" }));
+    expect(await screen.findByText("Refreshed mock-job-1")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "← Back to jobs" }));
     expect(screen.getByRole("heading", { name: "Recent jobs" })).toBeTruthy();
   });

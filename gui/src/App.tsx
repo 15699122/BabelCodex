@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Activity, ArrowUpRight, BookOpen, FolderOpen, Gauge, Library, Settings2, ShieldCheck } from "lucide-react";
+import { Activity, ArrowUpRight, BookOpen, CheckCircle2, FolderOpen, Gauge, Library, RefreshCw, Settings2, ShieldCheck } from "lucide-react";
 import { createFilePicker, isTauriRuntime } from "./filePicker";
 import { isActiveJob, JobStore } from "./jobStore";
 import type { Artifact, JobState } from "./protocol";
@@ -16,6 +16,7 @@ function App() {
   const store = useMemo(() => new JobStore(), []);
   const [snapshot, setSnapshot] = useState(() => store.getSnapshot());
   const [cancelling, setCancelling] = useState<string | null>(null);
+  const [refreshingJob, setRefreshingJob] = useState<string | null>(null);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const filePicker = useMemo(() => createFilePicker(), []);
@@ -96,6 +97,21 @@ function App() {
     }
   };
 
+  const refreshJob = async (jobId: string) => {
+    setRefreshingJob(jobId);
+    try {
+      await store.getJob(jobId);
+      setSnapshot((current) => ({ ...current, notice: `Refreshed ${jobId}` }));
+    } catch (error) {
+      setSnapshot((current) => ({
+        ...current,
+        notice: error instanceof Error ? error.message : "Unable to refresh job",
+      }));
+    } finally {
+      setRefreshingJob(null);
+    }
+  };
+
   const openJobDetails = async (jobId: string) => {
     setSelectedJobId(jobId);
     setView("details");
@@ -133,7 +149,7 @@ function App() {
 
         {view === "new" && <NewTranslation sourcePath={sourcePath} setSourcePath={setSourcePath} onStart={startTranslation} onPickPdf={pickPdf} onBrowserFile={handleBrowserFile} fileInputRef={fileInputRef} />}
         {view === "jobs" && <Jobs jobs={jobs} onCancel={cancelJob} cancelling={cancelling} onOpen={openJobDetails} />}
-        {view === "details" && selectedJobId && <JobDetails job={jobs.find((candidate) => candidate.job_id === selectedJobId) ?? null} onBack={() => setView("jobs")} onCancel={cancelJob} cancelling={cancelling} />}
+        {view === "details" && selectedJobId && <JobDetails job={jobs.find((candidate) => candidate.job_id === selectedJobId) ?? null} onBack={() => setView("jobs")} onCancel={cancelJob} cancelling={cancelling} onRefresh={refreshJob} refreshing={refreshingJob === selectedJobId} />}
         {view === "diagnostics" && <Diagnostics connection={snapshot.connection} onReconnect={() => void store.reconnect()} />}
         {view === "settings" && <Settings />}
       </section>
@@ -182,15 +198,17 @@ const TIMELINE_STAGES: Array<{ stage: JobState["stage"]; label: string }> = [
   { stage: "completed", label: "Completed" },
 ];
 
-function JobDetails({ job, onBack, onCancel, cancelling }: { job: JobState | null; onBack: () => void; onCancel: (jobId: string) => void; cancelling: string | null }) {
+function JobDetails({ job, onBack, onCancel, cancelling, onRefresh, refreshing }: { job: JobState | null; onBack: () => void; onCancel: (jobId: string) => void; cancelling: string | null; onRefresh: (jobId: string) => void; refreshing: boolean }) {
   if (!job) return <div className="content-column reveal"><Button variant="ghost" className="back-action" onClick={onBack}>← Back to jobs</Button><div className="empty-state">This job is no longer available.</div></div>;
   const artifacts = job.artifacts ?? [];
+  const artifactBytes = artifacts.reduce((total, artifact) => total + artifact.size, 0);
+  const validatedArtifacts = artifacts.filter((artifact) => artifact.validated).length;
   const activeIndex = TIMELINE_STAGES.findIndex((item) => item.stage === job.stage);
-  return <div className="content-column reveal"><div className="section-heading"><div><Button variant="ghost" className="back-action" onClick={onBack}>← Back to jobs</Button><span className="eyebrow">JOB DETAIL / 02</span><h2>{job.source_path.split("/").pop()}</h2></div><Badge variant={job.status === "completed" ? "success" : job.status === "failed" ? "destructive" : "warning"} className={`detail-status ${job.status}`}>{job.status.replaceAll("_", " ")}</Badge></div><Card className="timeline-card"><CardHeader className="card-label">STAGE TIMELINE</CardHeader><CardContent><div className="timeline">{TIMELINE_STAGES.map((item, index) => { const state = job.status === "completed" || index < activeIndex ? "complete" : index === activeIndex ? "current" : "pending"; return <div className={`timeline-step ${state}`} key={item.stage}><span className="timeline-marker">{state === "complete" ? "✓" : String(index + 1).padStart(2, "0")}</span><div><strong>{item.label}</strong><small>{state === "complete" ? "complete" : state === "current" ? "in progress" : "waiting"}</small></div></div>; })}</div></CardContent></Card><div className="detail-grid"><Card className="detail-card"><CardHeader className="card-label">RUN STATE</CardHeader><CardContent><div className="detail-facts"><Fact label="Job ID" value={job.job_id} /><Fact label="Stage" value={job.stage.replaceAll("_", " ")} /><Fact label="Attempts" value={String(job.attempts)} /><Fact label="QA" value={job.qa_status ?? "pending"} /><Fact label="Backend" value={job.backend_name || "not reported"} /><Fact label="Translator" value={job.translator_name || "not reported"} /><Fact label="Started" value={formatDate(job.started_at)} /><Fact label="Updated" value={formatDate(job.updated_at)} /></div>{job.safe_error_message && <div className="detail-error">{job.safe_error_message}</div>}{isActiveJob(job) && <Button variant="destructive" className="cancel-action detail-cancel" disabled={cancelling === job.job_id} onClick={() => onCancel(job.job_id)}>{cancelling === job.job_id ? "stopping" : "cancel job"}</Button>}</CardContent></Card><Card className="detail-card"><CardHeader className="card-label">OUTPUT ARTIFACTS</CardHeader><CardContent>{artifacts.length === 0 ? <div className="empty-state">No output artifacts reported yet.</div> : <div className="artifact-list">{artifacts.map((artifact) => <ArtifactRow artifact={artifact} key={`${artifact.artifact_type}-${artifact.path}`} />)}</div>}</CardContent></Card></div></div>;
+  return <div className="content-column reveal"><div className="section-heading"><div><Button variant="ghost" className="back-action" onClick={onBack}>← Back to jobs</Button><span className="eyebrow">JOB DETAIL / 02</span><h2>{job.source_path.split("/").pop()}</h2></div><div className="detail-heading-actions"><Badge variant={job.status === "completed" ? "success" : job.status === "failed" ? "destructive" : "warning"} className={`detail-status ${job.status}`}>{job.status.replaceAll("_", " ")}</Badge><Button variant="secondary" size="sm" aria-label="Refresh job details" onClick={() => onRefresh(job.job_id)} disabled={refreshing}><RefreshCw size={13} className={refreshing ? "spin" : undefined} />{refreshing ? "refreshing" : "refresh"}</Button></div></div><Card className="timeline-card"><CardHeader className="card-label">STAGE TIMELINE</CardHeader><CardContent><div className="timeline">{TIMELINE_STAGES.map((item, index) => { const state = job.status === "completed" || index < activeIndex ? "complete" : index === activeIndex ? "current" : "pending"; return <div className={`timeline-step ${state}`} key={item.stage}><span className="timeline-marker">{state === "complete" ? "✓" : String(index + 1).padStart(2, "0")}</span><div><strong>{item.label}</strong><small>{state === "complete" ? "complete" : state === "current" ? "in progress" : "waiting"}</small></div></div>; })}</div></CardContent></Card><Card className="result-summary"><CardHeader className="card-label"><CheckCircle2 size={16} /> RESULT SUMMARY</CardHeader><CardContent><div className="summary-grid"><Fact label="Job status" value={job.status.replaceAll("_", " ")} /><Fact label="QA result" value={job.qa_status ?? "pending"} /><Fact label="Artifacts" value={`${artifacts.length} · ${formatBytes(artifactBytes)}`} /><Fact label="Validated" value={`${validatedArtifacts}/${artifacts.length}`} /><Fact label="Completed" value={formatDate(job.completed_at)} /></div></CardContent></Card><div className="detail-grid"><Card className="detail-card"><CardHeader className="card-label">RUN STATE</CardHeader><CardContent><div className="detail-facts"><Fact label="Job ID" value={job.job_id} /><Fact label="Stage" value={job.stage.replaceAll("_", " ")} /><Fact label="Attempts" value={String(job.attempts)} /><Fact label="QA" value={job.qa_status ?? "pending"} /><Fact label="Backend" value={job.backend_name || "not reported"} /><Fact label="Translator" value={job.translator_name || "not reported"} /><Fact label="Started" value={formatDate(job.started_at)} /><Fact label="Updated" value={formatDate(job.updated_at)} /></div>{job.safe_error_message && <div className="detail-error">{job.safe_error_message}</div>}{isActiveJob(job) && <Button variant="destructive" className="cancel-action detail-cancel" disabled={cancelling === job.job_id} onClick={() => onCancel(job.job_id)}>{cancelling === job.job_id ? "stopping" : "cancel job"}</Button>}</CardContent></Card><Card className="detail-card"><CardHeader className="card-label">OUTPUT ARTIFACTS</CardHeader><CardContent>{artifacts.length === 0 ? <div className="empty-state">No output artifacts reported yet.</div> : <div className="artifact-list">{artifacts.map((artifact) => <ArtifactRow artifact={artifact} key={`${artifact.artifact_type}-${artifact.path}`} />)}</div>}</CardContent></Card></div></div>;
 }
 
 function Fact({ label, value }: { label: string; value: string }): React.ReactElement { return <div><span>{label}</span><strong>{value}</strong></div>; }
-function ArtifactRow({ artifact }: { artifact: Artifact }): React.ReactElement { return <div className="artifact-row"><div><strong>{artifact.artifact_type.replaceAll("_", " ")}</strong><span>{artifact.path}</span></div><div><small>{formatBytes(artifact.size)}</small><Badge variant={artifact.validated ? "success" : "warning"}>{artifact.validated ? "validated" : "pending"}</Badge></div></div>; }
+function ArtifactRow({ artifact }: { artifact: Artifact }): React.ReactElement { return <div className="artifact-row"><div><strong>{artifact.artifact_type.replaceAll("_", " ")}</strong><span>{artifact.path}</span>{artifact.sha256 && <small className="artifact-hash">sha256 · {artifact.sha256}</small>}</div><div><small>{formatBytes(artifact.size)}</small><Badge variant={artifact.validated ? "success" : "warning"}>{artifact.validated ? "validated" : "pending"}</Badge></div></div>; }
 function formatDate(value?: string): string { if (!value) return "not recorded"; const date = new Date(value); return Number.isNaN(date.valueOf()) ? value : date.toLocaleString(); }
 function formatBytes(value: number): string { if (value < 1024) return `${value} B`; if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`; return `${(value / (1024 * 1024)).toFixed(1)} MB`; }
 

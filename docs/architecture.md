@@ -728,6 +728,6 @@ Linux: BabelCodex-Linux-x86_64.tar.gz
 
 平台验证边界：
 
-- Linux/WSL：可验证 React/Vitest、Python contract、JSONL 协议、Rust 编译和 Linux bundle 准备；
+- Linux/WSL：已验证 React/Vitest、Python contract、JSONL 协议、Rust 编译、bundle audit 和 Linux `.deb`/AppImage 构建；目标 Linux 机器运行 smoke 仍需单独验收；
 - Windows 原生：已验证 Windows `.exe` sidecar、Tauri NSIS/MSI packaged bundle、WebView2 探测、MSI 解包后的 sidecar JSONL smoke 和 GUI 进程级启动；文件对话框、完整路径语义、权限 allowlist、退出清理和干净用户环境 GUI 交互仍未完成；
 - Windows 当前状态为“原生构建与包内 sidecar smoke 通过”，不是“可发布”；只有目标平台完整 packaged GUI smoke、签名/发布审计和剩余路径矩阵通过后，才能标记对应平台为可发布。

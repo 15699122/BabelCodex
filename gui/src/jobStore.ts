@@ -18,12 +18,17 @@ type Listener = (snapshot: JobStoreSnapshot) => void;
 type TransportFactory = () => SidecarTransport;
 
 const TERMINAL_STATUSES = new Set<JobState["status"]>(["completed", "failed", "cancelled"]);
+const RECONNECT_BASE_DELAY_MS = 1000;
+const RECONNECT_MAX_DELAY_MS = 30000;
 
 export class JobStore {
   private transport: SidecarTransport;
   private readonly createTransport: TransportFactory;
   private readonly listeners = new Set<Listener>();
   private pollTimer: ReturnType<typeof setInterval> | undefined;
+  private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+  private reconnectAttempt = 0;
+  private closed = false;
   private configPath = "config/example.toml";
   private snapshot: JobStoreSnapshot = {
     connection: { status: "starting" },
@@ -49,7 +54,9 @@ export class JobStore {
 
   async connect(configPath = this.configPath): Promise<void> {
     this.configPath = configPath;
+    this.closed = false;
     this.stopPolling();
+    this.stopReconnectTimer();
     this.setSnapshot({ connection: { status: "starting" }, notice: "Starting sidecar" });
     try {
       await this.transport.start(configPath);
@@ -61,6 +68,7 @@ export class JobStore {
         connection: { status: "ready", protocolVersion: 1 },
         notice: "Sidecar handshake ready",
       });
+      this.reconnectAttempt = 0;
       this.startPolling();
       await this.pollOnce();
     } catch (error) {
@@ -73,6 +81,7 @@ export class JobStore {
   }
 
   async reconnect(): Promise<void> {
+    this.stopReconnectTimer();
     const attempt = this.snapshot.connection.status === "reconnecting"
       ? this.snapshot.connection.attempt + 1
       : 1;
@@ -122,7 +131,9 @@ export class JobStore {
   }
 
   async close(): Promise<void> {
+    this.closed = true;
     this.stopPolling();
+    this.stopReconnectTimer();
     await this.transport.close();
   }
 
@@ -136,6 +147,27 @@ export class JobStore {
   private stopPolling(): void {
     if (this.pollTimer !== undefined) clearInterval(this.pollTimer);
     this.pollTimer = undefined;
+  }
+
+  private scheduleReconnect(error: unknown): void {
+    if (this.closed || this.reconnectTimer !== undefined) return;
+    this.stopPolling();
+    this.reconnectAttempt += 1;
+    const attempt = this.reconnectAttempt;
+    const delay = Math.min(RECONNECT_MAX_DELAY_MS, RECONNECT_BASE_DELAY_MS * 2 ** (attempt - 1));
+    this.setSnapshot({
+      connection: { status: "reconnecting", attempt },
+      notice: `Sidecar reconnect scheduled in ${Math.ceil(delay / 1000)}s: ${this.errorMessage(error)}`,
+    });
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = undefined;
+      void this.reconnect().catch(() => this.scheduleReconnect(error));
+    }, delay);
+  }
+
+  private stopReconnectTimer(): void {
+    if (this.reconnectTimer !== undefined) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = undefined;
   }
 
   private async refreshJobs(): Promise<void> {
@@ -170,11 +202,7 @@ export class JobStore {
       for (const event of result.events) jobs = this.applyEvent(jobs, event);
       this.setSnapshot({ jobs, lastSequence: Math.max(this.snapshot.lastSequence, result.next_sequence) });
     } catch (error) {
-      this.setSnapshot({
-        connection: { status: "reconnecting", attempt: 1 },
-        notice: `Sidecar reconnect required: ${this.errorMessage(error)}`,
-      });
-      this.stopPolling();
+      this.scheduleReconnect(error);
     }
   }
 
@@ -182,10 +210,7 @@ export class JobStore {
     try {
       return await this.transport.request<T>(method, params);
     } catch (error) {
-      this.setSnapshot({
-        connection: { status: "reconnecting", attempt: 1 },
-        notice: `Sidecar request failed: ${this.errorMessage(error)}`,
-      });
+      this.scheduleReconnect(error);
       throw error;
     }
   }
