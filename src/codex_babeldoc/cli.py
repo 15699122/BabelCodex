@@ -70,9 +70,10 @@ def collect_doctor_checks(cfg) -> dict[str, str | bool | None]:
         "codex_auth_message": codex_auth_message,
     }
     try:
-        import babeldoc
+        from codex_babeldoc.backends.babeldoc_v064 import detect_version
 
-        checks["babeldoc_python"] = getattr(babeldoc, "__version__", "installed")
+        version = detect_version()
+        checks["babeldoc_python"] = version if version else "installed"
     except Exception as exc:  # noqa: BLE001 - diagnostics must report broken imports
         checks["babeldoc_python"] = f"missing: {exc}"
     try:
