@@ -474,6 +474,7 @@ GUI 必须通过 Application Service 访问任务；Tauri Rust 层只负责窗�
 - sidecar 断线后进入 reconnect 状态，重连时重置事件游标，并使用 `list_jobs` 与活动任务 `get_job` 做状态校准；
 - 已覆盖 GUI 初始连接、任务创建、事件应用、取消、重连校准和 cleanup 测试；
 - 已完成一轮 Windows 原生 packaged 验证：Windows target-triple sidecar、NSIS/MSI bundle、MSI 隔离解包后的 sidecar JSONL smoke 和解包 GUI 进程级启动检查均通过；Tauri 文件选择、任务详情、阶段时间线和详情自动刷新已接入；
+- GUI 已采用本地 shadcn/ui 风格组件层：`Button`、`Card`、`Badge` 和 `Progress`，使用语义化 variants、CSS variables、focus ring 和可访问 progressbar；未新增 Radix/Tailwind 依赖，也未改变 sidecar/Tauri 权限边界；
 - 尚未完成完整 GUI 交互 E2E、干净用户环境验收、输入/输出 allowlist 与 Windows 路径矩阵、sidecar 自身重启编排、自动重连退避、Linux target bundle、签名/SBOM 和正式发布验收。
 
 ### Phase 10：Codex MCP Server Alpha
