@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 from codex_babeldoc.backends.babeldoc_internal import BabelDocInternalBackend
+from codex_babeldoc.backends.base import ProgressEvent
 from codex_babeldoc.backends.worker_client import build_worker_request, run_worker
 from codex_babeldoc.backends.worker_protocol import TranslatorSpec
 from codex_babeldoc.core.config import AppConfig
@@ -65,7 +67,12 @@ class Orchestrator:
             cache_ttl_seconds=t.cache_ttl_seconds,
         )
 
-    def _translate_via_worker(self, source: Path) -> None:
+    def _translate_via_worker(
+        self,
+        source: Path,
+        *,
+        on_progress: Callable[[ProgressEvent], None] | None = None,
+    ) -> None:
         b = self.cfg.babeldoc
         t = self.cfg.translation
         request = {
@@ -107,8 +114,25 @@ class Orchestrator:
             worker_request,
             working_dir=b.working_dir / f"job-{source.stem}",
             job_id=f"job-{source.stem}",
-            on_progress=lambda event: log.info("worker %s: %s", event.stage, event.message or ""),
+            on_progress=lambda event: self._forward_progress(event, on_progress),
         )
+
+    @staticmethod
+    def _forward_progress(
+        event,
+        on_progress: Callable[[ProgressEvent], None] | None,
+    ) -> None:
+        log.info("worker %s: %s", event.stage, event.message or "")
+        if on_progress is not None:
+            on_progress(
+                ProgressEvent(
+                    stage=event.stage,
+                    stage_current=event.stage_current,
+                    stage_total=event.stage_total,
+                    overall_progress=event.overall_progress,
+                    message=event.message,
+                )
+            )
 
     def run_one(
         self,
@@ -116,6 +140,7 @@ class Orchestrator:
         *,
         force: bool = False,
         invocation_source: str = "cli",
+        on_progress: Callable[[ProgressEvent], None] | None = None,
     ) -> str:
         job = self.state.load(source, config_fingerprint=self.cfg.fingerprint())
         job.invocation_source = invocation_source
@@ -147,25 +172,30 @@ class Orchestrator:
                 job.stage = JobStage.TRANSLATING
                 self.state.save(job)
                 if b.worker_mode == "subprocess":
-                    self._translate_via_worker(source)
+                    self._translate_via_worker(source, on_progress=on_progress)
                 else:
+                    backend_kwargs = {
+                        "lang_in": t.lang_in,
+                        "lang_out": t.lang_out,
+                        "translator_factory": self.translator_factory,
+                        "no_mono": t.no_mono,
+                        "no_dual": t.no_dual,
+                        "qps": t.qps,
+                        "min_text_length": t.min_text_length,
+                        "working_dir": b.working_dir,
+                        "watermark_output_mode": t.watermark_output_mode,
+                        "auto_extract_glossary": t.auto_extract_glossary,
+                        "ocr_workaround": b.ocr_workaround,
+                        "auto_enable_ocr_workaround": b.auto_enable_ocr_workaround,
+                        "enhance_compatibility": b.enhance_compatibility,
+                        "translate_table_text": b.translate_table_text,
+                    }
+                    if on_progress is not None:
+                        backend_kwargs["on_progress"] = on_progress
                     self.backend.translate(
                         source,
                         self.cfg.project.output_dir,
-                        lang_in=t.lang_in,
-                        lang_out=t.lang_out,
-                        translator_factory=self.translator_factory,
-                        no_mono=t.no_mono,
-                        no_dual=t.no_dual,
-                        qps=t.qps,
-                        min_text_length=t.min_text_length,
-                        working_dir=b.working_dir,
-                        watermark_output_mode=t.watermark_output_mode,
-                        auto_extract_glossary=t.auto_extract_glossary,
-                        ocr_workaround=b.ocr_workaround,
-                        auto_enable_ocr_workaround=b.auto_enable_ocr_workaround,
-                        enhance_compatibility=b.enhance_compatibility,
-                        translate_table_text=b.translate_table_text,
+                        **backend_kwargs,
                     )
                 job.status = JobStatus.COMPLETED
                 job.stage = JobStage.COMPLETED

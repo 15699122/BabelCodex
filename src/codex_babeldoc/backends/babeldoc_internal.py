@@ -13,6 +13,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from codex_babeldoc.backends.babeldoc_v064 import BabelDocV064Backend
+from codex_babeldoc.backends.base import ProgressEvent
 
 
 class BabelDocInternalBackend:
@@ -40,6 +41,7 @@ class BabelDocInternalBackend:
         auto_enable_ocr_workaround: bool,
         enhance_compatibility: bool,
         translate_table_text: bool,
+        on_progress: Callable[[ProgressEvent], None] | None = None,
     ) -> object:
         from codex_babeldoc.backends.base import PdfTranslateRequest
 
@@ -65,5 +67,8 @@ class BabelDocInternalBackend:
             enhance_compatibility=enhance_compatibility,
             translate_table_text=translate_table_text,
         )
-        result = self._backend.translate(request, translator_factory)
+        backend_kwargs = {}
+        if on_progress is not None:
+            backend_kwargs["on_progress"] = on_progress
+        result = self._backend.translate(request, translator_factory, **backend_kwargs)
         return result.raw

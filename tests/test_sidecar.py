@@ -11,6 +11,7 @@ from time import sleep
 
 from codex_babeldoc.application.service import BabelCodexService
 from codex_babeldoc.application.sidecar import PROTOCOL_VERSION, JsonlSidecar, run_jsonl
+from codex_babeldoc.backends.base import ProgressEvent
 from codex_babeldoc.core.config import load_config
 from codex_babeldoc.core.state import JobStage, JobStatus, StateStore
 
@@ -129,6 +130,16 @@ class _FakeService:
     def start_translation(self, command):
         if self.started is not None:
             self.started.set()
+        if command.on_progress is not None:
+            command.on_progress(
+                ProgressEvent(
+                    stage="render",
+                    stage_current=2,
+                    stage_total=4,
+                    overall_progress=0.5,
+                    message="halfway",
+                )
+            )
         if self.release is not None:
             self.release.wait(timeout=2)
         job = self.state.load(command.source_path, config_fingerprint=self.config.fingerprint())
@@ -183,6 +194,7 @@ def test_sidecar_event_polling_supports_incremental_cursor(tmp_path):
         "job_created",
         "status_changed",
     ]
+    initial_progress = [event for event in first["events"] if event["event_type"] == "progress"]
     cursor = first["next_sequence"]
     release.set()
     deadline = 1.0
@@ -196,11 +208,15 @@ def test_sidecar_event_polling_supports_incremental_cursor(tmp_path):
                 "job_id": job_id,
             }
         )[0]["result"]
-        if second["events"]:
+        if any(event["event_type"] == "job_completed" for event in second["events"]):
             break
         sleep(0.01)
         deadline -= 0.01
     assert second["events"][-1]["event_type"] == "job_completed"
+    progress = initial_progress + [
+        event for event in second["events"] if event["event_type"] == "progress"
+    ]
+    assert progress[0]["payload"]["overall_progress"] == 0.5
     sidecar.close()
 
 

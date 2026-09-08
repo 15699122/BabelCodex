@@ -17,6 +17,7 @@ from pathlib import Path
 from threading import Lock
 from typing import TextIO
 
+from codex_babeldoc.backends.base import ProgressEvent
 from codex_babeldoc.core.errors import BabelCodexError, ErrorCategory, ErrorCode, classify_exception
 from codex_babeldoc.core.events import EventType, JobEvent
 from codex_babeldoc.core.state import JobState, JobStatus
@@ -168,6 +169,7 @@ class JsonlSidecar:
                     source_path=source,
                     force=force,
                     invocation_source=InvocationSource.GUI,
+                    on_progress=lambda event: self._on_progress(running.job_id, event),
                 )
             )
             self._emit(
@@ -196,6 +198,19 @@ class JsonlSidecar:
         finally:
             with self._lock:
                 self._running.pop(running.job_id, None)
+
+    def _on_progress(self, job_id: str, event: ProgressEvent) -> None:
+        self._emit(
+            EventType.PROGRESS,
+            job_id,
+            {
+                "stage": event.stage,
+                "stage_current": event.stage_current,
+                "stage_total": event.stage_total,
+                "overall_progress": event.overall_progress,
+                "message": event.message,
+            },
+        )
 
     def _get_job(self, request: dict[str, object]) -> dict[str, object]:
         job_id = str(request.get("job_id", ""))

@@ -367,7 +367,7 @@ Fixture 内容：
 
 **优先级：P1 | 复杂度：L | 预计：4–7 个开发日**
 
-**状态：Python sidecar 协议切片已完成；Tauri、跨平台打包和桌面端 E2E 待完成（2026 年 9 月 8 日）**
+**状态：Python sidecar 协议与进度事件转发已完成；Tauri、跨平台打包和桌面端 E2E 待完成（2026 年 9 月 8 日）**
 
 任务：
 
@@ -388,8 +388,10 @@ Fixture 内容：
 - sidecar 复用 `BabelCodexService`，不复制 PDF 编排逻辑；
 - 支持受控的启动、查询、列表、取消请求和关闭请求；
 - 输入 PDF 强制限制在配置的 input allowlist 内；
-- 已覆盖协议往返、非法 JSON、协议错误、路径越界、shutdown 和无 shell 暴露测试；
-- 尚未实现 Tauri 2 host、Windows/Linux target triple 打包、实时事件流和桌面 E2E。
+- 支持带单调递增游标的 `poll_events`，并通过 `get_job` 支持断线后的状态校准；
+- worker 的标准化 `ProgressEvent` 已沿 Application Service 转发到 sidecar 事件队列；
+- 已覆盖协议往返、非法 JSON、协议错误、路径越界、shutdown、进度事件、后台失败事件和无 shell 暴露测试；
+- 尚未实现 Tauri 2 host、Windows/Linux target triple 打包、真实 worker 进程重启/终止控制和桌面 E2E。
 
 验收：GUI 不直接导入 BabelDOC；前端不执行系统 Python 或任意 shell；翻译期间界面不冻结；Windows 和 Linux 最小 GUI 可运行；sidecar 只允许固定二进制和受控参数。
 

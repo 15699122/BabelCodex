@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
+from codex_babeldoc.backends.base import ProgressEvent
 from codex_babeldoc.core.config import AppConfig
 from codex_babeldoc.core.orchestrator import Orchestrator
 from codex_babeldoc.core.state import JobState
@@ -20,6 +22,7 @@ class StartTranslationCommand:
     source_path: Path
     force: bool = False
     invocation_source: InvocationSource = InvocationSource.CLI
+    on_progress: Callable[[ProgressEvent], None] | None = None
 
 
 class BabelCodexService:
@@ -31,11 +34,13 @@ class BabelCodexService:
 
     def start_translation(self, command: StartTranslationCommand) -> JobState:
         resolved = command.source_path.resolve()
-        self.orchestrator.run_one(
-            resolved,
-            force=command.force,
-            invocation_source=command.invocation_source.value,
-        )
+        kwargs = {
+            "force": command.force,
+            "invocation_source": command.invocation_source.value,
+        }
+        if command.on_progress is not None:
+            kwargs["on_progress"] = command.on_progress
+        self.orchestrator.run_one(resolved, **kwargs)
         return self.orchestrator.state.load(
             resolved,
             config_fingerprint=self.config.fingerprint(),
