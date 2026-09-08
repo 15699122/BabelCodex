@@ -68,6 +68,8 @@ input:focus { border-color: var(--lime); box-shadow: 0 0 0 3px rgba(216, 232, 11
 .content-column { max-width: 980px; }
 .section-heading { display: flex; justify-content: space-between; align-items: end; margin-bottom: 34px; }
 .queue-badge { padding: 8px 10px; border: 1px solid rgba(142, 199, 156, .3); color: var(--green); font-size: 10px; text-transform: uppercase; }
+.reconnect-action { padding: 8px 10px; border: 1px solid rgba(216, 232, 117, .35); color: var(--lime); background: transparent; font-size: 10px; text-transform: uppercase; }
+.reconnect-action:hover { background: rgba(216, 232, 117, .08); }
 .job-list { border-top: 1px solid var(--line); }
 .job-row { display: grid; grid-template-columns: 14px minmax(260px, 1fr) 180px 18px; gap: 18px; align-items: center; padding: 22px 4px; border-bottom: 1px solid var(--line); }
 .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
@@ -76,11 +78,16 @@ input:focus { border-color: var(--lime); box-shadow: 0 0 0 3px rgba(216, 232, 11
 .job-main { display: grid; gap: 7px; min-width: 0; }
 .job-main strong { overflow: hidden; color: var(--ink); font-size: 12px; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
 .job-main span, .job-progress small { color: var(--muted); font-size: 9px; text-transform: uppercase; }
+.job-error { display: block; color: #e99857; font-size: 9px; line-height: 1.5; }
 .job-progress { display: flex; align-items: center; gap: 10px; }
 .progress-track { flex: 1; height: 4px; background: #2c362b; }
 .progress-track span { display: block; height: 100%; background: var(--orange); }
 .done-label { color: var(--green); font-size: 9px; text-transform: uppercase; }
 .muted-icon { color: var(--muted); }
+.cancel-action { padding: 7px 8px; border: 1px solid rgba(233, 152, 87, .35); color: var(--orange); background: transparent; font-size: 9px; text-transform: uppercase; }
+.cancel-action:hover:not(:disabled) { border-color: var(--orange); background: rgba(233, 152, 87, .08); }
+.cancel-action:disabled { cursor: wait; opacity: .55; }
+.empty-state { padding: 36px 4px; color: var(--muted); font-size: 11px; }
 .diagnostic-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .diag-card { min-height: 250px; padding: 24px; display: flex; flex-direction: column; gap: 16px; }
 .diag-card svg { color: var(--lime); }

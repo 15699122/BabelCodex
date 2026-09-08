@@ -1,66 +1,59 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Activity, ArrowUpRight, BookOpen, FolderOpen, Gauge, Library, Settings2, ShieldCheck } from "lucide-react";
-import { createSidecarTransport } from "./sidecar";
+import { isActiveJob, JobStore } from "./jobStore";
 import type { JobState } from "./protocol";
 
 type View = "new" | "jobs" | "diagnostics" | "settings";
 
-const sampleJobs: JobState[] = [
-  {
-    job_id: "job-paper-042",
-    source_path: "incoming / attention_is_all_you_need.pdf",
-    status: "completed",
-    stage: "completed",
-    attempts: 1,
-    safe_error_message: null,
-    updated_at: "2026-09-08T09:42:00Z",
-    completed_at: "2026-09-08T09:42:00Z",
-  },
-  {
-    job_id: "job-notes-019",
-    source_path: "incoming / latent_diffusion_notes.pdf",
-    status: "running",
-    stage: "rendering",
-    attempts: 1,
-    safe_error_message: null,
-    updated_at: "2026-09-08T10:18:00Z",
-    completed_at: "",
-  },
-];
-
 function App() {
   const [view, setView] = useState<View>("new");
   const [sourcePath, setSourcePath] = useState("");
-  const [jobs, setJobs] = useState<JobState[]>(sampleJobs);
-  const [notice, setNotice] = useState("Sidecar handshake ready");
-  const transport = useMemo(() => createSidecarTransport(), []);
+  const store = useMemo(() => new JobStore(), []);
+  const [snapshot, setSnapshot] = useState(() => store.getSnapshot());
+  const [cancelling, setCancelling] = useState<string | null>(null);
+
+  useEffect(() => {
+    const unsubscribe = store.subscribe(setSnapshot);
+    void store.connect().catch(() => undefined);
+    return () => {
+      unsubscribe();
+      void store.close();
+    };
+  }, [store]);
+
+  const jobs = snapshot.jobs;
 
   const startTranslation = async () => {
     if (!sourcePath.trim()) {
-      setNotice("Choose a PDF inside the configured input folder first.");
+      setSnapshot((current) => ({
+        ...current,
+        notice: "Choose a PDF inside the configured input folder first.",
+      }));
       return;
     }
     try {
-      const result = await transport.request<{ job_id: string; status: string }>("start_translation", {
-        source_path: sourcePath.trim(),
-      });
-      setJobs((current) => [
-        {
-          job_id: result.job_id,
-          source_path: sourcePath.trim(),
-          status: "running",
-          stage: "preparing_runtime",
-          attempts: 1,
-          safe_error_message: null,
-          updated_at: new Date().toISOString(),
-          completed_at: "",
-        },
-        ...current,
-      ]);
-      setNotice(`Started ${result.job_id}`);
+      const jobId = await store.startTranslation(sourcePath.trim());
       setView("jobs");
+      setSnapshot((current) => ({ ...current, notice: `Started ${jobId}` }));
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Unable to start translation");
+      setSnapshot((current) => ({
+        ...current,
+        notice: error instanceof Error ? error.message : "Unable to start translation",
+      }));
+    }
+  };
+
+  const cancelJob = async (jobId: string) => {
+    setCancelling(jobId);
+    try {
+      await store.cancel(jobId);
+    } catch (error) {
+      setSnapshot((current) => ({
+        ...current,
+        notice: error instanceof Error ? error.message : "Unable to cancel job",
+      }));
+    } finally {
+      setCancelling(null);
     }
   };
 
@@ -80,12 +73,12 @@ function App() {
       <section className="workspace">
         <header className="topbar">
           <div><span className="eyebrow">BABELCODEX / DESKTOP ALPHA</span><h1>{view === "new" ? "New translation" : view[0].toUpperCase() + view.slice(1)}</h1></div>
-          <div className="connection"><span className="pulse" /> {notice}</div>
+          <div className="connection"><span className="pulse" /> {snapshot.notice}</div>
         </header>
 
         {view === "new" && <NewTranslation sourcePath={sourcePath} setSourcePath={setSourcePath} onStart={startTranslation} />}
-        {view === "jobs" && <Jobs jobs={jobs} />}
-        {view === "diagnostics" && <Diagnostics />}
+        {view === "jobs" && <Jobs jobs={jobs} onCancel={cancelJob} cancelling={cancelling} />}
+        {view === "diagnostics" && <Diagnostics connection={snapshot.connection} onReconnect={() => void store.reconnect()} />}
         {view === "settings" && <Settings />}
       </section>
     </main>
@@ -116,11 +109,11 @@ function NewTranslation({ sourcePath, setSourcePath, onStart }: { sourcePath: st
   </div>;
 }
 
-function Jobs({ jobs }: { jobs: JobState[] }) {
-  return <div className="content-column reveal"><div className="section-heading"><div><span className="eyebrow">WORK QUEUE / 02</span><h2>Recent jobs</h2></div><span className="queue-badge">{jobs.filter((job) => job.status === "running").length} active</span></div><div className="job-list">{jobs.map((job) => <article className="job-row" key={job.job_id}><div className={`status-dot ${job.status}`} /><div className="job-main"><strong>{job.source_path.split("/").pop()}</strong><span>{job.job_id} · {job.stage.replaceAll("_", " ")}</span></div><div className="job-progress">{job.status === "running" ? <><div className="progress-track"><span style={{ width: "68%" }} /></div><small>68%</small></> : <span className="done-label">translated</span>}</div><ArrowUpRight size={17} className="muted-icon" /></article>)}</div></div>;
+function Jobs({ jobs, onCancel, cancelling }: { jobs: JobState[]; onCancel: (jobId: string) => void; cancelling: string | null }) {
+  return <div className="content-column reveal"><div className="section-heading"><div><span className="eyebrow">WORK QUEUE / 02</span><h2>Recent jobs</h2></div><span className="queue-badge">{jobs.filter(isActiveJob).length} active</span></div><div className="job-list">{jobs.length === 0 && <div className="empty-state">No translations yet. Queue a PDF from New translation.</div>}{jobs.map((job) => <article className="job-row" key={job.job_id}><div className={`status-dot ${job.status}`} /><div className="job-main"><strong>{job.source_path.split("/").pop()}</strong><span>{job.job_id} · {job.stage.replaceAll("_", " ")}</span>{job.safe_error_message && <small className="job-error">{job.safe_error_message}</small>}</div><div className="job-progress">{isActiveJob(job) ? <><div className="progress-track"><span style={{ width: job.status === "running" ? "68%" : "22%" }} /></div><small>{job.status.replaceAll("_", " ")}</small></> : <span className="done-label">{job.status}</span>}</div>{isActiveJob(job) ? <button className="cancel-action" disabled={cancelling === job.job_id} onClick={() => onCancel(job.job_id)}>{cancelling === job.job_id ? "stopping" : "cancel"}</button> : <ArrowUpRight size={17} className="muted-icon" />}</article>)}</div></div>;
 }
 
-function Diagnostics() { return <div className="content-column reveal"><div className="section-heading"><div><span className="eyebrow">SYSTEM CHECK / 03</span><h2>Quiet confidence</h2></div></div><div className="diagnostic-grid"><Diagnostic icon={<ShieldCheck />} title="Path allowlist" value="Enforced" detail="Input PDFs are scoped to the configured directory." /><Diagnostic icon={<Activity />} title="Sidecar protocol" value="v1 online" detail="JSONL request / response transport is available." /><Diagnostic icon={<Library />} title="Codex session" value="Not checked" detail="Live authentication is only used when a translation starts." /></div></div>; }
+function Diagnostics({ connection, onReconnect }: { connection: { status: string }; onReconnect: () => void }) { return <div className="content-column reveal"><div className="section-heading"><div><span className="eyebrow">SYSTEM CHECK / 03</span><h2>Quiet confidence</h2></div><button className="reconnect-action" onClick={onReconnect}>reconnect</button></div><div className="diagnostic-grid"><Diagnostic icon={<ShieldCheck />} title="Path allowlist" value="Enforced" detail="Input PDFs are scoped to the configured directory." /><Diagnostic icon={<Activity />} title="Sidecar protocol" value={connection.status === "ready" ? "v1 online" : connection.status} detail="JSONL request / response transport is available." /><Diagnostic icon={<Library />} title="Codex session" value="Not checked" detail="Live authentication is only used when a translation starts." /></div></div>; }
 function Diagnostic({ icon, title, value, detail }: { icon: React.ReactNode; title: string; value: string; detail: string }) { return <div className="diag-card card">{icon}<span className="eyebrow">{title}</span><strong>{value}</strong><p>{detail}</p></div>; }
 function Settings() { return <div className="content-column reveal"><div className="section-heading"><div><span className="eyebrow">RUNTIME / 04</span><h2>Settings</h2></div></div><div className="settings-card card"><div><span>Input directory</span><strong>configured in config.toml</strong></div><div><span>Translation mode</span><strong>Codex SDK · per-document thread</strong></div><div><span>Worker mode</span><strong>single-pass subprocess</strong></div></div></div>; }
 

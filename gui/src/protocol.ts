@@ -28,7 +28,13 @@ export interface JobState {
 }
 
 export interface JobEvent {
-  event_type: "job_created" | "status_changed" | "progress" | "job_failed" | "job_completed";
+  event_type:
+    | "job_created"
+    | "status_changed"
+    | "progress"
+    | "job_failed"
+    | "job_completed"
+    | "artifact_created";
   job_id: string;
   sequence: number;
   timestamp: string;
@@ -49,6 +55,7 @@ export interface SidecarResponse<T> {
 }
 
 export interface SidecarTransport {
+  start(configPath: string): Promise<void>;
   request<T>(method: string, params?: Record<string, unknown>): Promise<T>;
   close(): Promise<void>;
 }

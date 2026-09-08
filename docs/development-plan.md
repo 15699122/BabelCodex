@@ -431,6 +431,14 @@ GUI 页面信息架构：
 
 GUI 必须通过 Application Service 访问任务；Tauri Rust 层只负责窗口、文件对话框、受控 sidecar、协议转发和权限，不实现 PDF 翻译。
 
+当前 GUI Alpha 切片记录（2026 年 9 月 8 日）：
+
+- 已新增集中式 `JobStore`，统一管理 sidecar 启动、关闭、任务列表同步、事件游标和轮询；
+- 已实现 `start_translation`、`list_jobs`、`poll_events`、`get_job`、`cancel_job` 的前端 contract；
+- sidecar 断线后进入 reconnect 状态，重连时重置事件游标，并使用 `list_jobs` 与活动任务 `get_job` 做状态校准；
+- 已覆盖 GUI 初始连接、任务创建、事件应用、取消、重连校准和 cleanup 测试；
+- 尚未实现真实文件选择/拖放、任务详情/产物页、真实 packaged desktop smoke test、Windows/Linux 发布包和自动重连退避策略。
+
 ### Phase 10：Codex MCP Server Alpha
 
 **优先级：P1 | 复杂度：L | 预计：5–10 个开发日**

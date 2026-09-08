@@ -63,19 +63,34 @@ class TauriSidecarTransport implements SidecarTransport {
 }
 
 export class MockSidecarTransport implements SidecarTransport {
-  private sequence = 0;
-  private jobs: JobState[] = [];
+  private readonly state: {
+    sequence: number;
+    jobs: JobState[];
+    events: Array<import("./protocol").JobEvent>;
+  };
   readonly requests: Array<{ method: string; params: Record<string, unknown> }> = [];
+
+  constructor(state = { sequence: 0, jobs: [] as JobState[], events: [] as Array<import("./protocol").JobEvent> }) {
+    this.state = state;
+  }
+
+  async start(_configPath: string): Promise<void> {
+    this.requests.push({ method: "start", params: {} });
+  }
 
   async request<T>(method: string, params: Record<string, unknown> = {}): Promise<T> {
     this.requests.push({ method, params });
-    if (method === "list_jobs") return { jobs: this.jobs } as T;
+    if (method === "list_jobs") return { jobs: this.state.jobs } as T;
     if (method === "poll_events") {
-      return { events: [], next_sequence: this.sequence } as T;
+      const afterSequence = Number(params.after_sequence ?? 0);
+      return {
+        events: this.state.events.filter((event) => event.sequence > afterSequence),
+        next_sequence: this.state.sequence,
+      } as T;
     }
     if (method === "start_translation") {
       const job: JobState = {
-        job_id: `mock-job-${this.jobs.length + 1}`,
+        job_id: `mock-job-${this.state.jobs.length + 1}`,
         source_path: String(params.source_path ?? "sample.pdf"),
         status: "running",
         stage: "preparing_runtime",
@@ -84,8 +99,24 @@ export class MockSidecarTransport implements SidecarTransport {
         updated_at: new Date().toISOString(),
         completed_at: "",
       };
-      this.jobs = [job, ...this.jobs];
+      this.state.jobs = [job, ...this.state.jobs];
+      this.emit("job_created", job.job_id, { status: job.status, source_path: job.source_path });
+      this.emit("status_changed", job.job_id, { status: job.status });
       return { job_id: job.job_id, status: job.status } as T;
+    }
+    if (method === "cancel_job") {
+      const jobId = String(params.job_id ?? "");
+      const job = this.state.jobs.find((candidate) => candidate.job_id === jobId);
+      if (job && job.status === "running") {
+        job.status = "cancelled";
+        this.emit("status_changed", jobId, { status: "cancel_requested" });
+        this.emit("status_changed", jobId, { status: "cancelled" });
+      }
+      return { job_id: jobId, cancelled: Boolean(job), status: job?.status ?? null } as T;
+    }
+    if (method === "get_job") {
+      const jobId = String(params.job_id ?? "");
+      return { job: this.state.jobs.find((job) => job.job_id === jobId) ?? null } as T;
     }
     if (method === "shutdown") return { closing: true } as T;
     return {} as T;
@@ -93,6 +124,21 @@ export class MockSidecarTransport implements SidecarTransport {
 
   async close(): Promise<void> {
     this.requests.push({ method: "close", params: {} });
+  }
+
+  private emit(
+    event_type: import("./protocol").JobEvent["event_type"],
+    job_id: string,
+    payload: Record<string, unknown>,
+  ): void {
+    this.state.sequence += 1;
+    this.state.events.push({
+      event_type,
+      job_id,
+      sequence: this.state.sequence,
+      timestamp: new Date().toISOString(),
+      payload,
+    });
   }
 }
 
