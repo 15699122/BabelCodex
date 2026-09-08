@@ -3,9 +3,11 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-from pathlib import Path
+import os
 import shutil
+import subprocess
 import sys
+from pathlib import Path
 
 from codex_babeldoc.core.config import load_config
 from codex_babeldoc.core.orchestrator import Orchestrator
@@ -24,30 +26,82 @@ def _configure_logging(log_dir: Path, verbose: bool) -> None:
     )
 
 
-def doctor(cfg) -> int:
+def _bundled_codex_runtime() -> str | None:
+    try:
+        import codex_cli_bin
+    except ImportError:
+        return None
+
+    executable = "codex.exe" if os.name == "nt" else "codex"
+    path = Path(codex_cli_bin.__file__).resolve().parent / "bin" / executable
+    return str(path) if path.is_file() else None
+
+
+def _codex_auth_status(runtime: str | None) -> tuple[bool | None, str]:
+    if runtime is None:
+        return None, "runtime unavailable"
+    try:
+        result = subprocess.run(
+            [runtime, "login", "status"],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None, "status check failed"
+
+    message = (result.stdout or result.stderr).strip()
+    return result.returncode == 0, message or "unknown"
+
+
+def collect_doctor_checks(cfg) -> dict[str, str | bool | None]:
+    bundled_runtime = _bundled_codex_runtime()
+    codex_cli = shutil.which("codex")
+    codex_runtime = codex_cli or bundled_runtime
+    codex_authenticated, codex_auth_message = _codex_auth_status(codex_runtime)
     checks = {
         "python": sys.version.split()[0],
+        "python_supported": (3, 11) <= sys.version_info[:2] < (3, 13),
         "babeldoc_cli": shutil.which("babeldoc"),
-        "codex_cli": shutil.which("codex"),
+        "codex_cli": codex_cli,
+        "codex_bundled_runtime": bundled_runtime,
+        "codex_authenticated": codex_authenticated,
+        "codex_auth_message": codex_auth_message,
     }
     try:
         import babeldoc
+
         checks["babeldoc_python"] = getattr(babeldoc, "__version__", "installed")
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - diagnostics must report broken imports
         checks["babeldoc_python"] = f"missing: {exc}"
     try:
         import openai_codex
+
         checks["openai_codex"] = getattr(openai_codex, "__version__", "installed")
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - diagnostics must report broken imports
         checks["openai_codex"] = f"missing: {exc}"
     checks["input_dir"] = str(cfg.project.input_dir)
     checks["output_dir"] = str(cfg.project.output_dir)
+    return checks
+
+
+def doctor(cfg) -> int:
+    checks = collect_doctor_checks(cfg)
     print(json.dumps(checks, ensure_ascii=False, indent=2))
-    return 0
+    critical_values = (
+        checks["python_supported"],
+        checks["babeldoc_cli"],
+        checks["babeldoc_python"],
+        checks["openai_codex"],
+        checks["codex_cli"] or checks["codex_bundled_runtime"],
+        checks["codex_authenticated"],
+    )
+    return 0 if all(critical_values) else 1
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(prog="cbpdf")
+    parser = argparse.ArgumentParser(prog="babelcodex")
     parser.add_argument("--config", default="config/example.toml")
     parser.add_argument("--verbose", action="store_true")
     sub = parser.add_subparsers(dest="command", required=True)

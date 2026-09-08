@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 import time
+from pathlib import Path
 
 from codex_babeldoc.backends.babeldoc_internal import BabelDocInternalBackend
 from codex_babeldoc.core.config import AppConfig
 from codex_babeldoc.core.state import StateStore
 from codex_babeldoc.translators.codex_sdk import CodexSdkTranslator
 from codex_babeldoc.translators.mock import MockTranslator
-
 
 log = logging.getLogger(__name__)
 
@@ -74,7 +73,7 @@ class Orchestrator:
                 job.last_error = None
                 self.state.save(job)
                 return "completed"
-            except Exception as exc:  # boundary: record and retry
+            except Exception as exc:
                 last_error = str(exc)
                 job.status = "failed"
                 job.last_error = last_error
@@ -89,6 +88,6 @@ class Orchestrator:
         for source in self.discover():
             try:
                 results[source.name] = self.run_one(source, force=force)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - batch boundary isolates documents
                 results[source.name] = f"failed: {exc}"
         return results

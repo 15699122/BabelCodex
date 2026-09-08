@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
-from hashlib import sha256
 import json
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
+from hashlib import sha256
 from pathlib import Path
 
 
@@ -17,7 +17,7 @@ class JobState:
     updated_at: str = ""
 
     def touch(self) -> None:
-        self.updated_at = datetime.now(timezone.utc).isoformat()
+        self.updated_at = datetime.now(UTC).isoformat()
 
 
 def file_fingerprint(path: Path) -> str:

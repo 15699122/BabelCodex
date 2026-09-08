@@ -73,6 +73,7 @@ incoming/*.pdf
 - `docs/development-plan.md`：阶段、工作包、里程碑与验收标准
 - `docs/decisions.md`：参考项目对比与架构决策记录
 - `docs/privacy.md`：本地数据、Codex 数据流和公开仓库边界
+- `docs/compatibility.md`：已验证的 Python、uv、BabelDOC 和 Codex SDK 基线
 - `CONTRIBUTING.md`：贡献流程与数据规则
 - `SECURITY.md`：安全边界与漏洞报告方式
 
@@ -221,6 +222,8 @@ This downloads/verifies its required assets before the first real translation.
 ```bash
 uv run cbpdf --config config/example.toml doctor
 ```
+
+`doctor` returns a non-zero status when critical runtime checks fail or Codex is not authenticated. It reports the SDK-bundled Codex runtime separately from a system-wide `codex` command.
 
 Expected fields include detection of:
 

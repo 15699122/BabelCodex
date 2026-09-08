@@ -83,8 +83,9 @@ BabelDOC warns that direct Python APIs are internal. Treat every direct import a
 - Overall architecture: `docs/architecture.md`
 - Detailed development plan: `docs/development-plan.md`
 - Architecture decisions and reference-project comparison: `docs/decisions.md`
+- Verified runtime compatibility: `docs/compatibility.md`
 
-Phase 0A public GitHub bootstrap is complete. The current implementation order is Phase 0B environment baseline → Phase 1 domain/error model → Phase 2 placeholder/output validation → Phase 3 BabelDOC compatibility layer → Phase 4 worker process → Phase 5 mock/live vertical slice → Phase 6 batching/cache → Phase 8 GUI sidecar spike → Phase 9 GUI Alpha/packaging → Phase 10 Codex MCP Server → Phase 11 glossary/context → Phase 12 recovery → Phase 13 PDF QA. Phase 14 Two-phase remains experimental.
+Phase 0A public GitHub bootstrap is complete. Phase 0B dependency, CI and BabelDOC warmup work is complete, but live Codex authentication is still required. The current implementation order is Phase 1 domain/error model → Phase 2 placeholder/output validation → Phase 3 BabelDOC compatibility layer → Phase 4 worker process → Phase 5 mock/live vertical slice → Phase 6 batching/cache → Phase 8 GUI sidecar spike → Phase 9 GUI Alpha/packaging → Phase 10 Codex MCP Server → Phase 11 glossary/context → Phase 12 recovery → Phase 13 PDF QA. Phase 14 Two-phase remains experimental.
 
 ## GUI framework baseline
 

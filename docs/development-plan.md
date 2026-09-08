@@ -149,6 +149,8 @@ BabelDOC 0.6.x Python 高层 API
 
 **优先级：P0 | 复杂度：M | 预计：2–4 个开发日**
 
+**状态：工程基线已完成；Codex 用户登录待完成（2026 年 9 月 8 日）**
+
 任务：
 
 1. 安装 Python 3.12
@@ -174,6 +176,19 @@ uv run cbpdf --config config/example.toml doctor
 ```
 
 全部可执行，且 `doctor` 对缺失依赖返回非零退出码。
+
+当前完成记录：
+
+- 已安装 uv 0.12.10；
+- 已由 uv 安装并固定 CPython 3.12.14；
+- 已生成 `uv.lock`，解析 95 个包；
+- 已安装 BabelDOC 0.6.4、openai-codex 0.147.0 和 bundled Codex runtime 0.147.0；
+- BabelDOC warmup 已完成；
+- Ruff format、Ruff check 和 6 个单元测试通过；
+- GitHub Actions CI 已建立；
+- `doctor` 已区分系统 Codex CLI、SDK bundled runtime 和认证状态。
+
+当前阻塞项：Codex runtime 返回 `Not logged in`。用户完成 ChatGPT 登录并使 `doctor` 返回 0 后，Phase 0B 才完全关闭。
 
 ### Phase 1：稳定领域模型和错误框架
 

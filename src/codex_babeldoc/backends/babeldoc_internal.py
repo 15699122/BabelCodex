@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 
 class BabelDocInternalBackend:
@@ -73,6 +73,7 @@ class BabelDocInternalBackend:
         table_model = None
         if kw.pop("translate_table_text"):
             from babeldoc.docvision.table_detection.rapidocr import RapidOCRModel
+
             table_model = RapidOCRModel()
 
         mode_map = {
