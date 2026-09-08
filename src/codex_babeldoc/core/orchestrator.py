@@ -8,6 +8,7 @@ from codex_babeldoc.backends.babeldoc_internal import BabelDocInternalBackend
 from codex_babeldoc.core.config import AppConfig
 from codex_babeldoc.core.errors import classify_exception
 from codex_babeldoc.core.state import JobStage, JobStatus, StateStore
+from codex_babeldoc.translation.retry import ValidatingTranslator
 from codex_babeldoc.translators.codex_sdk import CodexSdkTranslator
 from codex_babeldoc.translators.mock import MockTranslator
 
@@ -28,16 +29,22 @@ class Orchestrator:
         t = self.cfg.translation
         c = self.cfg.codex
         if t.translator == "mock":
-            return MockTranslator()
-        if t.translator == "codex-sdk":
-            return CodexSdkTranslator(
+            inner: object = MockTranslator()
+        elif t.translator == "codex-sdk":
+            inner = CodexSdkTranslator(
                 t.lang_in,
                 t.lang_out,
                 context_prompt=c.context_prompt,
                 model=t.model,
                 effort=t.effort,
             )
-        raise ValueError(f"Unknown translator: {t.translator}")
+        else:
+            raise ValueError(f"Unknown translator: {t.translator}")
+        return ValidatingTranslator(
+            inner,
+            lang_in=t.lang_in,
+            lang_out=t.lang_out,
+        )
 
     def run_one(
         self,
