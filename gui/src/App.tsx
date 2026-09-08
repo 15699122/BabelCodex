@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Activity, ArrowUpRight, BookOpen, FolderOpen, Gauge, Library, Settings2, ShieldCheck } from "lucide-react";
+import { createFilePicker, isTauriRuntime } from "./filePicker";
 import { isActiveJob, JobStore } from "./jobStore";
 import type { JobState } from "./protocol";
 
@@ -11,6 +12,8 @@ function App() {
   const store = useMemo(() => new JobStore(), []);
   const [snapshot, setSnapshot] = useState(() => store.getSnapshot());
   const [cancelling, setCancelling] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const filePicker = useMemo(() => createFilePicker(), []);
 
   useEffect(() => {
     const unsubscribe = store.subscribe(setSnapshot);
@@ -41,6 +44,37 @@ function App() {
         notice: error instanceof Error ? error.message : "Unable to start translation",
       }));
     }
+  };
+
+  const applyPickedPdf = (picked: { path: string; displayName: string } | null) => {
+    if (!picked) return;
+    setSourcePath(picked.path);
+    setSnapshot((current) => ({ ...current, notice: `Selected ${picked.displayName}` }));
+  };
+
+  const pickPdf = async () => {
+    try {
+      if (!isTauriRuntime()) {
+        fileInputRef.current?.click();
+        return;
+      }
+      applyPickedPdf(await filePicker.pickPdf());
+    } catch (error) {
+      setSnapshot((current) => ({
+        ...current,
+        notice: error instanceof Error ? error.message : "Unable to open file picker",
+      }));
+    }
+  };
+
+  const handleBrowserFile = (file: File | undefined) => {
+    if (!file) return;
+    const picked = filePicker.fromBrowserFile(file);
+    if (!picked) {
+      setSnapshot((current) => ({ ...current, notice: "Choose a PDF file." }));
+      return;
+    }
+    applyPickedPdf(picked);
   };
 
   const cancelJob = async (jobId: string) => {
@@ -76,7 +110,7 @@ function App() {
           <div className="connection"><span className="pulse" /> {snapshot.notice}</div>
         </header>
 
-        {view === "new" && <NewTranslation sourcePath={sourcePath} setSourcePath={setSourcePath} onStart={startTranslation} />}
+        {view === "new" && <NewTranslation sourcePath={sourcePath} setSourcePath={setSourcePath} onStart={startTranslation} onPickPdf={pickPdf} onBrowserFile={handleBrowserFile} fileInputRef={fileInputRef} />}
         {view === "jobs" && <Jobs jobs={jobs} onCancel={cancelJob} cancelling={cancelling} />}
         {view === "diagnostics" && <Diagnostics connection={snapshot.connection} onReconnect={() => void store.reconnect()} />}
         {view === "settings" && <Settings />}
@@ -89,7 +123,7 @@ function NavButton({ active, icon, label, count, onClick }: { active: boolean; i
   return <button className={`nav-item ${active ? "active" : ""}`} onClick={onClick}>{icon}<span>{label}</span>{count !== undefined && <b>{count}</b>}</button>;
 }
 
-function NewTranslation({ sourcePath, setSourcePath, onStart }: { sourcePath: string; setSourcePath: (value: string) => void; onStart: () => void }) {
+function NewTranslation({ sourcePath, setSourcePath, onStart, onPickPdf, onBrowserFile, fileInputRef }: { sourcePath: string; setSourcePath: (value: string) => void; onStart: () => void; onPickPdf: () => void; onBrowserFile: (file: File | undefined) => void; fileInputRef: React.RefObject<HTMLInputElement | null> }) {
   return <div className="page-grid reveal">
     <div className="hero-panel">
       <div className="hero-kicker">01 / DOCUMENT INTAKE</div>
@@ -100,8 +134,9 @@ function NewTranslation({ sourcePath, setSourcePath, onStart }: { sourcePath: st
     <div className="intake-card card">
       <div className="card-label"><FolderOpen size={16} /> SOURCE PDF</div>
       <label htmlFor="source-path">Input path</label>
-      <input id="source-path" value={sourcePath} onChange={(event) => setSourcePath(event.target.value)} placeholder="/input/folder/research-paper.pdf" />
-      <div className="drop-zone"><BookOpen size={25} /><span>Drop a PDF here</span><small>or paste an allowlisted path above</small></div>
+      <div className="path-input-row"><input id="source-path" value={sourcePath} onChange={(event) => setSourcePath(event.target.value)} placeholder="/input/folder/research-paper.pdf" /><button className="browse-action" type="button" onClick={onPickPdf}>Browse</button></div>
+      <input ref={fileInputRef} className="visually-hidden" type="file" accept="application/pdf,.pdf" onChange={(event) => onBrowserFile(event.target.files?.[0])} />
+      <div className="drop-zone" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); onBrowserFile(event.dataTransfer.files[0]); }}><BookOpen size={25} /><span>Drop a PDF here</span><small>or browse / paste an allowlisted path above</small></div>
       <div className="field-pair"><div><label>From</label><div className="select-like">English <span>⌄</span></div></div><div><label>To</label><div className="select-like">简体中文 <span>⌄</span></div></div></div>
       <button className="primary-action" onClick={onStart}>Queue translation <ArrowUpRight size={17} /></button>
       <div className="safe-note"><ShieldCheck size={14} /> Files stay inside your configured workspace.</div>

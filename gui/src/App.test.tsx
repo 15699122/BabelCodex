@@ -9,6 +9,17 @@ describe("BabelCodex GUI shell", () => {
     expect(screen.getByLabelText("Input path")).toBeTruthy();
     expect(screen.getByText("Files stay inside your configured workspace.")).toBeTruthy();
     expect(await screen.findByText("Sidecar handshake ready")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Browse" })).toBeTruthy();
+  });
+
+  it("accepts a dropped PDF and rejects a non-PDF", async () => {
+    render(<App />);
+    expect(await screen.findByText("Sidecar handshake ready")).toBeTruthy();
+    const dropZone = screen.getByText("Drop a PDF here").parentElement!;
+    fireEvent.drop(dropZone, { dataTransfer: { files: [new File(["pdf"], "dropped.pdf", { type: "application/pdf" })] } });
+    expect((screen.getByLabelText("Input path") as HTMLInputElement).value).toBe("dropped.pdf");
+    fireEvent.drop(dropZone, { dataTransfer: { files: [new File(["txt"], "notes.txt", { type: "text/plain" })] } });
+    expect(await screen.findByText("Choose a PDF file.")).toBeTruthy();
   });
 
   it("switches between the task workbench views", async () => {
