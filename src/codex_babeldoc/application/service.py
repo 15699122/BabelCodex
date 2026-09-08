@@ -4,6 +4,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
+from threading import Event
 
 from codex_babeldoc.backends.base import ProgressEvent
 from codex_babeldoc.core.config import AppConfig
@@ -23,6 +24,7 @@ class StartTranslationCommand:
     force: bool = False
     invocation_source: InvocationSource = InvocationSource.CLI
     on_progress: Callable[[ProgressEvent], None] | None = None
+    cancel_event: Event | None = None
 
 
 class BabelCodexService:
@@ -40,6 +42,8 @@ class BabelCodexService:
         }
         if command.on_progress is not None:
             kwargs["on_progress"] = command.on_progress
+        if command.cancel_event is not None:
+            kwargs["cancel_event"] = command.cancel_event
         self.orchestrator.run_one(resolved, **kwargs)
         return self.orchestrator.state.load(
             resolved,

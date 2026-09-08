@@ -162,6 +162,18 @@ class _FailingService(_FakeService):
         raise RuntimeError("expected fake failure")
 
 
+class _CancellableService(_FakeService):
+    def start_translation(self, command):
+        if self.started is not None:
+            self.started.set()
+        assert command.cancel_event is not None
+        command.cancel_event.wait(timeout=2)
+        job = self.state.load(command.source_path, config_fingerprint=self.config.fingerprint())
+        job.status = JobStatus.CANCELLED
+        self.state.save(job)
+        return job
+
+
 def test_sidecar_event_polling_supports_incremental_cursor(tmp_path):
     incoming = tmp_path / "incoming"
     incoming.mkdir()
@@ -296,4 +308,106 @@ def test_sidecar_emits_failure_event_for_background_exception(tmp_path):
         sleep(0.01)
     assert events[-1]["event_type"] == "job_failed"
     assert events[-1]["payload"]["error"]["category"] == "unknown"
+    sidecar.close()
+
+
+def test_sidecar_restart_reconciles_persisted_job_state(tmp_path):
+    incoming = tmp_path / "incoming"
+    incoming.mkdir()
+    source = incoming / "persisted.pdf"
+    source.write_bytes(b"%PDF-test")
+    service = _FakeService(tmp_path)
+    sidecar = JsonlSidecar(service)
+    start = sidecar.handle(
+        {
+            "protocol_version": PROTOCOL_VERSION,
+            "request_id": "start",
+            "method": "start_translation",
+            "source_path": str(source),
+        }
+    )[0]
+    job_id = start["result"]["job_id"]
+    sidecar._executor.shutdown(wait=True)
+    sidecar.close()
+
+    restarted = JsonlSidecar(_FakeService(tmp_path))
+    response = restarted.handle(
+        {
+            "protocol_version": PROTOCOL_VERSION,
+            "request_id": "reconnect",
+            "method": "get_job",
+            "job_id": job_id,
+        }
+    )[0]
+    assert response["ok"] is True
+    assert response["result"]["job"]["job_id"] == job_id
+    assert response["result"]["job"]["status"] == "completed"
+    restarted.close()
+
+
+def test_sidecar_cancels_running_job_and_persists_terminal_state(tmp_path):
+    incoming = tmp_path / "incoming"
+    incoming.mkdir()
+    source = incoming / "cancel-running.pdf"
+    source.write_bytes(b"%PDF-test")
+    started = Event()
+    service = _CancellableService(tmp_path, started=started)
+    sidecar = JsonlSidecar(service)
+    start = sidecar.handle(
+        {
+            "protocol_version": PROTOCOL_VERSION,
+            "request_id": "start",
+            "method": "start_translation",
+            "source_path": str(source),
+        }
+    )[0]
+    job_id = start["result"]["job_id"]
+    assert started.wait(timeout=1)
+
+    cancel = sidecar.handle(
+        {
+            "protocol_version": PROTOCOL_VERSION,
+            "request_id": "cancel",
+            "method": "cancel_job",
+            "job_id": job_id,
+        }
+    )[0]
+    assert cancel["result"] == {
+        "job_id": job_id,
+        "cancelled": True,
+        "status": "cancel_requested",
+    }
+
+    terminal_events = []
+    for _ in range(100):
+        events = sidecar.handle(
+            {
+                "protocol_version": PROTOCOL_VERSION,
+                "request_id": "poll-terminal",
+                "method": "poll_events",
+                "job_id": job_id,
+            }
+        )[0]["result"]["events"]
+        terminal_events.extend(events)
+        if any(
+            event["event_type"] == "status_changed" and event["payload"]["status"] == "cancelled"
+            for event in terminal_events
+        ):
+            break
+        sleep(0.01)
+    assert any(
+        event["event_type"] == "status_changed" and event["payload"]["status"] == "cancelled"
+        for event in terminal_events
+    )
+    assert not any(event["event_type"] == "job_failed" for event in terminal_events)
+    assert not any(event["event_type"] == "job_completed" for event in terminal_events)
+    job = sidecar.handle(
+        {
+            "protocol_version": PROTOCOL_VERSION,
+            "request_id": "get-cancelled",
+            "method": "get_job",
+            "job_id": job_id,
+        }
+    )[0]["result"]["job"]
+    assert job["status"] == "cancelled"
     sidecar.close()

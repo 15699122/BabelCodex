@@ -6,11 +6,13 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from threading import Event
 
 import pytest
 
 from codex_babeldoc.backends.worker_client import (
     WorkerClientError,
+    _communicate,
     build_worker_request,
     run_worker,
 )
@@ -156,3 +158,36 @@ class TestRunWorker:
         payload = json.loads(files[0].read_text(encoding="utf-8"))
         assert payload["request"]["job_id"] == "job-x"
         assert payload["translator"]["name"] == "mock"
+
+    def test_client_terminates_worker_when_cancelled(self) -> None:
+        class FakeProcess:
+            returncode = -15
+
+            def __init__(self) -> None:
+                self.terminated = False
+                self.killed = False
+
+            def terminate(self) -> None:
+                self.terminated = True
+
+            def kill(self) -> None:
+                self.killed = True
+
+            def communicate(self, timeout=None):
+                return "", "worker stopped"
+
+            def poll(self):
+                return self.returncode
+
+            def wait(self, timeout=None):
+                return self.returncode
+
+        process = FakeProcess()
+        cancel_event = Event()
+        cancel_event.set()
+        with pytest.raises(WorkerClientError) as excinfo:
+            _communicate(process, None, 10.0, "job-cancel", cancel_event)
+        assert process.terminated is True
+        assert process.killed is False
+        assert excinfo.value.error.category == "cancelled"
+        assert excinfo.value.error.code == "CANCELLED"

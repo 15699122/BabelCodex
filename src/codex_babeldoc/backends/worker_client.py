@@ -17,8 +17,10 @@ import logging
 import os
 import subprocess
 import sys
+import time
 from collections.abc import Callable
 from pathlib import Path
+from threading import Event
 
 from codex_babeldoc.backends.worker_protocol import (
     EXIT_COMPLETED,
@@ -62,6 +64,7 @@ def run_worker(
     on_progress: Callable[[WorkerProgress], None] | None = None,
     timeout_seconds: float = DEFAULT_WORKER_TIMEOUT_SECONDS,
     env_extra: dict[str, str] | None = None,
+    cancel_event: Event | None = None,
 ) -> WorkerResult:
     """Run one translate operation in a fresh worker subprocess."""
     working_dir.mkdir(parents=True, exist_ok=True)
@@ -97,7 +100,7 @@ def run_worker(
         ) from exc
 
     try:
-        return _communicate(proc, on_progress, timeout_seconds, job_id)
+        return _communicate(proc, on_progress, timeout_seconds, job_id, cancel_event)
     finally:
         if proc.poll() is None:  # pragma: no cover - defensive cleanup
             proc.kill()
@@ -109,10 +112,36 @@ def _communicate(
     on_progress: Callable[[WorkerProgress], None] | None,
     timeout_seconds: float,
     job_id: str,
+    cancel_event: Event | None = None,
 ) -> WorkerResult:
     stderr_lines: list[str] = []
     try:
-        outs, errs = proc.communicate(timeout=timeout_seconds)
+        deadline = time.monotonic() + timeout_seconds
+        while True:
+            if cancel_event is not None and cancel_event.is_set():
+                proc.terminate()
+                try:
+                    outs, errs = proc.communicate(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    outs, errs = proc.communicate(timeout=5)
+                _collect_progress(errs, stderr_lines, on_progress)
+                raise WorkerClientError(
+                    WorkerError(
+                        category="cancelled",
+                        code="CANCELLED",
+                        safe_message="The translation job was cancelled.",
+                        technical_message=f"worker terminated for job {job_id}",
+                    )
+                )
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired("worker", timeout_seconds)
+            try:
+                outs, errs = proc.communicate(timeout=min(0.25, remaining))
+                break
+            except subprocess.TimeoutExpired:
+                continue
     except subprocess.TimeoutExpired as exc:
         proc.kill()
         proc.communicate()
@@ -129,17 +158,25 @@ def _communicate(
             )
         ) from exc
 
-    for line in (errs or "").splitlines():
-        stderr_lines.append(line)
-        if on_progress is not None:
-            progress = _decode_progress_line(line)
-            if progress is not None:
-                on_progress(progress)
+    _collect_progress(errs, stderr_lines, on_progress)
 
     stdout_text = (outs or "").strip()
     if proc.returncode == EXIT_COMPLETED and stdout_text:
         return _parse_result(stdout_text, job_id)
     raise _failure_from_output(proc.returncode, stdout_text, stderr_lines, job_id)
+
+
+def _collect_progress(
+    stderr_text: str | None,
+    stderr_lines: list[str],
+    on_progress: Callable[[WorkerProgress], None] | None,
+) -> None:
+    for line in (stderr_text or "").splitlines():
+        stderr_lines.append(line)
+        if on_progress is not None:
+            progress = _decode_progress_line(line)
+            if progress is not None:
+                on_progress(progress)
 
 
 def _decode_progress_line(line: str) -> WorkerProgress | None:

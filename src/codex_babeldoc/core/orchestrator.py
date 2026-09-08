@@ -4,6 +4,7 @@ import logging
 import time
 from collections.abc import Callable
 from pathlib import Path
+from threading import Event
 
 from codex_babeldoc.backends.babeldoc_internal import BabelDocInternalBackend
 from codex_babeldoc.backends.base import ProgressEvent
@@ -72,6 +73,7 @@ class Orchestrator:
         source: Path,
         *,
         on_progress: Callable[[ProgressEvent], None] | None = None,
+        cancel_event: Event | None = None,
     ) -> None:
         b = self.cfg.babeldoc
         t = self.cfg.translation
@@ -115,6 +117,7 @@ class Orchestrator:
             working_dir=b.working_dir / f"job-{source.stem}",
             job_id=f"job-{source.stem}",
             on_progress=lambda event: self._forward_progress(event, on_progress),
+            cancel_event=cancel_event,
         )
 
     @staticmethod
@@ -141,6 +144,7 @@ class Orchestrator:
         force: bool = False,
         invocation_source: str = "cli",
         on_progress: Callable[[ProgressEvent], None] | None = None,
+        cancel_event: Event | None = None,
     ) -> str:
         job = self.state.load(source, config_fingerprint=self.cfg.fingerprint())
         job.invocation_source = invocation_source
@@ -172,7 +176,11 @@ class Orchestrator:
                 job.stage = JobStage.TRANSLATING
                 self.state.save(job)
                 if b.worker_mode == "subprocess":
-                    self._translate_via_worker(source, on_progress=on_progress)
+                    self._translate_via_worker(
+                        source,
+                        on_progress=on_progress,
+                        cancel_event=cancel_event,
+                    )
                 else:
                     backend_kwargs = {
                         "lang_in": t.lang_in,
@@ -204,6 +212,14 @@ class Orchestrator:
                 self.state.save(job)
                 return "completed"
             except Exception as exc:
+                worker_error = getattr(exc, "error", None)
+                if getattr(worker_error, "code", None) == "CANCELLED":
+                    job.status = JobStatus.CANCELLED
+                    job.error_category = None
+                    job.error_code = None
+                    job.safe_error_message = None
+                    self.state.save(job)
+                    return "cancelled"
                 error = classify_exception(exc)
                 last_error = error.safe_message
                 job.status = JobStatus.FAILED

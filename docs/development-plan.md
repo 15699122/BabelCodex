@@ -390,8 +390,10 @@ Fixture 内容：
 - 输入 PDF 强制限制在配置的 input allowlist 内；
 - 支持带单调递增游标的 `poll_events`，并通过 `get_job` 支持断线后的状态校准；
 - worker 的标准化 `ProgressEvent` 已沿 Application Service 转发到 sidecar 事件队列；
-- 已覆盖协议往返、非法 JSON、协议错误、路径越界、shutdown、进度事件、后台失败事件和无 shell 暴露测试；
-- 尚未实现 Tauri 2 host、Windows/Linux target triple 打包、真实 worker 进程重启/终止控制和桌面 E2E。
+- worker 支持通过受控 `cancel_event` 终止 subprocess，取消任务持久化为 `cancelled` 且不进入 retry；
+- sidecar 重启后可通过共享 state store 查询已持久化任务状态；
+- 已覆盖协议往返、非法 JSON、协议错误、路径越界、shutdown、进度事件、后台失败、取消和无 shell 暴露测试；
+- 尚未实现 Tauri 2 host、Windows/Linux target triple 打包、sidecar 自身重启编排和桌面 E2E。
 
 验收：GUI 不直接导入 BabelDOC；前端不执行系统 Python 或任意 shell；翻译期间界面不冻结；Windows 和 Linux 最小 GUI 可运行；sidecar 只允许固定二进制和受控参数。
 

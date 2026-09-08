@@ -10,11 +10,11 @@ from __future__ import annotations
 import json
 import sys
 from concurrent.futures import Future, ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
-from threading import Lock
+from threading import Event, Lock
 from typing import TextIO
 
 from codex_babeldoc.backends.base import ProgressEvent
@@ -41,6 +41,7 @@ class _RunningJob:
     job_id: str
     cancel_requested: bool = False
     future: Future[JobState] | None = None
+    cancel_event: Event = field(default_factory=Event)
 
 
 class SidecarError(ValueError):
@@ -170,13 +171,17 @@ class JsonlSidecar:
                     force=force,
                     invocation_source=InvocationSource.GUI,
                     on_progress=lambda event: self._on_progress(running.job_id, event),
+                    cancel_event=running.cancel_event,
                 )
             )
-            self._emit(
-                EventType.JOB_COMPLETED,
-                running.job_id,
-                {"status": job.status.value, "job": job.to_dict()},
-            )
+            if job.status is JobStatus.CANCELLED:
+                self._emit(EventType.STATUS_CHANGED, running.job_id, {"status": job.status.value})
+            else:
+                self._emit(
+                    EventType.JOB_COMPLETED,
+                    running.job_id,
+                    {"status": job.status.value, "job": job.to_dict()},
+                )
             return job
         except Exception as exc:
             error = _classify_sidecar_exception(exc)
@@ -233,6 +238,7 @@ class JsonlSidecar:
                     "status": job.status.value if job else None,
                 }
             running.cancel_requested = True
+            running.cancel_event.set()
         self._emit(EventType.STATUS_CHANGED, job_id, {"status": "cancel_requested"})
         return {"job_id": job_id, "cancelled": True, "status": "cancel_requested"}
 
