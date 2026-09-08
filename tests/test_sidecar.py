@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import io
 import json
+from dataclasses import dataclass
 from pathlib import Path
+from threading import Event
+from time import sleep
 
 from codex_babeldoc.application.service import BabelCodexService
 from codex_babeldoc.application.sidecar import PROTOCOL_VERSION, JsonlSidecar, run_jsonl
 from codex_babeldoc.core.config import load_config
+from codex_babeldoc.core.state import JobStage, JobStatus, StateStore
 
 
 def _service(tmp_path: Path) -> BabelCodexService:
@@ -102,3 +106,178 @@ def test_run_jsonl_returns_structured_error_for_malformed_input(tmp_path):
     assert message["ok"] is False
     assert message["request_id"] == ""
     assert "error" in message
+
+
+@dataclass
+class _FakeConfig:
+    project: object
+
+    def fingerprint(self):
+        return "fake-config"
+
+
+class _FakeService:
+    def __init__(
+        self, tmp_path: Path, *, started: Event | None = None, release: Event | None = None
+    ):
+        self.config = _FakeConfig(type("Project", (), {"input_dir": tmp_path / "incoming"})())
+        self.state = StateStore(tmp_path / "state")
+        self.orchestrator = type("Orchestrator", (), {"state": self.state})()
+        self.started = started
+        self.release = release
+
+    def start_translation(self, command):
+        if self.started is not None:
+            self.started.set()
+        if self.release is not None:
+            self.release.wait(timeout=2)
+        job = self.state.load(command.source_path, config_fingerprint=self.config.fingerprint())
+        job.status = JobStatus.COMPLETED
+        job.stage = JobStage.COMPLETED
+        self.state.save(job)
+        return job
+
+    def get_job(self, job_id):
+        return self.state.load_by_job_id(job_id)
+
+    def list_jobs(self):
+        return self.state.list_jobs()
+
+
+class _FailingService(_FakeService):
+    def start_translation(self, command):
+        if self.started is not None:
+            self.started.set()
+        raise RuntimeError("expected fake failure")
+
+
+def test_sidecar_event_polling_supports_incremental_cursor(tmp_path):
+    incoming = tmp_path / "incoming"
+    incoming.mkdir()
+    source = incoming / "event.pdf"
+    source.write_bytes(b"%PDF-test")
+    started = Event()
+    release = Event()
+    service = _FakeService(tmp_path, started=started, release=release)
+    sidecar = JsonlSidecar(service)
+    response = sidecar.handle(
+        {
+            "protocol_version": PROTOCOL_VERSION,
+            "request_id": "start",
+            "method": "start_translation",
+            "source_path": str(source),
+        }
+    )[0]
+    job_id = response["result"]["job_id"]
+    assert started.wait(timeout=1)
+    first = sidecar.handle(
+        {
+            "protocol_version": PROTOCOL_VERSION,
+            "request_id": "poll-1",
+            "method": "poll_events",
+            "after_sequence": 0,
+            "job_id": job_id,
+        }
+    )[0]["result"]
+    assert [event["event_type"] for event in first["events"]][:2] == [
+        "job_created",
+        "status_changed",
+    ]
+    cursor = first["next_sequence"]
+    release.set()
+    deadline = 1.0
+    while deadline > 0:
+        second = sidecar.handle(
+            {
+                "protocol_version": PROTOCOL_VERSION,
+                "request_id": "poll-2",
+                "method": "poll_events",
+                "after_sequence": cursor,
+                "job_id": job_id,
+            }
+        )[0]["result"]
+        if second["events"]:
+            break
+        sleep(0.01)
+        deadline -= 0.01
+    assert second["events"][-1]["event_type"] == "job_completed"
+    sidecar.close()
+
+
+def test_sidecar_emits_cancel_request_event(tmp_path):
+    incoming = tmp_path / "incoming"
+    incoming.mkdir()
+    source = incoming / "cancel.pdf"
+    source.write_bytes(b"%PDF-test")
+    started = Event()
+    release = Event()
+    service = _FakeService(tmp_path, started=started, release=release)
+    sidecar = JsonlSidecar(service)
+    start = sidecar.handle(
+        {
+            "protocol_version": PROTOCOL_VERSION,
+            "request_id": "start",
+            "method": "start_translation",
+            "source_path": str(source),
+        }
+    )[0]
+    job_id = start["result"]["job_id"]
+    assert started.wait(timeout=1)
+    cancel = sidecar.handle(
+        {
+            "protocol_version": PROTOCOL_VERSION,
+            "request_id": "cancel",
+            "method": "cancel_job",
+            "job_id": job_id,
+        }
+    )[0]
+    assert cancel["result"]["status"] == "cancel_requested"
+    events = sidecar.handle(
+        {
+            "protocol_version": PROTOCOL_VERSION,
+            "request_id": "poll",
+            "method": "poll_events",
+            "job_id": job_id,
+        }
+    )[0]["result"]["events"]
+    assert any(
+        event["event_type"] == "status_changed" and event["payload"]["status"] == "cancel_requested"
+        for event in events
+    )
+    release.set()
+    sidecar.close()
+
+
+def test_sidecar_emits_failure_event_for_background_exception(tmp_path):
+    incoming = tmp_path / "incoming"
+    incoming.mkdir()
+    source = incoming / "failure.pdf"
+    source.write_bytes(b"%PDF-test")
+    started = Event()
+    service = _FailingService(tmp_path, started=started)
+    sidecar = JsonlSidecar(service)
+    start = sidecar.handle(
+        {
+            "protocol_version": PROTOCOL_VERSION,
+            "request_id": "start",
+            "method": "start_translation",
+            "source_path": str(source),
+        }
+    )[0]
+    job_id = start["result"]["job_id"]
+    assert started.wait(timeout=1)
+    for _ in range(100):
+        events = sidecar.handle(
+            {
+                "protocol_version": PROTOCOL_VERSION,
+                "request_id": "poll",
+                "method": "poll_events",
+                "job_id": job_id,
+            }
+        )[0]["result"]["events"]
+        if any(event["event_type"] == "job_failed" for event in events):
+            break
+        sleep(0.01)
+    assert events[-1]["event_type"] == "job_failed"
+    assert events[-1]["payload"]["error"]["category"] == "unknown"
+    sidecar.close()

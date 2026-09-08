@@ -11,12 +11,14 @@ import json
 import sys
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 from threading import Lock
 from typing import TextIO
 
 from codex_babeldoc.core.errors import BabelCodexError, ErrorCategory, ErrorCode, classify_exception
+from codex_babeldoc.core.events import EventType, JobEvent
 from codex_babeldoc.core.state import JobState, JobStatus
 
 from .service import BabelCodexService, InvocationSource, StartTranslationCommand
@@ -29,6 +31,7 @@ class SidecarMethod(StrEnum):
     GET_JOB = "get_job"
     LIST_JOBS = "list_jobs"
     CANCEL_JOB = "cancel_job"
+    POLL_EVENTS = "poll_events"
     SHUTDOWN = "shutdown"
 
 
@@ -74,6 +77,8 @@ class JsonlSidecar:
         self._owns_executor = executor is None
         self._lock = Lock()
         self._running: dict[str, _RunningJob] = {}
+        self._events: list[JobEvent] = []
+        self._next_sequence = 1
         self._closed = False
 
     def handle(self, request: dict[str, object]) -> list[dict[str, object]]:
@@ -90,6 +95,8 @@ class JsonlSidecar:
                 result = {"jobs": [job.to_dict() for job in self.service.list_jobs()]}
             elif method is SidecarMethod.CANCEL_JOB:
                 result = self._cancel(request)
+            elif method is SidecarMethod.POLL_EVENTS:
+                result = self._poll_events(request)
             elif method is SidecarMethod.SHUTDOWN:
                 result = {"closing": True}
                 self.close()
@@ -132,27 +139,60 @@ class JsonlSidecar:
         running = _RunningJob(job_id=job.job_id)
         with self._lock:
             self._running[job.job_id] = running
+        self._emit(
+            EventType.JOB_CREATED,
+            job.job_id,
+            {"status": job.status.value, "source_path": job.source_path},
+        )
         running.future = self._executor.submit(self._run_job, running, source, force)
         return {"job_id": job.job_id, "status": job.status.value}
 
     def _run_job(self, running: _RunningJob, source: Path, force: bool) -> JobState:
         with self._lock:
-            if running.cancel_requested:
-                job = self.service.orchestrator.state.load(
-                    source,
-                    config_fingerprint=self.service.config.fingerprint(),
-                )
-                job.status = JobStatus.CANCELLED
-                self.service.orchestrator.state.save(job)
-                return job
+            cancelled_before_start = running.cancel_requested
+        if cancelled_before_start:
+            job = self.service.orchestrator.state.load(
+                source,
+                config_fingerprint=self.service.config.fingerprint(),
+            )
+            job.status = JobStatus.CANCELLED
+            self.service.orchestrator.state.save(job)
+            self._emit(EventType.STATUS_CHANGED, job.job_id, {"status": job.status.value})
+            return job
         try:
-            return self.service.start_translation(
+            self._emit(
+                EventType.STATUS_CHANGED, running.job_id, {"status": JobStatus.RUNNING.value}
+            )
+            job = self.service.start_translation(
                 StartTranslationCommand(
                     source_path=source,
                     force=force,
                     invocation_source=InvocationSource.GUI,
                 )
             )
+            self._emit(
+                EventType.JOB_COMPLETED,
+                running.job_id,
+                {"status": job.status.value, "job": job.to_dict()},
+            )
+            return job
+        except Exception as exc:
+            error = _classify_sidecar_exception(exc)
+            job = self.service.get_job(running.job_id)
+            self._emit(
+                EventType.JOB_FAILED,
+                running.job_id,
+                {
+                    "status": job.status.value if job is not None else JobStatus.FAILED.value,
+                    "error": {
+                        "category": error.category.value,
+                        "code": error.code.value,
+                        "safe_message": error.safe_message,
+                        "retryable": error.retryable,
+                    },
+                },
+            )
+            raise
         finally:
             with self._lock:
                 self._running.pop(running.job_id, None)
@@ -178,7 +218,47 @@ class JsonlSidecar:
                     "status": job.status.value if job else None,
                 }
             running.cancel_requested = True
+        self._emit(EventType.STATUS_CHANGED, job_id, {"status": "cancel_requested"})
         return {"job_id": job_id, "cancelled": True, "status": "cancel_requested"}
+
+    def _poll_events(self, request: dict[str, object]) -> dict[str, object]:
+        try:
+            after_sequence = int(request.get("after_sequence", 0))
+        except (TypeError, ValueError) as exc:
+            raise SidecarError("after_sequence must be an integer") from exc
+        if after_sequence < 0:
+            raise SidecarError("after_sequence must not be negative")
+        job_id = str(request.get("job_id", "")) or None
+        with self._lock:
+            events = [
+                self._event_to_dict(event)
+                for event in self._events
+                if event.sequence > after_sequence and (job_id is None or event.job_id == job_id)
+            ]
+            next_sequence = self._next_sequence - 1
+        return {"events": events, "next_sequence": next_sequence}
+
+    def _emit(self, event_type: EventType, job_id: str, payload: dict[str, object]) -> None:
+        with self._lock:
+            event = JobEvent(
+                event_type=event_type,
+                job_id=job_id,
+                sequence=self._next_sequence,
+                timestamp=datetime.now(UTC).isoformat(),
+                payload=payload,
+            )
+            self._next_sequence += 1
+            self._events.append(event)
+
+    @staticmethod
+    def _event_to_dict(event: JobEvent) -> dict[str, object]:
+        return {
+            "event_type": event.event_type.value,
+            "job_id": event.job_id,
+            "sequence": event.sequence,
+            "timestamp": event.timestamp,
+            "payload": event.payload,
+        }
 
     def _allowed_source(self, raw_path: str) -> Path:
         if not raw_path:
