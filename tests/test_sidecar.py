@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from threading import Event
 from time import sleep
+from typing import cast
 
 from codex_babeldoc.application.service import BabelCodexService
 from codex_babeldoc.application.sidecar import PROTOCOL_VERSION, JsonlSidecar, run_jsonl
@@ -40,7 +41,9 @@ def test_sidecar_rejects_path_outside_allowlist(tmp_path):
         }
     )[0]
     assert response["ok"] is False
-    assert response["error"]["category"] == "config"
+    error = response["error"]
+    assert isinstance(error, dict)
+    assert error["category"] == "config"
     sidecar.close()
 
 
@@ -95,7 +98,23 @@ def test_sidecar_returns_structured_error_for_invalid_protocol(tmp_path):
     )[0]
     assert response["ok"] is False
     assert response["request_id"] == "bad"
-    assert response["error"]["safe_message"] == "unsupported sidecar protocol version"
+    error = response["error"]
+    assert isinstance(error, dict)
+    assert error["safe_message"] == "unsupported sidecar protocol version"
+    sidecar.close()
+
+
+def test_sidecar_returns_structured_error_for_non_convertible_protocol(tmp_path):
+    service = _service(tmp_path)
+    sidecar = JsonlSidecar(service)
+    response = sidecar.handle(
+        {"protocol_version": [], "request_id": "bad-type", "method": "list_jobs"}
+    )[0]
+    assert response["ok"] is False
+    assert response["request_id"] == "bad-type"
+    error = response["error"]
+    assert isinstance(error, dict)
+    assert error["safe_message"] == "unsupported sidecar protocol version"
     sidecar.close()
 
 
@@ -174,6 +193,11 @@ class _CancellableService(_FakeService):
         return job
 
 
+def _sidecar(service: _FakeService) -> JsonlSidecar:
+    """Construct a sidecar with the deliberately lightweight test service."""
+    return JsonlSidecar(cast(BabelCodexService, service))
+
+
 def test_sidecar_event_polling_supports_incremental_cursor(tmp_path):
     incoming = tmp_path / "incoming"
     incoming.mkdir()
@@ -182,7 +206,7 @@ def test_sidecar_event_polling_supports_incremental_cursor(tmp_path):
     started = Event()
     release = Event()
     service = _FakeService(tmp_path, started=started, release=release)
-    sidecar = JsonlSidecar(service)
+    sidecar = _sidecar(service)
     response = sidecar.handle(
         {
             "protocol_version": PROTOCOL_VERSION,
@@ -240,7 +264,7 @@ def test_sidecar_emits_cancel_request_event(tmp_path):
     started = Event()
     release = Event()
     service = _FakeService(tmp_path, started=started, release=release)
-    sidecar = JsonlSidecar(service)
+    sidecar = _sidecar(service)
     start = sidecar.handle(
         {
             "protocol_version": PROTOCOL_VERSION,
@@ -283,7 +307,7 @@ def test_sidecar_emits_failure_event_for_background_exception(tmp_path):
     source.write_bytes(b"%PDF-test")
     started = Event()
     service = _FailingService(tmp_path, started=started)
-    sidecar = JsonlSidecar(service)
+    sidecar = _sidecar(service)
     start = sidecar.handle(
         {
             "protocol_version": PROTOCOL_VERSION,
@@ -317,7 +341,7 @@ def test_sidecar_restart_reconciles_persisted_job_state(tmp_path):
     source = incoming / "persisted.pdf"
     source.write_bytes(b"%PDF-test")
     service = _FakeService(tmp_path)
-    sidecar = JsonlSidecar(service)
+    sidecar = _sidecar(service)
     start = sidecar.handle(
         {
             "protocol_version": PROTOCOL_VERSION,
@@ -330,7 +354,7 @@ def test_sidecar_restart_reconciles_persisted_job_state(tmp_path):
     sidecar._executor.shutdown(wait=True)
     sidecar.close()
 
-    restarted = JsonlSidecar(_FakeService(tmp_path))
+    restarted = _sidecar(_FakeService(tmp_path))
     response = restarted.handle(
         {
             "protocol_version": PROTOCOL_VERSION,
@@ -352,7 +376,7 @@ def test_sidecar_cancels_running_job_and_persists_terminal_state(tmp_path):
     source.write_bytes(b"%PDF-test")
     started = Event()
     service = _CancellableService(tmp_path, started=started)
-    sidecar = JsonlSidecar(service)
+    sidecar = _sidecar(service)
     start = sidecar.handle(
         {
             "protocol_version": PROTOCOL_VERSION,

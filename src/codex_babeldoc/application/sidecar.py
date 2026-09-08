@@ -243,8 +243,11 @@ class JsonlSidecar:
         return {"job_id": job_id, "cancelled": True, "status": "cancel_requested"}
 
     def _poll_events(self, request: dict[str, object]) -> dict[str, object]:
+        raw_after_sequence = request.get("after_sequence", 0)
+        if not isinstance(raw_after_sequence, (int, str)):
+            raise SidecarError("after_sequence must be an integer")
         try:
-            after_sequence = int(request.get("after_sequence", 0))
+            after_sequence = int(raw_after_sequence)
         except (TypeError, ValueError) as exc:
             raise SidecarError("after_sequence must be an integer") from exc
         if after_sequence < 0:
@@ -297,7 +300,14 @@ class JsonlSidecar:
 
     @staticmethod
     def _validate_protocol(request: dict[str, object]) -> None:
-        if int(request.get("protocol_version", 0)) != PROTOCOL_VERSION:
+        raw_protocol_version = request.get("protocol_version", 0)
+        if not isinstance(raw_protocol_version, (int, str)):
+            raise SidecarError("unsupported sidecar protocol version")
+        try:
+            protocol_version = int(raw_protocol_version)
+        except (TypeError, ValueError) as exc:
+            raise SidecarError("unsupported sidecar protocol version") from exc
+        if protocol_version != PROTOCOL_VERSION:
             raise SidecarError("unsupported sidecar protocol version")
         if not isinstance(request.get("request_id", ""), str):
             raise SidecarError("request_id must be a string")
