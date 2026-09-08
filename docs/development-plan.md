@@ -398,7 +398,7 @@ Fixture 内容：
 - 已在 Windows 原生环境用 target triple sidecar 完成 `cargo check`、NSIS/MSI bundle 构建、MSI 隔离解包和 sidecar JSONL `list_jobs` smoke；
 - 已完成解包 GUI 的进程级启动检查；
 - 尚未完成 sidecar 自身重启编排、GUI 文件选择/allowlist/取消/输出目录等交互 E2E、干净用户目录验收、Defender/SmartScreen 矩阵、签名/SBOM 和 Linux 目标机实际 smoke/发布验收；sidecar 指数退避与 Linux bundle 构建已完成。
-- 已将 512×512 方形图标写入源配置，Linux AppImage 构建不再依赖命令行 `bundle.icon` 覆盖；目标机图标显示和正式发布资源审计仍待完成。
+- 源配置已声明 `icons/icon.png`；Linux `.deb`/AppImage 构建已通过，目标机图标显示和正式发布资源审计仍待完成。
 
 Phase 8 的以下步骤已完成：
 
@@ -449,6 +449,12 @@ Windows 专属执行清单：
 6. [部分完成] 已生成 bundle/sidecar SHA-256 和构建日志；SBOM、签名和正式发布附件仍待完成。
 
 Windows 验收依赖原生 Windows GUI 运行结果；Linux 或 WSL 上的同名构建、Rust `cargo check` 和浏览器端测试只能作为先决检查。
+Windows 本轮执行记录与边界（2026 年 9 月 8 日）：
+
+- 已处理的验证错误：相对路径排除参数导致首次同步未完整排除生成目录；Tauri 首次 bundle 缺少 icons/icon.ico；PyInstaller 直接模块入口触发相对导入错误；旧 bundle 中 sidecar 过期；sidecar 从解包目录启动时未显式传入配置导致 FileNotFoundError；以及一次 PowerShell args 参数转发错误导致 uv 只显示帮助。上述问题均已通过绝对排除路径、生成构建图标、临时包级入口、限定范围清理/重建、项目根目录加受控 --config 和显式命令调用处理。
+- 未执行完整桌面 GUI 交互、干净用户目录、Defender/SmartScreen、签名/SBOM、正式 portable 发布审计和目标 Linux 机器 smoke；原因分别是本轮只覆盖自动化测试/协议 smoke/进程级启动、仍依赖项目根配置、使用 unsigned 开发包、尚未进入发布审计流程，以及 WSL/Linux 不能代表目标 Linux 机器。
+- 文档与 Linux bundle 脚本同步后未重复 Windows NSIS/MSI 构建，因为本轮没有 Windows GUI/Rust/sidecar 源代码变化；已复核现有 bundle 哈希、包内 sidecar JSONL smoke 和 cargo check。
+
 
 首期不承诺所有 Linux 发行版原生安装包，也不优先采用单文件 executable。
 
@@ -485,6 +491,8 @@ GUI 必须通过 Application Service 访问任务；Tauri Rust 层只负责窗�
 
 **优先级：P1 | 复杂度：L | 预计：5–10 个开发日**
 
+**状态：已完成标准库 stdio MCP contract、scoped tools、严格参数校验、安全路径校验、MCP 取消 wiring 和 contract tests；Codex 客户端注册、目标环境 smoke、真实 Codex 翻译和发布审计仍待完成（2026 年 9 月 8 日）**
+
 任务：
 
 1. 实现本地 stdio MCP Server
@@ -511,6 +519,16 @@ GUI 必须通过 Application Service 访问任务；Tauri Rust 层只负责窗�
 - 不提供任意 shell 执行
 
 MCP 与 GUI 共用 Python Application Service、JobState、事件和错误码；GUI 的 Tauri sidecar 不得成为 MCP 的第二套编排实现。
+
+当前实现记录：
+
+- `babelcodex mcp serve` 通过 newline-delimited JSON-RPC 提供 MCP initialize、tools/list、tools/call 和 initialized notification；
+- `babelcodex_doctor`、`babelcodex_start_translation`、`babelcodex_get_job`、`babelcodex_list_jobs`、`babelcodex_cancel_job`、`babelcodex_validate_output`、`babelcodex_cleanup_job` 已定义为受限 tools；
+- MCP start 使用异步 executor 并立即返回持久化 `job_id`；状态和 artifact 仍由 Application Service/StateStore 提供；
+- validate 只允许配置 output directory 下的 job artifacts，重新计算大小和 SHA-256，并进行 PDF magic-header 检查；cleanup 只允许删除配置 worker directory 下的 terminal job-owned 工作目录；
+- 任意 shell、任意文件读取、任意路径删除和 Codex MCP 递归调用均未暴露；MCP cancel 使用进程内 `cancel_event`，服务关闭时主动通知活动 job 并清理句柄。
+- `docs/mcp.md` 已记录 stdio 启动、客户端注册、工具边界和限制。
+- MCP contract tests 当前覆盖 initialize/tools discovery、stdio parse error、异步 start、completed skip、取消、输出 allowlist、cleanup、严格参数和非对象请求。
 
 ### Phase 11：Glossary 与文档上下文
 

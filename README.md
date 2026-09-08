@@ -148,17 +148,20 @@ The GUI will use **Tauri 2 + React/TypeScript** and call the same Python Applica
 
 The first GUI is a personal PDF translation workbench with New Translation, Jobs, Job Details, Glossary, Diagnostics and Settings pages. It will not initially embed a full PDF editor or viewer.
 
-### MCP Server
+### Local MCP server
 
-The planned local stdio server is started with:
+The local MCP server uses stdio and exposes only scoped translation/job tools:
 
 ```bash
-babelcodex mcp serve
+uv run babelcodex --config config/example.toml mcp serve
 ```
 
-It will expose long-running job operations such as starting a translation, querying progress, cancelling a job, validating output and cleaning a job directory. It will not expose arbitrary shell execution or unrestricted file deletion.
-
-CLI, GUI and MCP share the same Application Service, JobState, events and error codes. The inner Codex translation thread never registers the BabelCodex MCP Server.
+It shares the Python Application Service and persisted job state with the CLI
+and GUI. It never exposes arbitrary shell execution, unrestricted file reads,
+or unrestricted file deletion.
+See `docs/mcp.md` for registration, tool scope and protocol details.
+Packaged/clean-environment smoke validation and release audit remain release
+tasks.
 
 ## Requirements
 

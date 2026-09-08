@@ -9,6 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from codex_babeldoc.application.service import BabelCodexService
 from codex_babeldoc.core.config import load_config
 from codex_babeldoc.core.orchestrator import Orchestrator
 
@@ -112,12 +113,21 @@ def main(argv=None) -> int:
     one = sub.add_parser("one")
     one.add_argument("pdf")
     one.add_argument("--force", action="store_true")
+    mcp = sub.add_parser("mcp")
+    mcp_sub = mcp.add_subparsers(dest="mcp_command", required=True)
+    mcp_sub.add_parser("serve")
     args = parser.parse_args(argv)
 
     cfg = load_config(args.config)
     _configure_logging(cfg.project.log_dir, args.verbose)
     if args.command == "doctor":
         return doctor(cfg)
+
+    if args.command == "mcp":
+        from codex_babeldoc.application.mcp import serve
+
+        serve(BabelCodexService(cfg), sys.stdin, sys.stdout)
+        return 0
 
     orch = Orchestrator(cfg)
     if args.command == "run":

@@ -705,6 +705,7 @@ CLI → Python Application Service
 ```
 
 MCP Server 是 Codex 的自动化入口，GUI 是个人用户的可视化控制入口；二者不共享前端代码，但共享任务协议、状态模型和错误码。
+- 当前 MCP 实现使用标准库 newline-delimited JSON-RPC，工具调用仍限制在 Application Service 的任务、artifact 和诊断边界内；`validate_output` 只读取 job artifact，`cleanup_job` 只删除 job-owned worker 子目录。工具参数严格 allowlist，活动 job 绑定进程内 `cancel_event`，服务关闭时主动发出取消信号；注册示例和剩余平台验证见 `docs/mcp.md`。
 
 ## 14. 测试与发布
 
@@ -729,5 +730,5 @@ Linux: BabelCodex-Linux-x86_64.tar.gz
 平台验证边界：
 
 - Linux/WSL：已验证 React/Vitest、Python contract、JSONL 协议、Rust 编译、bundle audit 和 Linux `.deb`/AppImage 构建；目标 Linux 机器运行 smoke 仍需单独验收；
-- Windows 原生：已验证 Windows `.exe` sidecar、Tauri NSIS/MSI packaged bundle、WebView2 探测、MSI 解包后的 sidecar JSONL smoke 和 GUI 进程级启动；文件对话框、完整路径语义、权限 allowlist、退出清理和干净用户环境 GUI 交互仍未完成；
-- Windows 当前状态为“原生构建与包内 sidecar smoke 通过”，不是“可发布”；只有目标平台完整 packaged GUI smoke、签名/发布审计和剩余路径矩阵通过后，才能标记对应平台为可发布。
+- Windows 原生：已验证 Windows `.exe` sidecar、Tauri NSIS/MSI packaged bundle、WebView2 探测、在项目根工作目录并显式传入受控 `--config` 后的 MSI 解包 sidecar JSONL smoke 和 GUI 进程级启动；文件对话框、完整路径语义、权限 allowlist、退出清理和干净用户环境 GUI 交互仍未完成；
+- Windows 当前状态为“原生构建与包内 sidecar smoke 通过”，不是“可发布”；只有目标平台完整 packaged GUI smoke、签名/发布审计和剩余路径矩阵通过后，才能标记对应平台为可发布。 具体执行错误、处置方式和未执行原因记录在 docs/compatibility.md。
