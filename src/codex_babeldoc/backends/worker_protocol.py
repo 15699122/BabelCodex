@@ -35,6 +35,10 @@ class TranslatorSpec:
     context_prompt: str | None = None
     model: str | None = None
     effort: str | None = None
+    cache_path: str | None = None
+    cache_enabled: bool = True
+    cache_store_plaintext: bool = True
+    cache_ttl_seconds: int | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -70,6 +74,10 @@ class WorkerRequest:
                 context_prompt=t.get("context_prompt"),
                 model=t.get("model"),
                 effort=t.get("effort"),
+                cache_path=t.get("cache_path"),
+                cache_enabled=bool(t.get("cache_enabled", True)),
+                cache_store_plaintext=bool(t.get("cache_store_plaintext", True)),
+                cache_ttl_seconds=t.get("cache_ttl_seconds"),
             ),
             protocol_version=PROTOCOL_VERSION,
         )

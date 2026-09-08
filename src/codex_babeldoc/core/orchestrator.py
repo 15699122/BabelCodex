@@ -10,9 +10,7 @@ from codex_babeldoc.backends.worker_protocol import TranslatorSpec
 from codex_babeldoc.core.config import AppConfig
 from codex_babeldoc.core.errors import classify_exception
 from codex_babeldoc.core.state import JobStage, JobStatus, StateStore
-from codex_babeldoc.translation.retry import ValidatingTranslator
-from codex_babeldoc.translators.codex_sdk import CodexSdkTranslator
-from codex_babeldoc.translators.mock import MockTranslator
+from codex_babeldoc.translators.factory import build_gateway_translator
 
 log = logging.getLogger(__name__)
 
@@ -30,22 +28,23 @@ class Orchestrator:
     def translator_factory(self):
         t = self.cfg.translation
         c = self.cfg.codex
-        if t.translator == "mock":
-            inner: object = MockTranslator()
-        elif t.translator == "codex-sdk":
-            inner = CodexSdkTranslator(
-                t.lang_in,
-                t.lang_out,
-                context_prompt=c.context_prompt,
-                model=t.model,
-                effort=t.effort,
-            )
-        else:
+        if t.translator not in {"mock", "codex-sdk"}:
             raise ValueError(f"Unknown translator: {t.translator}")
-        return ValidatingTranslator(
-            inner,
-            lang_in=t.lang_in,
-            lang_out=t.lang_out,
+        return build_gateway_translator(
+            TranslatorSpec(
+                name=t.translator,
+                lang_in=t.lang_in,
+                lang_out=t.lang_out,
+                context_prompt=c.context_prompt or None,
+                model=t.model or None,
+                effort=t.effort or None,
+                cache_path=str(self.cfg.project.state_dir / "translation-cache.db")
+                if t.cache_enabled
+                else None,
+                cache_enabled=t.cache_enabled,
+                cache_store_plaintext=t.cache_store_plaintext,
+                cache_ttl_seconds=t.cache_ttl_seconds,
+            )
         )
 
     def _translator_spec(self) -> TranslatorSpec:
@@ -58,6 +57,12 @@ class Orchestrator:
             context_prompt=c.context_prompt or None,
             model=t.model or None,
             effort=t.effort or None,
+            cache_path=str(self.cfg.project.state_dir / "translation-cache.db")
+            if t.cache_enabled
+            else None,
+            cache_enabled=t.cache_enabled,
+            cache_store_plaintext=t.cache_store_plaintext,
+            cache_ttl_seconds=t.cache_ttl_seconds,
         )
 
     def _translate_via_worker(self, source: Path) -> None:
@@ -92,6 +97,10 @@ class Orchestrator:
                 "context_prompt": spec.context_prompt,
                 "model": spec.model,
                 "effort": spec.effort,
+                "cache_path": spec.cache_path,
+                "cache_enabled": spec.cache_enabled,
+                "cache_store_plaintext": spec.cache_store_plaintext,
+                "cache_ttl_seconds": spec.cache_ttl_seconds,
             },
         )
         run_worker(

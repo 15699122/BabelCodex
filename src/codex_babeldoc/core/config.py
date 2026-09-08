@@ -29,6 +29,9 @@ class TranslationConfig:
     watermark_output_mode: str = "no_watermark"
     auto_extract_glossary: bool = False
     max_retries: int = 3
+    cache_enabled: bool = True
+    cache_store_plaintext: bool = True
+    cache_ttl_seconds: int | None = None
 
 
 @dataclass(slots=True)

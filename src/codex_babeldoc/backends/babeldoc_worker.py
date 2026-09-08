@@ -89,14 +89,14 @@ def _run(worker_request: WorkerRequest, protocol_stdout) -> int:
     try:
         from codex_babeldoc.backends.babeldoc_v064 import BabelDocV064Backend
         from codex_babeldoc.backends.worker_protocol import WorkerArtifact
-        from codex_babeldoc.translators.factory import build_validating_translator
+        from codex_babeldoc.translators.factory import build_gateway_translator
 
         def on_progress(event) -> None:
             sys.stderr.write(encode_progress(event) + "\n")
             sys.stderr.flush()
 
         pdf_request = _parse_pdf_request(worker_request.request)
-        translator = build_validating_translator(worker_request.translator)
+        translator = build_gateway_translator(worker_request.translator)
         backend = BabelDocV064Backend()
         result = backend.translate(pdf_request, lambda: translator, on_progress=on_progress)
 

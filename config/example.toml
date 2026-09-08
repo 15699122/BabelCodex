@@ -17,6 +17,9 @@ no_dual = false
 watermark_output_mode = "no_watermark"
 auto_extract_glossary = false
 max_retries = 3
+cache_enabled = true
+cache_store_plaintext = true
+# Optional expiration in seconds. Omit this line to keep entries indefinitely.
 
 [babeldoc]
 backend = "python-internal"

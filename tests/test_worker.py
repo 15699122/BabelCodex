@@ -74,6 +74,8 @@ class TestProtocolRoundTrip:
         assert spec.model is None
         assert spec.effort is None
         assert spec.context_prompt is None
+        assert spec.cache_enabled is True
+        assert spec.cache_path is None
 
 
 class TestWorkerEntry:
