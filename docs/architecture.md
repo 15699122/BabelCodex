@@ -488,7 +488,7 @@ BabelCodex 不直接复制 CopyPolish 的 Rust 排版引擎，因为 BabelCodex 
 
 ### 12.2 产品界面定位
 
-BabelCodex GUI 定位为“个人 PDF 翻译工作台”，而不是聊天窗口或在线翻译网站。视觉方向采用暖纸张、墨水蓝、批注琥珀色和完成墨绿色，强调文档处理、进度和人工复核。
+BabelCodex GUI 定位为“个人 PDF 翻译工作台”，而不是聊天窗口或在线翻译网站。视觉方向已调整为白色主色调的 Vercel 风格（PLANNED，2026 年 9 月 10 日）：白底、黑白灰层级、黑色主按钮、语义色仅用于状态表达，强调文档处理、进度和人工复核；旧暖纸张/墨水蓝方向不再作为目标。详细重构范围见 `docs/development-plan.md` Phase 9B。
 
 首期 GUI 使用系统原生窗口装饰，以降低 Windows、Linux、Wayland、DPI 和无边框窗口兼容风险。后续若确有品牌化需求，再评估类似 CopyPolish 的自定义标题栏。
 

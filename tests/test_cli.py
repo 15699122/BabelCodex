@@ -5,6 +5,11 @@ from codex_babeldoc.cli import collect_doctor_checks, doctor
 from codex_babeldoc.core.config import load_config
 
 
+def _toml_string(value: Path) -> str:
+    """Serialize a filesystem path as a TOML basic string."""
+    return json.dumps(str(value), ensure_ascii=False)
+
+
 def test_collect_doctor_checks_detects_installed_runtime():
     root = Path(__file__).parents[1]
     cfg = load_config(root / "config" / "example.toml")
@@ -51,12 +56,12 @@ def test_glossary_cli_import_and_list(tmp_path, monkeypatch, capsys):
     isolated = tmp_path / "config.toml"
     isolated.write_text(
         "[project]\n"
-        f'input_dir = "{tmp_path / "incoming"}"\n'
-        f'output_dir = "{tmp_path / "translated"}"\n'
-        f'state_dir = "{tmp_path / "state"}"\n'
-        f'log_dir = "{tmp_path / "logs"}"\n'
-        f'glossary_dir = "{tmp_path / "glossary"}"\n'
-        f'context_dir = "{tmp_path / "context"}"\n',
+        f"input_dir = {_toml_string(tmp_path / 'incoming')}\n"
+        f"output_dir = {_toml_string(tmp_path / 'translated')}\n"
+        f"state_dir = {_toml_string(tmp_path / 'state')}\n"
+        f"log_dir = {_toml_string(tmp_path / 'logs')}\n"
+        f"glossary_dir = {_toml_string(tmp_path / 'glossary')}\n"
+        f"context_dir = {_toml_string(tmp_path / 'context')}\n",
         encoding="utf-8",
     )
     monkeypatch.chdir(tmp_path)
@@ -65,3 +70,8 @@ def test_glossary_cli_import_and_list(tmp_path, monkeypatch, capsys):
     assert main(["--config", str(isolated), "glossary", "list"]) == 0
     listed = json.loads(capsys.readouterr().out)
     assert listed["entries"][0]["target"] == "模型"
+
+
+def test_toml_string_escapes_windows_path() -> None:
+    isolated = _toml_string(Path(r"C:\Users\Tester\BabelCodex\incoming"))
+    assert isolated == '"C:\\\\Users\\\\Tester\\\\BabelCodex\\\\incoming"'

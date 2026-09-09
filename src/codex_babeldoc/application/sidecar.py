@@ -18,6 +18,7 @@ from threading import Event, Lock
 from typing import TextIO
 
 from codex_babeldoc.backends.base import ProgressEvent
+from codex_babeldoc.backends.worker_client import WORKER_MODE_ARG
 from codex_babeldoc.core.errors import BabelCodexError, ErrorCategory, ErrorCode, classify_exception
 from codex_babeldoc.core.events import EventType, JobEvent
 from codex_babeldoc.core.state import JobState, JobStatus
@@ -419,7 +420,21 @@ def run_jsonl(service: BabelCodexService, stdin: TextIO, stdout: TextIO) -> None
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Start the sidecar using a fixed config argument."""
+    """Start the sidecar using a fixed config argument.
+
+    A frozen PyInstaller executable may be spawned by
+    :func:`codex_babeldoc.backends.worker_client.worker_command` with the
+    worker request flag; in that mode this entry point hands control to the
+    BabelDOC worker implementation so a single packaged binary serves both the
+    JSONL sidecar and the worker subprocess.
+    """
+    if argv is None:
+        argv = sys.argv[1:]
+    if len(argv) >= 2 and argv[0] == WORKER_MODE_ARG:
+        from codex_babeldoc.backends.babeldoc_worker import main as worker_main
+
+        return worker_main(argv[1:])
+
     import argparse
 
     parser = argparse.ArgumentParser(prog="babelcodex-service")

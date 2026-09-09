@@ -102,6 +102,9 @@ uv sync --extra runtime --extra dev
 uv run pytest
 uv run cbpdf --config config/example.toml doctor
 uv run cbpdf --config config/example.toml run
+# controlled packaged sidecar build (scripts/babelcodex-service.spec)
+uv run --extra runtime --with pyinstaller pyinstaller \
+    --clean --noconfirm scripts/babelcodex-service.spec
 ```
 
 ## Coding rules
@@ -112,3 +115,30 @@ uv run cbpdf --config config/example.toml run
 - Never log auth tokens or full sensitive document text by default.
 - Prefer small compatibility adapters over widespread version checks.
 - Every bug fix gets a regression test when practical.
+
+## Cross-platform development and Windows validation workflow
+
+For Linux ↔ Windows development and validation workflow, follow:
+
+`docs/development/cross-platform-validation.md`
+
+This workflow is mandatory for Windows-specific implementation and validation tasks.
+
+## Windows validation policy
+
+The current WSL project directory is the source of truth for source code, project state, project documentation, and final validation records. A Windows `E:`-drive checkout is only a disposable validation workspace. Windows changes must not be synchronized back to WSL, except for validation results written to the designated WSL validation documentation.
+
+Use `docs/validation/windows.md` for the detailed Windows validation procedure and result format. The procedure is mandatory whenever Windows platform validation is requested:
+
+1. Investigate the current WSL repository before synchronization. Record the branch, commit, working-tree state, repository structure, languages/frameworks, Windows documentation, scripts/configuration, available test/lint/typecheck/build/package commands, compatibility requirements, agent instructions, and external dependencies or credentials.
+2. Before synchronization, inspect both the WSL source and Windows target. Check for uncommitted, manually created, machine-specific, credential, cache, or other files that must be preserved. Do not blindly delete unknown files or overwrite Windows-local configuration.
+3. Synchronize only from WSL to the Windows `E:` validation directory. Prefer existing checkout, worktree, deployment, or synchronization scripts. Do not copy `.git`, `node_modules`, Python virtual environments, Rust `target`, build/dist caches, IDE caches, temporary files, secrets, or machine-specific configuration unless project documentation explicitly requires them.
+4. Verify that the Windows workspace contains the intended source state, including key files and any working-tree modifications. Record the WSL branch, commit, whether uncommitted changes were included, the Windows workspace path, and the synchronization date. Never describe a working-tree validation as a clean commit validation.
+5. Derive the Windows validation scope from this repository's instructions, documentation, CI/build configuration, package scripts, and current implementation. Before execution, classify checks as `Required`, `Applicable`, or `Not applicable`; do not invent requirements that the project does not define.
+6. In the Windows workspace, use the project's existing package managers, commands, and scripts. Do not change business code, architecture, dependencies, or configuration merely to make validation pass. Continue with independent checks after non-fatal failures, and mark dependent checks as `BLOCKED`.
+7. Record every applicable check with its name, exact command, working directory, relevant versions, result, and concise output/error summary. Allowed result states are `PASS`, `FAIL`, `BLOCKED`, `NOT RUN`, and `NOT APPLICABLE`.
+8. For every failure, preserve the key error or relevant stack trace, identify the likely category (`Windows-specific`, project code, environment configuration, missing dependency, external service, test defect, or unknown), state whether it blocks other checks, and document recommended follow-up work. Never mark a skipped or failed check as successful.
+9. After Windows validation, write results back to the WSL repository's existing validation documentation, preferably `docs/validation/windows.md`, while preserving its structure and avoiding large raw logs. Include environment, source-state, synchronization, results, errors, and all not-run/blocked reasons.
+10. Before finishing, confirm that the Windows workspace corresponds to the intended WSL state, every applicable check has a status, all `FAIL`/`BLOCKED`/`NOT RUN` entries have reasons, no validation-scope code changes were made, and the final WSL diff contains only expected documentation changes.
+
+Windows validation is platform verification, not an excuse for opportunistic development. If a code change appears necessary, record the issue and proposed fix location in the validation document instead of implementing it as part of the validation run.

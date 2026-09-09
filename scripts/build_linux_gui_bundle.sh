@@ -2,11 +2,17 @@
 set -euo pipefail
 
 # Build the Linux desktop bundle only after the target-triple sidecar is present.
-# The binary itself is supplied by the caller so this script never downloads,
-# executes, or discovers an arbitrary executable.
+# The binary itself is supplied by the caller (default prefers the controlled
+# `scripts/babelcodex-service.spec` build output, falling back to the venv
+# console script) so this script never downloads, executes, or discovers an
+# arbitrary executable.
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-sidecar_source=${1:-"$repo_root/.venv/bin/babelcodex-service"}
+if [[ -f "$repo_root/dist/babelcodex-service" ]]; then
+  sidecar_source="${1:-$repo_root/dist/babelcodex-service}"
+else
+  sidecar_source="${1:-$repo_root/.venv/bin/babelcodex-service}"
+fi
 sidecar_target="$repo_root/gui/src-tauri/binaries/babelcodex-service-x86_64-unknown-linux-gnu"
 
 if [[ ! -f "$sidecar_source" ]]; then

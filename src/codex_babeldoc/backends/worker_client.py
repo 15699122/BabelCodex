@@ -47,6 +47,28 @@ class WorkerClientError(Exception):
         self.error = error
 
 
+WORKER_MODE_ARG = "--worker-request"
+
+
+def worker_command(request_path: Path) -> list[str]:
+    """Build the command that starts the BabelDOC worker subprocess.
+
+    A frozen (PyInstaller) ``babelcodex-service`` executable cannot run
+    ``python -m codex_babeldoc.backends.babeldoc_worker``, so the packaged
+    sidecar dispatches to its own worker subcommand instead. The sidecar entry
+    point (:func:`codex_babeldoc.application.sidecar.main`) interprets
+    :data:`WORKER_MODE_ARG` and hands control to the worker implementation.
+    """
+    if getattr(sys, "frozen", False):
+        return [sys.executable, WORKER_MODE_ARG, str(request_path)]
+    return [
+        sys.executable or "python3",
+        "-m",
+        "codex_babeldoc.backends.babeldoc_worker",
+        str(request_path),
+    ]
+
+
 def build_worker_request(request_dict: dict, translator_spec_dict: dict) -> WorkerRequest:
     """Convenience constructor used by the orchestrator."""
     spec = TranslatorSpec(**translator_spec_dict)
@@ -71,12 +93,7 @@ def run_worker(
     request_path = request_file_path(working_dir, job_id)
     request_path.write_text(request.to_json(), encoding="utf-8")
 
-    command = [
-        sys.executable or "python3",
-        "-m",
-        "codex_babeldoc.backends.babeldoc_worker",
-        str(request_path),
-    ]
+    command = worker_command(request_path)
     env = {**os.environ, **(env_extra or {})}
 
     logger.info("Starting BabelDOC worker for job %s", job_id)

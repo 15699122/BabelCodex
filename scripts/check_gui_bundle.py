@@ -15,7 +15,24 @@ SIDECAR_NAMES = {
 }
 FORBIDDEN_NAMES = {".env", ".env.local", "job.json", "artifacts.json", "qa-report.json"}
 FORBIDDEN_PARTS = {".git", ".venv", "node_modules", "__pycache__", "state", "logs", "incoming"}
-ABSOLUTE_PATH = re.compile(r"(?:[A-Za-z]:[\\/]|/home/|/Users/|/tmp/|/private/tmp/)")
+# Strip ``scheme://authority`` (but not the path) before matching, so ordinary
+# ``https://...`` strings are not mistaken for Windows drive paths (the previous
+# bare ``[A-Za-z]:[\\/]`` pattern matched the ``s://`` inside ``https://`` and
+# produced false positives on generated JS/CSS; see docs/validation/windows.md).
+# Stripping only scheme+authority keeps ``file:///home/...`` detectable because
+# the Unix path remains after the URL prefix is removed.
+URL_AUTHORITY_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9+.\-]*://[^/\s\"'<>)]*")
+ABSOLUTE_PATH = re.compile(r"(?<![A-Za-z0-9])(?:[A-Za-z]:[\\/]|/home/|/Users/|/tmp/|/private/tmp/)")
+
+
+def contains_development_machine_absolute_path(text: str) -> bool:
+    """Detect Windows-drive or known Unix development-machine paths in ``text``.
+
+    ``scheme://authority`` prefixes are removed first so bundled ``https://``
+    strings do not trip the Windows drive-letter pattern; the path part of a
+    URL is kept, so ``file:///home/...`` and ``file:///C:/...`` still match.
+    """
+    return bool(ABSOLUTE_PATH.search(URL_AUTHORITY_PATTERN.sub("", text)))
 
 
 def sha256(path: Path) -> str:
@@ -54,7 +71,7 @@ def audit(bundle_dir: Path, target: str, manifest_path: Path | None) -> int:
             ".html",
         }:
             text = path.read_text(encoding="utf-8", errors="ignore")
-            if ABSOLUTE_PATH.search(text):
+            if contains_development_machine_absolute_path(text):
                 violations.append(f"possible development-machine absolute path: {relative}")
 
     if violations:

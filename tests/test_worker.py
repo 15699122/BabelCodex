@@ -12,10 +12,12 @@ from typing import ClassVar
 import pytest
 
 from codex_babeldoc.backends.worker_client import (
+    WORKER_MODE_ARG,
     WorkerClientError,
     _communicate,
     build_worker_request,
     run_worker,
+    worker_command,
 )
 from codex_babeldoc.backends.worker_protocol import (
     EXIT_REQUEST_INVALID,
@@ -397,3 +399,33 @@ class TestRunWorker:
         assert process.killed is False
         assert excinfo.value.error.category == "cancelled"
         assert excinfo.value.error.code == "CANCELLED"
+
+
+class TestWorkerCommand:
+    def test_uses_module_entry_in_regular_python(self, monkeypatch) -> None:
+        monkeypatch.delattr(sys, "frozen", raising=False)
+        command = worker_command(Path("req.json"))
+        assert sys.executable in command
+        assert command[1:] == [
+            "-m",
+            "codex_babeldoc.backends.babeldoc_worker",
+            "req.json",
+        ]
+
+    def test_uses_worker_request_flag_when_frozen(self, monkeypatch) -> None:
+        monkeypatch.setattr(sys, "frozen", True, raising=False)
+        command = worker_command(Path("C:\\work\\req.json"))
+        assert command == [sys.executable, WORKER_MODE_ARG, "C:\\work\\req.json"]
+
+    def test_sidecar_main_dispatches_worker_flag(self, monkeypatch) -> None:
+        from codex_babeldoc.application.sidecar import main as sidecar_main
+
+        dispatched: list[list[str]] = []
+
+        def fake_worker_main(argv: list[str]) -> int:
+            dispatched.append(argv)
+            return 0
+
+        monkeypatch.setattr("codex_babeldoc.backends.babeldoc_worker.main", fake_worker_main)
+        assert sidecar_main([WORKER_MODE_ARG, "req.json"]) == 0
+        assert dispatched == [["req.json"]]

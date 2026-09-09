@@ -27,7 +27,19 @@ uv run ruff check .
 uv run pytest -q
 uv run babeldoc --warmup
 uv run babelcodex --config config/example.toml doctor
+uv run --extra runtime --with pyinstaller pyinstaller \
+    --clean --noconfirm scripts/babelcodex-service.spec
 ```
+
+The last command builds the packaged `babelcodex-service` sidecar from
+`scripts/babelcodex-service.spec` (entry: `scripts/sidecar_entry.py`). It is
+the controlled replacement for the previously temporary, uncommitted PyInstaller
+entry: the frozen binary dispatches the BabelDOC worker subprocess through
+`--worker-request` (`codex_babeldoc.backends.worker_client.worker_command`)
+instead of `python -m`, which cannot execute inside a PyInstaller bundle. The
+spec is platform-neutral; the binary must be built and validated on each target
+platform (e.g. Windows target-triple naming for the Tauri externalBin), and the
+build plus frozen `--worker-request` behavior are `WINDOWS_VERIFICATION_PENDING`.
 
 On 2026-09-08:
 
@@ -95,7 +107,7 @@ Windows 原生验证已于 2026-09-08 在 E 盘 checkout 完成一轮。以下�
 - 文件选择器、输入/输出 allowlist、路径空格、反斜杠、非 ASCII 用户目录、窗口关闭和输出目录打开的完整 GUI 交互矩阵；
 - 没有开发依赖、仓库目录或预置配置的干净 Windows 用户环境验收；本轮只完成 MSI 隔离解包、sidecar smoke 和 GUI 进程级启动；
 - Defender/SmartScreen 行为、签名发布、SBOM，以及 Linux 目标机实际 smoke/发布验收；Linux `.deb`/AppImage 构建脚本和 bundle audit 已在 WSL/Linux 侧完成并通过 fixture/实际构建验证；
-- 目标机运行矩阵和正式发布资源审计；源配置已声明 `icons/icon.png`，Linux AppImage 构建已通过，目标机图标显示和正式发布资源审计仍待完成。
+- 目标机运行矩阵和正式发布资源审计；`tauri.conf.json` 的 `bundle.icon` 已在 Linux 更新为 `["icons/icon.ico", "icons/icon.png"]`（新增已提交的 `gui/src-tauri/icons/icon.ico`，由 `scripts/generate_windows_icon.py` 生成），用于修复最新一轮 Windows 原生 MSI 构建中 `Couldn't find a .ico icon` 失败；Linux AppImage 构建已通过，但 MSI 重建、目标机图标显示和正式发布资源审计仍需 Windows 原生复验（`WINDOWS_VERIFICATION_PENDING`）。
 
 原生 Windows 仍是必要条件，WSL/Linux 结果不能替代上述尚未完成的 GUI 交互验收：
 
@@ -117,7 +129,7 @@ WSL/Linux 的 `cargo check`、浏览器端 Vitest、Vite build、bundle audit �
 - packaged GUI 文件选择、真实路径 allowlist、窗口关闭、取消、完成产物和输出目录交互矩阵；
 - 干净 Windows 用户目录首次启动、WebView2/Defender/SmartScreen、非 ASCII 用户目录和路径空格/反斜杠验证；
 - Windows 签名、SBOM、portable 发布验收、正式资源审计和目标用户环境 smoke；
-- Windows 原生完整 pytest 复验，特别是 `tests/test_mcp.py::test_cancel_uses_the_active_job_handle`；
+- Windows 原生完整 pytest 已在最新重验证中通过（144 passed，3 deselected），其中 `tests/test_mcp.py::test_start_get_validate_and_cleanup_are_scoped` 与 `tests/test_cli.py::test_glossary_cli_import_and_list` 均通过；当前 source-level Python/GUI/Tauri/sidecar 检查为 `WINDOWS_PASS`，剩余 Windows 工作集中在 packaged/release 验收。
 
 需要认证 Codex/目标集成环境、但不属于 Windows-only 的内容包括：
 
@@ -132,7 +144,7 @@ WSL/Linux 的 `cargo check`、浏览器端 Vitest、Vite build、bundle audit �
 记录日期：2026-09-08。以下错误均已定位并处理，不代表当前通过项失败：
 
 - 初次 WSL 到 E 盘同步使用相对路径排除参数，未可靠排除 node_modules 等生成目录；通过检查同步清单发现后，改用绝对排除路径重新同步，并保留 E 盘已有依赖、缓存、状态、日志和构建产物。
-- 首次 Tauri bundle 构建因 icons/icon.ico 缺失而失败；随后补齐方形源图标并在 `tauri.conf.json` 声明 `icons/icon.png`，Linux AppImage 构建已验证，Windows 目标机图标显示和发布资源审计仍待完成。
+- 首次 Tauri bundle 构建因 icons/icon.ico 缺失而失败；随后补齐方形源图标并在 `tauri.conf.json` 声明 `icons/icon.png`，Linux AppImage 构建已验证，Windows 目标机图标显示和发布资源审计仍待完成。后续一轮 current-source NSIS/MSI 联合构建再次在 MSI 阶段因 `Couldn't find a .ico icon` 失败（旧 MSI 未作为证据）；Linux 已新增 `scripts/generate_windows_icon.py` 并提交按标准 Windows 尺寸生成的 `gui/src-tauri/icons/icon.ico`，`bundle.icon` 更新为 `["icons/icon.ico", "icons/icon.png"]`；该 MSI 修复为 `LINUX_VERIFIED` + `WINDOWS_VERIFICATION_PENDING`，需 Windows 原生重建复验，旧 MSI 不得作为当前证据。
 - 首次 PyInstaller 直接以模块文件作为入口时出现 attempted relative import with no known parent package；改用临时的包级入口完成 sidecar 构建，临时入口未作为项目源文件保留。
 - 首次使用的旧生成 bundle 包含过期或不匹配的 sidecar；删除范围仅限 gui/src-tauri/target/release/bundle 和 build/windows-msi-extract，随后重新构建并核对包内 sidecar 与 target-triple sidecar 哈希一致。
 - 一次 sidecar smoke 从 binaries 或 MSI 解包目录启动且未提供配置，出现 FileNotFoundError，原因是相对路径寻找 config/example.toml；改在项目根工作目录启动，并显式传入受控 --config config/example.toml 后，目标 sidecar 和 MSI 解包 sidecar 的 list_jobs JSONL smoke 均退出码 0。
@@ -166,15 +178,34 @@ WSL/Linux 的 `cargo check`、浏览器端 Vitest、Vite build、bundle audit �
 
 本轮非 Windows 开发完成后，在 2026-09-09 的 Linux/WSL 工作区复验：
 
-- `uv run pytest -q`：140 passed，3 deselected；
+- `uv run pytest -q`：150 passed，3 deselected；
 - GUI `npm test -- --run`：17 passed；`npm run build`：通过；
-- Ruff format/check、Python compileall、JSON/YAML/Markdown checks：通过；
+- Ruff format/check、Python compileall：通过；
+- `npm audit --omit=dev`：0 vulnerabilities；
+- CLI/MCP/sidecar `doctor` smoke：在 Linux 本地未登录 Codex 状态下按预期返回未认证信息，不影响 Linux 门禁；
+- StateStore 读路径加固已完成并经 Windows 原生复验确认为 `WINDOWS_PASS`：`load`/`load_by_job_id`/`list_jobs` 现通过 `_read_state_json()` 对瞬时 `PermissionError`（Windows 并发 `os.replace` 下的 sharing violation）执行与写侧对称的有界指数退避；回归测试覆盖瞬时恢复、持续失败抛出和有界重试预算；Windows 复验全量 pytest 为 `150 passed, 3 deselected`，此前记录的瞬时读失败未复现，间歇性 FAIL 观察已作为历史记录移除；
 - glossary CLI `list` smoke、MCP stdio smoke、glossary/context contract tests 和 scoped sidecar editor API tests：通过；
 - PDF metadata/opening-page context adapter、thread identity persistence、mocked Codex `thread_resume`/compact contract 和 GUI glossary/context editor behavior：通过；
 - GUI glossary/context 编辑器已通过 sidecar scoped API 读写 global/document glossary、enabled/notes、文档 stem 校验和 UTF-8 context sidecar；
+- Windows 复验后的 Linux follow-up 已完成：TOML Windows 路径 fixture 使用安全字符串序列化，MCP job cleanup 同时检查 active future、处理 Future 完成竞态并对瞬时文件锁执行有限退避重试；Linux 全量验证通过，且最新 Windows 重验证已确认 CLI Windows-path fixture、MCP cleanup 和完整 Python 门禁均为 `WINDOWS_PASS`；
+- Windows current-source packaging 后的 MSI `.ico` Linux follow-up 已完成并经 Windows 原生复验确认为 `WINDOWS_PASS`：`scripts/generate_windows_icon.py`、已提交的 `gui/src-tauri/icons/icon.ico`（16/24/32/48/64/128/256 px）和 `tauri.conf.json` 的 `["icons/icon.ico", "icons/icon.png"]` 更新；Linux 复验为 `147 passed, 3 deselected`、Ruff/lint/format 通过、GUI 17 tests 和 Vite build 通过、`.ico` 七尺寸与配置解析有效；最新 Windows 复验中当前源码 NSIS（`D653629B7F40AAA30311107A17956E12976DF39B42BEF9F5391E859B489DB28D`）与 MSI（`4E885B1E35A3C566D9257A701608BA383B2E5577C40A30A6E93A1578B02F57A4`，195,715,072 bytes）构建均已通过（首次 MSI 失败仅为 E 盘副本同步状态问题，补同步核对哈希后通过；旧 MSI 未作为证据）；packaged GUI 交互与 release 验收仍为 `NOT RUN`，整体保持 `WINDOWS_VERIFICATION_PENDING`；
 - 未生成或提交 glossary/context 用户文件；配置目录仅在本地运行时创建为空目录。
 
-上述结果不能替代 Windows 原生 packaged GUI、Windows 完整 pytest、Codex 客户端实际注册、真实 Codex thread resume/rotation 行为、packaged/clean-profile GUI 编辑交互、目标 Linux 机器 smoke 或正式签名/发布验收。
+上述结果不能替代 Windows 原生 packaged GUI 交互、干净用户验收、Defender/SmartScreen、签名/SBOM/release 审计、npm 全量 advisories 处置、Codex 客户端实际注册、真实 Codex thread resume/rotation 行为、packaged/clean-profile GUI 编辑交互、目标 Linux 机器 smoke 或真实 Codex/PDF 集成。
+## Bundle-audit URL false-positive follow-up (2026-09-09)
+
+- Windows 在当前源码复验中把 `scripts/check_gui_bundle.py` 记为 `WINDOWS_FAIL`：生成的 JS/CSS 里的普通 `https://` 字符串被裸 `[A-Za-z]:[\\/]` 误判为开发机绝对路径；该项是验证脚本缺陷，不是产物路径泄漏证据。
+- Linux 已修复并纳入门禁：`contains_development_machine_absolute_path()` 先剥离 `scheme://authority` 再匹配并加负向后顾；`file:///home/...` 与 `file:///C:/...` 仍可检出；`tests/test_check_gui_bundle.py` 7 个回归测试覆盖 URL 通过、真路径检出、缺 sidecar 与禁入文件行为；用真实 Vite 产物复跑 audit 通过。
+- Linux 复验：`uv run pytest -q` 为 `157 passed, 3 deselected`，Ruff lint/format、compileall、GUI 17 tests 通过。
+- 该修复为 `LINUX_VERIFIED` + `WINDOWS_VERIFICATION_PENDING`：audit 项仅可在 Windows 用修复后脚本重跑通过后才可从 `WINDOWS_FAIL` 转为 `WINDOWS_PASS`，不得提前标记。
+## Latest Windows validation reconciliation (2026-09-09)
+
+- Current WSL `dev` working tree HEAD `7ba4ddf` was synchronized one-way to E: and revalidated with the project-managed Python 3.12.13 environment. Dependency/lock checks, Ruff, compileall, `150 passed, 3 deselected`, doctor, GUI 17 tests/build, Windows Cargo, PyInstaller, frozen/target-triple sidecar smoke, NSIS/MSI generation, MSI extraction, extracted sidecar smoke and package-level GUI launch all passed.
+- The current bundle audit is a real `FAIL`: `scripts/check_gui_bundle.py` flags normal `https://` strings in generated JS/CSS because its absolute-path regex matches the `s://` suffix. This is recorded as a validation-script defect, not as evidence of a product path leak; no code was changed during the Windows run.
+- Current artifacts: NSIS `259D35315741EF3DA4D7318C1DEF36016031524133601108EBE580E55E608FD3` (195,746,309 bytes) and MSI `8307FD99E183E0B8074E1EC863B5CF3EEB12C69BAB9C839D647502624B8A3DE7` (195,715,072 bytes), both unsigned. MSI-contained sidecar hash matched the target-triple sidecar.
+- Overall status remains `WINDOWS_VERIFICATION_PENDING`; interactive/clean-user GUI, cancellation/reconnection/path-permission matrix, Defender/SmartScreen, signing/SBOM/release audit and live Codex/PDF integration remain `NOT RUN`.
+- Linux follow-up: narrow/fix the bundle-audit regex with regression coverage for URL schemes, then rerun the audit. Do not treat the previous audit `PASS` entries as overriding this newer current-source result.
+
 ## Upgrade policy
 
 Changing Python, BabelDOC, openai-codex or uv requires:

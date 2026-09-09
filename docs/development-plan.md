@@ -433,7 +433,7 @@ Phase 8 的以下步骤已完成：
 - Codex/BabelDOC/sidecar 环境检查
 - 任务列表、阶段时间线、进度、取消、错误、输出目录
 - glossary 选择、global/document 术语编辑和文档 context 分区设置页面
-- 暖纸张/墨水蓝视觉主题、浅色/深色模式和 UI 缩放
+- 暖纸张/墨水蓝视觉主题已调整为白色主色调的 Vercel 风格设计方向（PLANNED，2026 年 9 月 10 日）：白底、黑白灰层级、黑色主按钮、语义色仅用于状态表达；移除远程 Google Fonts，改用本地/系统字体栈；重构 New Translation、Jobs、Job Details、Glossary/Context、Diagnostics/Settings 页面；并与交互真实性修复（真实语言控件、真实 stage 进度、glossary 稳定 key、Queue 防重、connection/feedback 分离）放在同一实施切片，见下方 Phase 9B。
 - Windows portable bundle
 - Linux portable bundle 或 AppImage
 - sidecar target triple 和资源清单
@@ -442,7 +442,7 @@ Phase 8 的以下步骤已完成：
 Windows 专属执行清单：
 
 1. [已完成，未签名] 在 Windows 原生环境构建 GUI 与 `babelcodex-service.exe`；
-2. [已完成] 使用 Tauri target-triple sidecar 执行 NSIS/MSI `tauri build`；
+2. [已完成] 使用 Tauri target-triple sidecar 执行 NSIS/MSI `tauri build`（2026-09-09 最新轮：NSIS `D653629B...`、MSI `4E885B1E...` 均已生成并记录；旧 MSI 未作为证据）；
 3. [部分完成] MSI 已隔离解包并运行 sidecar；干净用户环境安装/解压运行仍待完成；
 4. [部分完成] 已验证 JSONL handshake、sidecar 退出和 GUI 进程级启动；文件选择、allowlist、进度、取消、完成产物和诊断 UI 仍待完成；
 5. [部分完成] MSI 解包仅含 GUI 与 sidecar 可执行文件，未完成完整绝对路径/敏感内容审计；
@@ -453,12 +453,32 @@ Windows 本轮执行记录与边界（2026 年 9 月 8 日）：
 
 - 本次 E 盘复核中，完整 uv run pytest -q 两次均在 test_cancel_uses_the_active_job_handle 失败：一次超时后仍为 RUNNING，一次因 Windows os.replace 返回 PermissionError: [WinError 5] 而为 FAILED；单独重跑一次通过，故 Python 全套质量门禁暂记为部分通过，需修复取消/状态持久化时序后复验。
 - 已针对该 Windows 回归增加 StateStore 保存锁、短暂 `PermissionError` 退避重试和 10 秒 terminal 状态轮询测试；Windows 原生完整 pytest 仍需重新复验。
-- Linux 侧修复后完整 pytest 已通过（123 passed，3 deselected）；该结果验证跨平台代码路径，但不能替代 Windows 原生复验。新增 glossary/context/thread state、Codex compact 和 GUI glossary/context editor 后的最终 Linux/WSL 结果为 140 passed，3 deselected。
+- Linux 侧修复后完整 pytest 已通过（123 passed，3 deselected）；该结果验证跨平台代码路径，但不能替代 Windows 原生复验。新增 glossary/context/thread state、Codex compact、GUI glossary/context editor 和本轮 Windows follow-up 修复后的最终 Linux/WSL 结果为 144 passed，3 deselected。
 
 - 已处理的验证错误：相对路径排除参数导致首次同步未完整排除生成目录；Tauri 首次 bundle 缺少 icons/icon.ico；PyInstaller 直接模块入口触发相对导入错误；旧 bundle 中 sidecar 过期；sidecar 从解包目录启动时未显式传入配置导致 FileNotFoundError；以及一次 PowerShell args 参数转发错误导致 uv 只显示帮助。上述问题均已通过绝对排除路径、生成构建图标、临时包级入口、限定范围清理/重建、项目根目录加受控 --config 和显式命令调用处理。
 - 未执行完整桌面 GUI 交互、干净用户目录、Defender/SmartScreen、签名/SBOM、正式 portable 发布审计和目标 Linux 机器 smoke；原因分别是本轮只覆盖自动化测试/协议 smoke/进程级启动、仍依赖项目根配置、使用 unsigned 开发包、尚未进入发布审计流程，以及 WSL/Linux 不能代表目标 Linux 机器。
 - 文档与 Linux bundle 脚本同步后未重复 Windows NSIS/MSI 构建，因为本轮没有 Windows GUI/Rust/sidecar 源代码变化；已复核现有 bundle 哈希、包内 sidecar JSONL smoke 和 cargo check。
+- 2026-09-09 针对最新 Linux commit 的 Windows 复验：uv sync、uv lock、Ruff、doctor、GUI Vitest（17 tests）、Vite build、cargo check 和当前源码 sidecar JSONL smoke 通过；完整 pytest 为 2 failed、138 passed、3 deselected（Windows TOML 路径 fixture 与 cleanup 的 WinError 32），最新 packaged sidecar 重建因 PyInstaller 环境阻塞，故当前状态为 WINDOWS_VERIFICATION_PENDING。
+- 2026-09-09 重新同步同一最新 Linux commit 后复验：uv sync/lock、Ruff、doctor、GUI Vitest（17 tests）、Vite build、cargo check 和当前源码 sidecar JSONL smoke 通过；CLI 测试 5 passed，MCP 测试 10 passed、1 failed（cleanup 的 WinError 32），全量测试观察到 1 个失败且本次运行未返回最终摘要；此前 TOML Windows 路径失败未再现。当前源码 packaged sidecar 重建仍 BLOCKED，整体继续为 WINDOWS_VERIFICATION_PENDING。
+- Linux follow-up after that Windows run：MCP cleanup 现在在删除 job-owned worker 目录前检查当前 MCP future 是否仍未完成；若仍 active 则返回 active-job 错误，避免持久化 terminal 状态与实际 worker 文件句柄释放竞态。另已处理 Future 完成回调与映射登记之间的竞态，并新增确定性回归测试。Linux 全量 pytest 为 144 passed，3 deselected。
+- 2026-09-09 针对上述最新 Linux MCP 生命周期修复重新同步并执行 Windows 复验：CLI/MCP 重点回归 18 passed，Python 全量 144 passed、3 deselected，GUI 17 tests、Vite build、cargo check、doctor 和当前源码 sidecar JSONL smoke 均通过；MCP lifecycle/cleanup 与完整 Python 门禁为 `WINDOWS_PASS`。当前源码 sidecar/package 重建仍因缺少可用 Python 3.11 打包入口而 `WINDOWS_BLOCKED`，打包 GUI、干净用户和发布审计继续待执行。
 
+
+- 2026-09-09 再次针对同一最新 Linux 工作树执行 Windows 复验：uv sync/lock、Ruff、doctor、Python 全量 144 passed、3 deselected、CLI/MCP 18 passed、GUI 17 tests、Vite build、cargo check 和当前源码 sidecar smoke 均通过；首次并行 GUI 调用因 npm ci 重装 node_modules 产生的临时错误已通过顺序重跑排除。当前源码打包仍 BLOCKED，整体保持 WINDOWS_VERIFICATION_PENDING。
+- Linux 侧针对 Windows 打包阻塞补充的受控构建路径（2026-09-09）：新增 `scripts/babelcodex-service.spec`（平台无关 PyInstaller spec，含 BabelDOC/openai-codex hidden imports 与数据收集）、正式顶层入口 `scripts/sidecar_entry.py`（替代此前未保留的临时包级入口），并在 `worker_client.py` 新增 `worker_command()`：冻结（PyInstaller）exe 通过 `--worker-request` 分派 BabelDOC worker 子进程，避免打包二进制内执行 `python -m`；`sidecar.main()` 同步识别该参数。对应回归测试在 `tests/test_worker.py::TestWorkerCommand`。Linux 全量 pytest 为 147 passed、3 deselected，Ruff/format/compileall/spec 语法检查通过；上述内容为 `WINDOWS_VERIFICATION_PENDING`，需在 Windows 用真实 PyInstaller 产物复验后才可标记打包相关项为 PASS。
+- Linux 端的受控 sidecar 打包验证（2026-09-09）：使用与 Windows 验证一致的 PyInstaller 6.22.2 从 `scripts/babelcodex-service.spec` 成功构建 Linux sidecar（约 218 MB），打包产物通过 JSONL `list_jobs`/`list_glossary`/`shutdown` smoke 与冻结环境 `--worker-request` 分派验证（缺失请求文件时返回协议化 WORKER_REQUEST_INVALID、exit 2，未出现 argparse/分派错误）。此项验证 spec 结构、hidden imports 和数据收集在 Linux 可复现构建中有效，属于 `LINUX_VERIFIED`；Windows target-triple exe、打包 GUI 与 installer 仍需 Windows 原生执行，保持 `WINDOWS_VERIFICATION_PENDING`。
+
+- 2026-09-09 Windows current-source packaging 复验：PyInstaller spec/冻结 sidecar 构建、JSONL list_jobs、--worker-request 结构化错误路径、target-triple sidecar smoke、bundle audit 和 NSIS bundle 均通过；完整 Python 147 passed、3 deselected，GUI 17 tests、Vite、Tauri、doctor 均通过。NSIS/MSI 联合构建在 MSI 阶段因缺少 `.ico` 图标失败，旧 MSI 未作为证据，打包 GUI/干净用户/发布审计仍待完成，当前为 WINDOWS_VERIFICATION_PENDING。
+
+- 2026-09-09 针对最新 Linux 工作树（含 icon.ico 配置修复）的 Windows 复验：当前源码 NSIS（`D653629B...`）与 MSI（`4E885B1E...`，195,715,072 bytes）构建均已通过；首次 MSI 失败仅因 E 盘副本 `tauri.conf.json` 未同步到含 `icon.ico` 的版本，补齐单向同步并核对哈希后通过，旧 MSI 未作为证据。Python 全量 147 passed、GUI 17 tests、Vite、Tauri、doctor、冻结 sidecar/target-triple smoke、bundle audit 均为 WINDOWS_PASS；MSI 图标修复在 Linux 为 LINUX_VERIFIED、在 Windows 为 WINDOWS_PASS；packaged GUI 交互/干净用户/发布审计仍为 NOT RUN，整体保持 WINDOWS_VERIFICATION_PENDING。
+
+- 2026-09-09 Linux 本轮和解（reconciliation）：上述 Windows 复验结果已作为新事实输入；Linux 侧无新的失败或 BLOCKED 需要修复，因此本轮不新增或修改业务代码。Linux 复验：`uv run pytest -q` 为 `147 passed, 3 deselected`，Ruff lint/format 通过，Python compileall 通过，GUI `17 passed`、`npm run build` 通过、`npm audit --omit=dev` 为 0 vulnerabilities，`doctor` 在未登录 Codex 状态下按预期返回未认证信息；`.ico` 七尺寸与 tauri 配置解析仍有效。仍需 Windows 原生执行的项目继续标记为 `WINDOWS_VERIFICATION_PENDING` 或 `NOT RUN`，不得提前标记为 `WINDOWS_PASS`：当前 NSIS/MSI packaged sidecar smoke、packaged GUI 交互、干净用户、取消/重连、Windows 路径/权限矩阵、Defender/SmartScreen、签名/SBOM/release 审计，以及需授权的真实 Codex/PDF 集成。
+
+- 2026-09-09 本轮和解（latest state-read hardening）：Windows 复验在包含读加固的同步工作树上执行完整 pytest（150 passed、3 deselected），瞬时 `PermissionError` 未复现；state 读加固与其回归测试升级为 `WINDOWS_PASS`，此前的间歇性 FAIL 观察作为历史记录移除（历史条目保留、不改写）。同轮 NSIS（`8D022FEE...`，195,746,324 bytes）与 MSI（`D1F56078...`，195,715,072 bytes）基于重建后的 sidecar（`FF3555AE...`）重新生成并记录哈希，解包 GUI 进程级启动 smoke 通过。Linux 侧无新失败或 BLOCKED，未修改业务代码。剩余待办为已安装 NSIS/MSI 的 packaged sidecar smoke、packaged GUI 交互、干净用户、取消/重连、Windows 路径/权限矩阵、Defender/SmartScreen、签名/SBOM/release 审计（`NOT RUN`），以及 npm advisories 独立评审和需授权的真实 Codex/PDF 集成。
+
+- 2026-09-09 本轮和解（repeat confirmation, no source delta）：Windows 侧对同一工作树（HEAD `7ba4ddf` + 未提交改动，`state.py`/`test_state.py`/spec/Tauri 配置/图标哈希匹配）执行重复确认，所有已执行检查再次 `WINDOWS_PASS`（Python 150 passed、GUI 17 tests、Vite、Tauri、PyInstaller/冻结 sidecar/target-triple smoke、bundle audit、NSIS `8D022FEE...`、MSI `D1F56078...`、解包 GUI 启动 smoke），结果与上一轮一致，无新失败或 BLOCKED。Linux 侧无需任何代码或配置修改：Plan 关键路径已收敛为纯 Windows/发布流程执行项——已安装 NSIS/MSI 的 packaged sidecar smoke、packaged GUI 交互、干净用户、取消/重连、Windows 路径/权限矩阵、Defender/SmartScreen、签名/SBOM/release 审计（均 `NOT RUN`），npm advisories 独立评审，以及需授权的真实 Codex/PDF 集成；Phase 12/13 等后续功能阶段在验证结果中仍无提前启动依据。整体保持 `WINDOWS_VERIFICATION_PENDING`。
+
+- 2026-09-09 本轮和解（bundle-audit URL false positive）：Windows 当前源码复验中 `scripts/check_gui_bundle.py` 把生成的 JS/CSS 里的普通 `https://` 字符串误判为开发机绝对路径（`s://` 命中裸 `[A-Za-z]:[\\/]`），该 audit 项记为 `WINDOWS_FAIL`（验证脚本缺陷，非产物路径泄漏证据）。Linux 侧已修复：新增 `contains_development_machine_absolute_path()`（先剥离 `scheme://authority` 再匹配 + 负向后顾防御），`file:///home/...` 与 `file:///C:/...` 仍可检出；新增 `tests/test_check_gui_bundle.py` 7 个回归测试；用真实 Vite 产物（含此前触发 FAIL 的 `index-BRF5O_XD.js`/`index-Ciks3U42.css`）在 Linux 复跑 audit 通过。Linux 复验：`uv run pytest -q` 为 `157 passed, 3 deselected`，Ruff lint/format、compileall、GUI 17 tests 通过。该修复为 `LINUX_VERIFIED` + `WINDOWS_VERIFICATION_PENDING`：audit 项仅可在 Windows 用修复后脚本重跑通过后才可从 `WINDOWS_FAIL` 转为 `WINDOWS_PASS`；packaged GUI 交互/干净用户、取消/重连、路径权限矩阵、Defender/SmartScreen、签名/SBOM/release 审计仍为 `NOT RUN`。整体保持 `WINDOWS_VERIFICATION_PENDING`。
 
 首期不承诺所有 Linux 发行版原生安装包，也不优先采用单文件 executable。
 
@@ -493,6 +513,45 @@ GUI 必须通过 Application Service 访问任务；Tauri Rust 层只负责窗�
 - 已完成 document context 编辑：通过同一 sidecar API 加载/保存 UTF-8 context sidecar，并显示服务端返回的 bounded parser/version 结果；
 - 尚未完成完整 GUI packaged 交互 E2E、干净用户环境验收、输入/输出 allowlist 与 Windows 路径矩阵、sidecar 自身重启编排、Linux 目标机 smoke、签名/SBOM 和正式发布验收；GUI 的重试、输出目录打开、cleanup 和 `validate_output` 仍需扩展 sidecar/Application Service contract，MCP 侧 scoped cleanup/validate 已完成。
 - Linux/WSL 可完成的 glossary/context 基础接入与编辑页面已完成；剩余 packaged 交互、目标机运行、签名/SBOM 和正式发布验收继续保留在 Windows/目标平台清单中。
+
+#### Phase 9B：白色 Vercel 风格 GUI 设计重构（PLANNED，2026 年 9 月 10 日）
+
+**设计原则：**
+
+- 主背景为白色/近白色，主文字接近黑色；卡片白底、细灰边框；主操作为黑色实心按钮，次操作为白底细边框按钮；
+- 参考 Vercel 产品界面原则（高信息密度、黑白灰层级、细边框、克制圆角、低阴影、清晰主操作优先级），不照搬其品牌；
+- 状态色仅表达语义（成功/警告/错误/信息），且不只依赖颜色区分状态，同时保留文本、图标或 badge；
+- 深色模式不在本轮强制实施，但 token 必须使用语义命名，为未来 dark theme 保留扩展能力。
+
+**Token 与主题基础：**
+
+建立语义化 token（`--background`、`--foreground`、`--muted`、`--muted-foreground`、`--border`、`--surface`、`--surface-hover`、`--primary`、`--primary-foreground`、`--secondary`、`--secondary-foreground`、`--success`、`--warning`、`--destructive`、`--focus-ring`），正文与背景至少满足 WCAG AA 4.5:1。
+
+**字体与跨平台策略：**
+
+移除远程 Google Fonts 导入（当前 packaged Tauri CSP 不允许该远程字体路径，且与本地优先/离线目标冲突），改用系统字体栈，等宽字体仅用于 Job ID、文件 hash、文件路径和 protocol/version 字段。
+
+**页面重构范围：**
+
+- App Shell/导航：保留固定左 rail，转为白底 + 右侧细边框 + 浅灰活动背景；不得继续依赖 `body { min-width: 1080px; }` 防止布局压缩；支持窄桌面/高 DPI 紧凑布局；
+- New Translation：去除大 hero 和伪数据指标，改为任务优先界面；From/To 必须为真实控件或明确只读摘要；Queue 按钮请求中必须 disabled 并显示 `Queuing…`；表单错误在字段附近显示；
+- Jobs：目标为高信息密度任务列表；移除固定 68%/22% 确定型进度（无真实 percentage 时用 indeterminate progress 或 stage label）；空状态提供可执行 CTA；
+- Job Details：改为任务排查导向的双栏信息工作台，突出输出文件和下一步操作，错误态展示安全错误消息、错误类别和可恢复操作；
+- Glossary/Context：使用真实 segmented control/radio/tabs 语义并增加 `aria-pressed`/`aria-selected`；输入字体不低于 14px；保存状态明确区分 Saved/Saving/Unsaved/Failed；
+- Diagnostics：避免硬编码结论，改用 sidecar/Application Service 返回的实际检查结果（含重新检查动作）；
+- Settings：当前只读内容如不实现真实设置，应改名为 `Configuration`/`Runtime` 并明确由 `config.toml` 管理。
+
+**同一实施切片必须包含的交互真实性修复：**
+
+真实语言控件、真实 stage 进度、glossary 稳定 client ID、Queue 防重、connection state 与 operation feedback 解耦、字段错误关联、`role="status"`/`role="alert"` live region、焦点管理、reduced-motion 支持。
+
+**验证要求：**
+
+Linux 侧执行 Vitest、Vite build、axe/keyboard/overflow/reduced-motion 探针和截图矩阵；Windows packaged 侧（NSIS/MSI、DPI 125/150/200%、NVDA/键盘、文件选择、路径、取消、重连、干净用户）继续标记为 `WINDOWS_VERIFICATION_PENDING`，仅在实际通过后改为 `WINDOWS_PASS`。
+
+**建议实施顺序：**
+
+Phase 9A（交互真实性与状态模型）→ Phase 9B（白色设计系统与页面重排）→ Phase 9C（无障碍与适配）→ Phase 9D（Linux/Windows 验证）。
 
 ### Phase 10：Codex MCP Server Alpha
 
@@ -901,3 +960,33 @@ peak memory
 ```
 
 首个开发迭代不应立即实现批处理。先完成环境、验证器、重试、兼容 mapper 和 mock regression tests；第二个迭代完成 worker、fixture、mock/live E2E 与单语/双语检查，之后再进入 batching 和 glossary。
+
+### Windows 验证更新（2026-09-09）
+
+- 当前 Linux 工作树已同步到 E 盘验证副本；依赖锁定、Ruff、Python 全量测试（147 passed、3 deselected）、doctor、GUI 17 项测试、Vite、Tauri、PyInstaller 冻结 sidecar、JSONL/worker smoke、目标架构 sidecar、bundle 审计、NSIS 打包及 MSI 打包（`4E885B1E...`，195,715,072 bytes；首次失败仅为 E 盘 `tauri.conf.json` 同步状态问题，补同步核对哈希后通过）均为 `WINDOWS_PASS`。
+- GUI 安装后交互、clean-user、签名/Defender/SmartScreen、SBOM、发布审计及 live Codex/PDF 未执行（`NOT RUN`）；整体状态仍为 `WINDOWS_VERIFICATION_PENDING`，后续进入安装包运行与发布安全验证。
+
+### Windows 验证复核（2026-09-09）
+
+- 当前同步副本再次完成依赖、Ruff、doctor、GUI 17 项测试、Vite、Cargo、PyInstaller、冻结/目标架构 sidecar、bundle 审计、GUI 启动 smoke、NSIS 和 MSI 验证；NSIS SHA-256 为 `4138276E...`，MSI SHA-256 为 `1AA47BD6...`。
+- Python 全量测试首次运行出现 1 个 Windows 临时文件 `PermissionError`，focused test 和顺序复跑均通过（147 passed、3 deselected）；该间歇性文件锁/测试基础设施问题已记录，未修改业务代码。
+- 交互式 GUI、clean-user、签名/Defender/SmartScreen、SBOM、发布审计及 live Codex/PDF 仍为 `NOT RUN`；整体状态保持 `WINDOWS_VERIFICATION_PENDING`。
+
+### Windows 验证复核（2026-09-09，状态读取修复后）
+
+- 状态文件读取重试修复已在 Windows 副本验证：Python 全量测试 `150 passed, 3 deselected`；Ruff、doctor、GUI 17 项、Vite、Cargo、PyInstaller、冻结/目标架构 sidecar、bundle 审计、GUI 启动 smoke、NSIS 和 MSI 均为 `PASS`。
+- 最新 NSIS SHA-256 为 `8D022FEE...`，MSI SHA-256 为 `D1F56078...`；交互式 GUI、clean-user、签名/Defender/SmartScreen、SBOM、发布审计及 live Codex/PDF 仍为 `NOT RUN`。
+- 上一轮记录的间歇性 Windows `PermissionError` 在包含修复的工作树上未复现；整体状态仍为 `WINDOWS_VERIFICATION_PENDING`，等待安装包交互与发布安全验证。
+
+### Windows 验证复核（2026-09-09，重复确认）
+
+- 在无新增源代码变化的当前 WSL 状态上再次完成同步、依赖、Ruff、doctor、Python 全量测试（150 passed、3 deselected）、GUI 17 项、Vite、Cargo、PyInstaller、sidecar、bundle 审计、GUI 启动 smoke、NSIS 和 MSI 验证，均为 `PASS`。
+- 上一轮状态读取修复后的 Windows `PermissionError` 未复现；交互式 GUI、clean-user、签名/Defender/SmartScreen、SBOM、发布审计和 live Codex/PDF 仍为 `NOT RUN`，整体保持 `WINDOWS_VERIFICATION_PENDING`。
+
+### Windows 验证复核（2026-09-09，当前源重跑）
+
+- 针对当前 WSL `dev` 工作树（HEAD `7ba4ddf`，含未提交改动）重新同步并执行：uv sync/lock、Ruff、compileall、Python 全量测试 `150 passed, 3 deselected`、doctor、GUI 17 tests、Vite、Cargo、PyInstaller、冻结/target-triple sidecar smoke、NSIS/MSI 构建、MSI 隔离解包后的 sidecar smoke 和包内 GUI 8 秒启动，均通过。
+- 本轮 `scripts/check_gui_bundle.py` 实际返回 `FAIL`：其 `[A-Za-z]:[\\/]` 规则把生成资产中的正常 `https://` 误识别为 `s://` 绝对路径；未发现真实开发机绝对路径。该问题属于验证脚本缺陷，未在 Windows 验证中修改。
+- 新 NSIS SHA-256 为 `259D3531...`（195,746,309 bytes），MSI SHA-256 为 `8307FD99...`（195,715,072 bytes），均 `NotSigned`；包级启动/sidecar 通过，但不能替代交互式 GUI 和 clean-user 验收。
+- 当前状态仍为 `WINDOWS_VERIFICATION_PENDING`；bundle audit 子项为 `WINDOWS_FAIL`，交互式 GUI、clean-user、取消/重连/路径权限矩阵、Defender/SmartScreen、签名/SBOM/release 审计和 live Codex/PDF 仍为 `NOT RUN`。
+- Linux 后续只需在开发阶段修正/测试 audit 正则并重新验证；本轮未修改业务代码、配置或依赖。

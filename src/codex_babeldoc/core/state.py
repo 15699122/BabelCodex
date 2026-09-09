@@ -15,8 +15,8 @@ from codex_babeldoc.core.artifacts import Artifact
 from codex_babeldoc.core.errors import ErrorCategory, ErrorCode
 
 SCHEMA_VERSION = 2
-STATE_REPLACE_RETRIES = 5
-STATE_REPLACE_BACKOFF_SECONDS = 0.02
+STATE_TRANSIENT_RETRIES = 5
+STATE_TRANSIENT_BACKOFF_SECONDS = 0.02
 
 
 class JobStatus(StrEnum):
@@ -196,6 +196,27 @@ def job_id_for(source_fingerprint: str, config_fingerprint: str) -> str:
     return sha256(payload).hexdigest()
 
 
+def _read_state_json(path: Path) -> dict:
+    """Read a state JSON file, tolerating transient Windows file-lock errors.
+
+    :meth:`StateStore.save` swaps the state file atomically via ``os.replace``.
+    On Windows, an overlapping read (for example a job-status poll while the
+    async executor persists a terminal status) can fail transiently with
+    ``PermissionError`` even though the state file itself is readable. Retry
+    with the same bounded exponential backoff used by the write path.
+    """
+    last_error: PermissionError | None = None
+    for attempt in range(STATE_TRANSIENT_RETRIES):
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except PermissionError as error:
+            last_error = error
+            if attempt == STATE_TRANSIENT_RETRIES - 1:
+                raise
+            time.sleep(STATE_TRANSIENT_BACKOFF_SECONDS * (2**attempt))
+    raise last_error  # pragma: no cover - the loop always returns or raises
+
+
 class StateStore:
     def __init__(self, root: Path):
         self.root = root
@@ -211,10 +232,10 @@ class StateStore:
         job_id = job_id_for(source_fp, config_fingerprint)
         path = self._path(job_id)
         if path.exists():
-            return JobState.from_dict(json.loads(path.read_text(encoding="utf-8")))
+            return JobState.from_dict(_read_state_json(path))
         legacy_path = self.root / f"{source_fp}.json"
         if legacy_path.exists():
-            legacy = JobState.from_dict(json.loads(legacy_path.read_text(encoding="utf-8")))
+            legacy = JobState.from_dict(_read_state_json(legacy_path))
             legacy.job_id = job_id
             legacy.config_fingerprint = config_fingerprint
             return legacy
@@ -231,13 +252,13 @@ class StateStore:
         path = self._path(job_id)
         if not path.exists():
             return None
-        return JobState.from_dict(json.loads(path.read_text(encoding="utf-8")))
+        return JobState.from_dict(_read_state_json(path))
 
     def list_jobs(self) -> list[JobState]:
         jobs: list[JobState] = []
         for path in sorted(self.root.glob("*.json")):
             try:
-                jobs.append(JobState.from_dict(json.loads(path.read_text(encoding="utf-8"))))
+                jobs.append(JobState.from_dict(_read_state_json(path)))
             except (KeyError, TypeError, ValueError, json.JSONDecodeError):
                 continue
         return sorted(jobs, key=lambda job: job.updated_at, reverse=True)
@@ -260,13 +281,13 @@ class StateStore:
                 os.fsync(temporary.fileno())
                 temporary_path = Path(temporary.name)
             try:
-                for attempt in range(STATE_REPLACE_RETRIES):
+                for attempt in range(STATE_TRANSIENT_RETRIES):
                     try:
                         os.replace(temporary_path, target)
                         break
                     except PermissionError:
-                        if attempt == STATE_REPLACE_RETRIES - 1:
+                        if attempt == STATE_TRANSIENT_RETRIES - 1:
                             raise
-                        time.sleep(STATE_REPLACE_BACKOFF_SECONDS * (2**attempt))
+                        time.sleep(STATE_TRANSIENT_BACKOFF_SECONDS * (2**attempt))
             finally:
                 temporary_path.unlink(missing_ok=True)

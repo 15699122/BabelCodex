@@ -10,7 +10,8 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
-from concurrent.futures import ThreadPoolExecutor
+import time
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Event, Lock
@@ -27,6 +28,8 @@ from codex_babeldoc.core.state import JobState, JobStatus
 
 MCP_PROTOCOL_VERSION = "2024-11-05"
 JSONRPC_VERSION = "2.0"
+_CLEANUP_RETRIES = 5
+_CLEANUP_BACKOFF_SECONDS = 0.05
 
 
 class McpError(ValueError):
@@ -43,6 +46,7 @@ class _JobContext:
     service: BabelCodexService
     executor: ThreadPoolExecutor
     active: dict[str, Event]
+    futures: dict[str, Future[object]]
     lock: Lock
 
 
@@ -127,6 +131,7 @@ class McpServer:
             service,
             executor or ThreadPoolExecutor(max_workers=1, thread_name_prefix="babelcodex-mcp"),
             {},
+            {},
             Lock(),
         )
         self._owns_executor = executor is None
@@ -141,6 +146,7 @@ class McpServer:
             for cancel_event in self.context.active.values():
                 cancel_event.set()
             self.context.active.clear()
+            self.context.futures.clear()
         if self._owns_executor:
             self.context.executor.shutdown(wait=False, cancel_futures=True)
 
@@ -250,12 +256,17 @@ class McpServer:
                 cancel_event=cancel_event,
             ),
         )
+        with self.context.lock:
+            self.context.futures[job.job_id] = future
 
         def finish(_completed: object) -> None:
             with self.context.lock:
                 self.context.active.pop(job.job_id, None)
+                self.context.futures.pop(job.job_id, None)
 
         future.add_done_callback(finish)
+        if future.done():
+            finish(future)
         return {"job_id": job.job_id, "status": job.status.value}
 
     def _get_job(self, arguments: dict[str, object]) -> dict[str, object]:
@@ -320,6 +331,10 @@ class McpServer:
 
     def _cleanup_job(self, arguments: dict[str, object]) -> dict[str, object]:
         job = self._job(arguments)
+        with self.context.lock:
+            active_future = self.context.futures.get(job.job_id)
+        if active_future is not None and not active_future.done():
+            raise McpError(-32004, "cannot clean up an active job")
         if job.status in {JobStatus.RUNNING, JobStatus.RETRY_PENDING}:
             raise McpError(-32004, "cannot clean up an active job")
         work_root = self.context.service.config.babeldoc.working_dir.resolve()
@@ -336,8 +351,20 @@ class McpServer:
             return {"job_id": job.job_id, "removed": False, "path": str(work_dir)}
         if work_dir.is_symlink():
             raise McpError(-32005, "refusing to remove a symlinked job directory")
-        shutil.rmtree(work_dir)
+        self._remove_work_dir(work_dir)
         return {"job_id": job.job_id, "removed": True, "path": str(work_dir)}
+
+    @staticmethod
+    def _remove_work_dir(work_dir: Path) -> None:
+        """Remove a job directory, tolerating transient Windows file locks."""
+        for attempt in range(_CLEANUP_RETRIES):
+            try:
+                shutil.rmtree(work_dir)
+                return
+            except PermissionError:
+                if attempt == _CLEANUP_RETRIES - 1:
+                    raise
+                time.sleep(_CLEANUP_BACKOFF_SECONDS * (attempt + 1))
 
     def _source_path(self, arguments: dict[str, object]) -> Path:
         raw = arguments.get("source_path")
