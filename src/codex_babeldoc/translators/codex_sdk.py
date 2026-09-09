@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 import threading
 from pathlib import Path
 
 from codex_babeldoc.translation.thread_state import ThreadStateStore
 
 from .base import TranslatorAdapter
+
+log = logging.getLogger(__name__)
 
 
 class CodexSdkTranslator(TranslatorAdapter):
@@ -29,6 +32,7 @@ class CodexSdkTranslator(TranslatorAdapter):
         effort: str = "low",
         thread_state_path: str | None = None,
         document_id: str | None = None,
+        max_turns_before_compact: int = 0,
     ) -> None:
         try:
             from openai_codex import Codex, Sandbox
@@ -42,17 +46,22 @@ class CodexSdkTranslator(TranslatorAdapter):
         self.context_prompt = context_prompt or ""
         self.model = model or None
         self.effort = effort or None
+        self.max_turns_before_compact = max(0, int(max_turns_before_compact))
+        self._turns_since_compact = 0
+        self._compact_count = 0
+        self._last_compact_mode: str | None = None
         self._lock = threading.Lock()
         self._codex = Codex()
+        self._sandbox = Sandbox.read_only
         self._thread_store = (
             ThreadStateStore(Path(thread_state_path)) if thread_state_path else None
         )
         self._document_id = document_id
         saved = self._thread_store.load(document_id) if self._thread_store and document_id else None
         if saved is not None:
-            self._thread = self._codex.thread_resume(saved.thread_id, sandbox=Sandbox.read_only)
+            self._thread = self._codex.thread_resume(saved.thread_id, sandbox=self._sandbox)
         else:
-            self._thread = self._codex.thread_start(sandbox=Sandbox.read_only)
+            self._thread = self._codex.thread_start(sandbox=self._sandbox)
         self._prime_thread()
         if self._thread_store is not None and self._document_id:
             self._thread_store.rotate(self._document_id, self._thread.id)
@@ -77,6 +86,7 @@ class CodexSdkTranslator(TranslatorAdapter):
             f"{text}"
         )
         with self._lock:
+            self._compact_if_needed()
             result = self._thread.run(
                 prompt,
                 model=self.model,
@@ -85,7 +95,58 @@ class CodexSdkTranslator(TranslatorAdapter):
         output = (result.final_response or "").strip()
         if not output:
             raise RuntimeError("Codex returned an empty translation")
+        with self._lock:
+            self._turns_since_compact += 1
         return output
+
+    @property
+    def compact_count(self) -> int:
+        """Number of successful context compactions during this translator lifetime."""
+        return self._compact_count
+
+    @property
+    def last_compact_mode(self) -> str | None:
+        """Return ``native`` or ``rotation`` for the most recent compact."""
+        return self._last_compact_mode
+
+    def _compact_if_needed(self) -> None:
+        if (
+            self.max_turns_before_compact <= 0
+            or self._turns_since_compact < self.max_turns_before_compact
+        ):
+            return
+
+        native_compact = getattr(self._thread, "compact", None)
+        if callable(native_compact):
+            try:
+                native_compact()
+            except Exception as exc:  # noqa: BLE001 - use a conservative rebuild fallback
+                log.warning(
+                    "Native Codex thread compact failed; rebuilding thread: %s", type(exc).__name__
+                )
+            else:
+                self._turns_since_compact = 0
+                self._compact_count += 1
+                self._last_compact_mode = "native"
+                return
+
+        self._rotate_thread_after_compact()
+
+    def _rotate_thread_after_compact(self) -> None:
+        """Rebuild a compacted thread without replacing durable state prematurely."""
+        new_thread = self._codex.thread_start(sandbox=self._sandbox)
+        old_thread = self._thread
+        self._thread = new_thread
+        try:
+            self._prime_thread()
+        except Exception:
+            self._thread = old_thread
+            raise
+        if self._thread_store is not None and self._document_id:
+            self._thread_store.rotate(self._document_id, self._thread.id)
+        self._turns_since_compact = 0
+        self._compact_count += 1
+        self._last_compact_mode = "rotation"
 
     def close(self) -> None:
         close = getattr(self._codex, "close", None)

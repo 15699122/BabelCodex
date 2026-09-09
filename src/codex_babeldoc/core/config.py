@@ -56,6 +56,7 @@ class CodexConfig:
         "Translate faithfully and preserve terminology. Do not explain the translation."
     )
     context_max_chars: int = 4000
+    max_turns_before_compact: int = 0
 
 
 @dataclass(slots=True)

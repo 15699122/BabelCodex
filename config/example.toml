@@ -39,3 +39,5 @@ sandbox = "read_only"
 strict_output = true
 context_prompt = "Translate faithfully and preserve terminology. Do not explain the translation."
 context_max_chars = 4000
+# 0 disables automatic compact. Positive values compact before the next turn.
+max_turns_before_compact = 0

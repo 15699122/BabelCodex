@@ -109,6 +109,7 @@ WSL/Linux 的 `cargo check`、浏览器端 Vitest、Vite build、bundle audit �
 - UTF-8 文档 context sidecar 的标题/摘要提取、归一化、截断和稳定版本 hash；
 - glossary/context 到 TranslationGateway cache key、worker `TranslatorSpec` 和 Codex thread prime 的接入；
 - CLI glossary 管理、MCP/CLI 共用 Application Service、状态保存跨平台加固以及相关 contract/regression tests。
+- 可配置的 Codex compact contract：官方 `Thread.compact()` 优先，失败时采用新 thread + prime + state rotation fallback；不依赖 Windows。
 
 仍强制依赖 Windows 原生环境的内容包括：
 

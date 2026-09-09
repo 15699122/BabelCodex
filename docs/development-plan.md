@@ -563,16 +563,17 @@ MCP 与 GUI 共用 Python Application Service、JobState、事件和错误码；
 
 当前非 Windows 完成记录：
 
-- 配置新增 `project.glossary_dir`、`project.context_dir` 和 `codex.context_max_chars`；
+- 配置新增 `project.glossary_dir`、`project.context_dir`、`codex.context_max_chars` 和 `codex.max_turns_before_compact`；
 - glossary 支持 `global.csv` 与 `documents/<document-stem>.csv`，文档级条目覆盖全局同名条目；
 - glossary 支持 CSV 导入/导出、稳定版本 hash、enabled 标志、notes 和有上限的 terminology prompt；
 - context 支持 UTF-8 文本 sidecar 的标题/摘要提取、空白归一化、边界截断和稳定版本 hash；
 - `babelcodex glossary list|import|export` 已提供本地 CLI 管理入口；
 - glossary/context prompt 与版本已接入 in-process/subprocess 共用的 `TranslatorSpec`、TranslationGateway cache key 和 Codex thread prime；
 - PDF metadata/opening-page context adapter、provider-neutral `ThreadStateStore`、官方 SDK `thread_resume` 接入和成功 prime 后持久化已完成；
-- contract tests 已覆盖覆盖规则、导入导出、禁用术语、长度边界、文本/PDF context 提取、版本隔离、thread state rotation、mocked thread resume 和 worker protocol round-trip。
+- compact 策略已接入：配置开启后优先调用官方 SDK `Thread.compact()`，不支持或失败时回退到新 thread + prime + state rotation；默认仍关闭；
+- contract tests 已覆盖覆盖规则、导入导出、禁用术语、长度边界、文本/PDF context 提取、版本隔离、thread state rotation、mocked thread resume/compact、失败回滚和 worker protocol round-trip。
 
-仍需后续完成：真实 Codex 账户下的 thread resume/rotation 行为验收、thread compact 的策略接入、长文档稳定性 benchmark、真实 Codex-plan integration，以及 GUI glossary/context 编辑页面；这些不应通过单元测试伪造或消耗默认测试额度。
+仍需后续完成：真实 Codex 账户下的 thread resume/rotation/compact 行为验收、长文档稳定性 benchmark、真实 Codex-plan integration，以及 GUI glossary/context 编辑页面；这些不应通过单元测试伪造或消耗默认测试额度。
 
 ### Phase 12：恢复、Part 与任务运维
 

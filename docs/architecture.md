@@ -233,13 +233,13 @@ GUI host 技术验证位于仓库根目录的 `gui/`：Tauri 2 只启动固定�
 - `glossary.py`：读取 `glossary/global.csv` 与 `glossary/documents/<pdf-stem>.csv`，执行文档级覆盖、CSV 管理、稳定版本 hash 和有界 terminology prompt。
 - `context.py`：从 `context/<pdf-stem>.txt` 提取标题/摘要，归一化并限制上下文长度，生成稳定版本 hash。
 
-glossary、context 和 thread state 均属于用户本地数据，不得提交到公开仓库。Orchestrator 按 PDF stem 构造合并 guidance，将 glossary/context 版本写入 `TranslationRequest` 和 cache key，并通过统一 `TranslatorSpec` 传给 in-process 与 subprocess translator。Codex thread prime 只接收已经截断的合并 prompt；thread state 只保存 provider、document ID、thread ID 和 generation，成功 prime 后才落盘。
+glossary、context 和 thread state 均属于用户本地数据，不得提交到公开仓库。Orchestrator 按 PDF stem 构造合并 guidance，将 glossary/context 版本写入 `TranslationRequest` 和 cache key，并通过统一 `TranslatorSpec` 传给 in-process 与 subprocess translator。Codex thread prime 只接收已经截断的合并 prompt；thread state 只保存 provider、document ID、thread ID 和 generation，成功 prime 后才落盘。`max_turns_before_compact` 默认为 0；启用后在下一次翻译 turn 前优先调用官方 `Thread.compact()`，若 SDK 不支持或调用失败，则新建 thread、重新 prime 并在成功后原子轮换 state。
 
 ### `translators/`
 
 仅负责供应商调用。
 
-- `codex_sdk.py`：SDK 初始化、账户认证状态、thread start/resume、turn run、model/effort、SDK 异常转换、thread close。
+- `codex_sdk.py`：SDK 初始化、账户认证状态、thread start/resume、turn run、native compact 与 rotation fallback、model/effort、SDK 异常转换、thread close。
 
 ### `qa/`
 

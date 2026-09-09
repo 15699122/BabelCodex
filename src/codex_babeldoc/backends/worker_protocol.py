@@ -44,6 +44,7 @@ class TranslatorSpec:
     context_version: str | None = None
     thread_state_path: str | None = None
     document_id: str | None = None
+    max_turns_before_compact: int = 0
 
 
 @dataclass(slots=True, frozen=True)
@@ -88,6 +89,7 @@ class WorkerRequest:
                 context_version=t.get("context_version"),
                 thread_state_path=t.get("thread_state_path"),
                 document_id=t.get("document_id"),
+                max_turns_before_compact=int(t.get("max_turns_before_compact", 0)),
             ),
             protocol_version=PROTOCOL_VERSION,
         )

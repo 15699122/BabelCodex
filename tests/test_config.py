@@ -9,3 +9,4 @@ def test_load_example_config():
     assert cfg.translation.translator == "codex-sdk"
     assert cfg.translation.lang_out == "zh"
     assert cfg.project.input_dir == root / "incoming"
+    assert cfg.codex.max_turns_before_compact == 0

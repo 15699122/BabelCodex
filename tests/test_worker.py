@@ -80,6 +80,7 @@ class TestProtocolRoundTrip:
         assert spec.context_prompt is None
         assert spec.cache_enabled is True
         assert spec.cache_path is None
+        assert spec.max_turns_before_compact == 0
 
     def test_translator_spec_context_fields_round_trip(self) -> None:
         spec = TranslatorSpec(
@@ -92,6 +93,7 @@ class TestProtocolRoundTrip:
             context_version="c1",
             thread_state_path="/tmp/threads",
             document_id="paper",
+            max_turns_before_compact=12,
         )
         restored = WorkerRequest.from_json(
             WorkerRequest(request={"job_id": "job-1"}, translator=spec).to_json()
@@ -102,6 +104,7 @@ class TestProtocolRoundTrip:
         assert restored.context_version == "c1"
         assert restored.thread_state_path == "/tmp/threads"
         assert restored.document_id == "paper"
+        assert restored.max_turns_before_compact == 12
 
     def test_codex_prime_prompt_contains_document_guidance(self) -> None:
         prompt = build_prime_prompt("en", "zh", "Terms: model -> 模型\nTitle: A Paper")
@@ -169,6 +172,118 @@ class TestProtocolRoundTrip:
         )
         translator.close()
         assert FakeCodex.resumed == ["thread-new"]
+
+    def test_codex_sdk_uses_native_compact_before_next_turn(self, monkeypatch):
+        import sys
+        import types
+
+        class Result:
+            def __init__(self, response):
+                self.final_response = response
+
+        class FakeThread:
+            def __init__(self, thread_id):
+                self.id = thread_id
+                self.compacts = 0
+                self.runs = []
+
+            def compact(self):
+                self.compacts += 1
+
+            def run(self, prompt, **kwargs):
+                self.runs.append(prompt)
+                return Result("READY" if len(self.runs) == 1 else "translated")
+
+        class FakeCodex:
+            thread = FakeThread("thread-native")
+
+            def thread_start(self, **kwargs):
+                return self.thread
+
+            def close(self):
+                pass
+
+        monkeypatch.setitem(
+            sys.modules,
+            "openai_codex",
+            types.SimpleNamespace(
+                Codex=FakeCodex,
+                Sandbox=types.SimpleNamespace(read_only="read_only"),
+            ),
+        )
+
+        from codex_babeldoc.translators.codex_sdk import CodexSdkTranslator
+
+        translator = CodexSdkTranslator("en", "zh", max_turns_before_compact=1)
+        assert translator.translate("one") == "translated"
+        assert FakeCodex.thread.compacts == 0
+        assert translator.translate("two") == "translated"
+        assert FakeCodex.thread.compacts == 1
+        assert translator.compact_count == 1
+        assert translator.last_compact_mode == "native"
+
+    def test_codex_sdk_rotation_fallback_preserves_state_on_prime_failure(
+        self, monkeypatch, tmp_path
+    ):
+        import sys
+        import types
+
+        class Result:
+            def __init__(self, response):
+                self.final_response = response
+
+        class FakeThread:
+            def __init__(self, thread_id, prime_response="READY"):
+                self.id = thread_id
+                self.prime_response = prime_response
+
+            def run(self, prompt, **kwargs):
+                return Result(
+                    self.prime_response if "Reply exactly: READY" in prompt else "translated"
+                )
+
+        class FakeCodex:
+            starts = 1
+
+            def thread_start(self, **kwargs):
+                self.starts += 1
+                return FakeThread(f"thread-{self.starts}", "READY" if self.starts == 1 else "NO")
+
+            def thread_resume(self, thread_id, **kwargs):
+                return FakeThread(thread_id, "READY")
+
+            def close(self):
+                pass
+
+        monkeypatch.setitem(
+            sys.modules,
+            "openai_codex",
+            types.SimpleNamespace(
+                Codex=FakeCodex,
+                Sandbox=types.SimpleNamespace(read_only="read_only"),
+            ),
+        )
+
+        from codex_babeldoc.translation.thread_state import ThreadState, ThreadStateStore
+        from codex_babeldoc.translators.codex_sdk import CodexSdkTranslator
+
+        state_root = tmp_path / "threads"
+        ThreadStateStore(state_root).save(ThreadState("paper", "old-thread", generation=4))
+        translator = CodexSdkTranslator(
+            "en",
+            "zh",
+            thread_state_path=str(state_root),
+            document_id="paper",
+            max_turns_before_compact=1,
+        )
+        baseline = ThreadStateStore(state_root).load("paper")
+        assert baseline is not None
+        assert translator.translate("one") == "translated"
+        with pytest.raises(RuntimeError, match="failed to initialize"):
+            translator.translate("two")
+        saved = ThreadStateStore(state_root).load("paper")
+        assert saved is not None
+        assert saved == baseline
 
 
 class TestWorkerEntry:

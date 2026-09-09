@@ -92,6 +92,7 @@ class Orchestrator:
             context_version=context_version,
             thread_state_path=str(self.cfg.project.state_dir / "threads"),
             document_id=source.stem if source is not None else None,
+            max_turns_before_compact=max(0, c.max_turns_before_compact),
         )
 
     def _translate_via_worker(
@@ -141,6 +142,7 @@ class Orchestrator:
                 "context_version": spec.context_version,
                 "thread_state_path": spec.thread_state_path,
                 "document_id": spec.document_id,
+                "max_turns_before_compact": spec.max_turns_before_compact,
             },
         )
         run_worker(

@@ -31,6 +31,7 @@ def build_translator(spec: TranslatorSpec) -> object:
             effort=spec.effort,
             thread_state_path=spec.thread_state_path,
             document_id=spec.document_id,
+            max_turns_before_compact=spec.max_turns_before_compact,
         )
     raise ValueError(f"Unknown translator: {spec.name}")
 
