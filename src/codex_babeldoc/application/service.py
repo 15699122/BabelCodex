@@ -1,15 +1,24 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from enum import StrEnum
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from threading import Event
 
 from codex_babeldoc.backends.base import ProgressEvent
 from codex_babeldoc.core.config import AppConfig
 from codex_babeldoc.core.orchestrator import Orchestrator
 from codex_babeldoc.core.state import JobState
+from codex_babeldoc.translation.context import ContextExtractor
+from codex_babeldoc.translation.glossary import (
+    GlossaryEntry,
+    read_csv,
+    version_for,
+    write_csv,
+)
 
 
 class InvocationSource(StrEnum):
@@ -55,6 +64,108 @@ class BabelCodexService:
 
     def list_jobs(self) -> list[JobState]:
         return self.orchestrator.state.list_jobs()
+
+    def list_glossary(
+        self, *, scope: str = "global", document_id: str | None = None
+    ) -> dict[str, object]:
+        path = self._glossary_path(scope=scope, document_id=document_id)
+        entries = read_csv(path) if path.is_file() else ()
+        return {
+            "scope": scope,
+            "document_id": document_id,
+            "entries": [asdict(entry) for entry in entries],
+            "version": version_for(entries) if entries else None,
+        }
+
+    def save_glossary(
+        self,
+        entries: list[dict[str, object]],
+        *,
+        scope: str = "global",
+        document_id: str | None = None,
+    ) -> dict[str, object]:
+        normalized = tuple(
+            GlossaryEntry(
+                source=str(item.get("source", "")).strip(),
+                target=str(item.get("target", "")).strip(),
+                notes=str(item.get("notes", "")).strip(),
+                enabled=self._as_bool(item.get("enabled", True)),
+            )
+            for item in entries
+        )
+        if any(not entry.source for entry in normalized):
+            raise ValueError("glossary entries require a source term")
+        path = self._glossary_path(scope=scope, document_id=document_id)
+        write_csv(path, normalized)
+        return self.list_glossary(scope=scope, document_id=document_id)
+
+    def get_context(self, document_id: str) -> dict[str, object]:
+        path = self._context_path(document_id)
+        raw = path.read_text(encoding="utf-8") if path.is_file() else ""
+        context = ContextExtractor(max_chars=self.config.codex.context_max_chars).from_text(raw)
+        return {
+            "document_id": document_id,
+            "text": raw,
+            "title": context.title,
+            "abstract": context.abstract,
+            "version": context.version,
+        }
+
+    def save_context(self, document_id: str, text: str) -> dict[str, object]:
+        path = self._context_path(document_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with NamedTemporaryFile(
+            "w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+            temporary = Path(handle.name)
+        try:
+            os.replace(temporary, path)
+        finally:
+            temporary.unlink(missing_ok=True)
+        return self.get_context(document_id)
+
+    def _glossary_path(self, *, scope: str, document_id: str | None) -> Path:
+        if scope == "global" and document_id is None:
+            return self.config.project.glossary_dir / "global.csv"
+        if scope == "document" and document_id:
+            return (
+                self.config.project.glossary_dir
+                / "documents"
+                / f"{self._safe_document_id(document_id)}.csv"
+            )
+        raise ValueError("scope must be global or document with a document_id")
+
+    def _context_path(self, document_id: str) -> Path:
+        return self.config.project.context_dir / f"{self._safe_document_id(document_id)}.txt"
+
+    @staticmethod
+    def _safe_document_id(document_id: str) -> str:
+        candidate = document_id.strip()
+        if (
+            not candidate
+            or Path(candidate).name != candidate
+            or "/" in candidate
+            or "\\" in candidate
+            or candidate in {".", ".."}
+        ):
+            raise ValueError("document_id must be a single document stem")
+        return candidate
+
+    @staticmethod
+    def _as_bool(value: object) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.strip().lower() not in {"", "0", "false", "no", "off"}
+        return bool(value)
 
     def close(self) -> None:
         """Release resources owned by the shared application service."""

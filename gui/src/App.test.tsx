@@ -77,4 +77,32 @@ describe("BabelCodex GUI shell", () => {
     expect(await screen.findByRole("heading", { name: "Recent jobs" })).toBeTruthy();
     expect(screen.getByText(/mock-job-1/)).toBeTruthy();
   });
+
+  it("edits and saves a document glossary and context through the sidecar boundary", async () => {
+    render(<App />);
+    expect(await screen.findByText("Sidecar handshake ready")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Glossary" }));
+    expect(screen.getByRole("heading", { name: "Glossary", level: 2 })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Document" }));
+    fireEvent.change(screen.getByRole("textbox", { name: /Document stem/ }), { target: { value: "paper" } });
+    fireEvent.click(screen.getByRole("button", { name: "load" }));
+    expect(await screen.findByText("Glossary and context loaded")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Add term" }));
+    fireEvent.change(screen.getByLabelText("Source term 1"), { target: { value: "model" } });
+    fireEvent.change(screen.getByLabelText("Target term 1"), { target: { value: "模型" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save glossary" }));
+    expect(await screen.findByText("Glossary saved")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Context sidecar"), { target: { value: "Paper\nAbstract\nContext." } });
+    fireEvent.click(screen.getByRole("button", { name: "Save context" }));
+    expect(await screen.findByText("Document context saved")).toBeTruthy();
+  });
+
+  it("requires a document stem before document glossary operations", async () => {
+    render(<App />);
+    expect(await screen.findByText("Sidecar handshake ready")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Glossary" }));
+    fireEvent.click(screen.getByRole("button", { name: "Document" }));
+    fireEvent.click(screen.getByRole("button", { name: "load" }));
+    expect(await screen.findByText("Enter a document stem before loading document glossary.")).toBeTruthy();
+  });
 });

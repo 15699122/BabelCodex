@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import os
 from dataclasses import dataclass
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,7 +38,15 @@ def read_csv(path: Path) -> tuple[GlossaryEntry, ...]:
 
 def write_csv(path: Path, entries: tuple[GlossaryEntry, ...] | list[GlossaryEntry]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8", newline="") as handle:
+    with NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        newline="",
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        delete=False,
+    ) as handle:
         writer = csv.DictWriter(handle, fieldnames=("source", "target", "notes", "enabled"))
         writer.writeheader()
         for entry in sorted(entries, key=lambda item: item.source.casefold()):
@@ -48,6 +58,13 @@ def write_csv(path: Path, entries: tuple[GlossaryEntry, ...] | list[GlossaryEntr
                     "enabled": "true" if entry.enabled else "false",
                 }
             )
+        handle.flush()
+        os.fsync(handle.fileno())
+        temporary = Path(handle.name)
+    try:
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def version_for(entries: tuple[GlossaryEntry, ...] | list[GlossaryEntry]) -> str:

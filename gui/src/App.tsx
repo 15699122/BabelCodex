@@ -2,13 +2,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Activity, ArrowUpRight, BookOpen, CheckCircle2, FolderOpen, Gauge, Library, RefreshCw, Settings2, ShieldCheck } from "lucide-react";
 import { createFilePicker, isTauriRuntime } from "./filePicker";
 import { isActiveJob, JobStore } from "./jobStore";
+import type { ContextResult, GlossaryEntry, GlossaryResult } from "./jobStore";
 import type { Artifact, JobState } from "./protocol";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import { Card, CardContent, CardHeader } from "./components/ui/card";
 import { Progress } from "./components/ui/progress";
 
-type View = "new" | "jobs" | "details" | "diagnostics" | "settings";
+type View = "new" | "jobs" | "details" | "glossary" | "diagnostics" | "settings";
 
 function App() {
   const [view, setView] = useState<View>("new");
@@ -135,6 +136,7 @@ function App() {
         <nav className="nav-stack" aria-label="Primary navigation">
           <NavButton active={view === "new"} icon={<ArrowUpRight size={17} />} label="New translation" onClick={() => setView("new")} />
           <NavButton active={view === "jobs"} icon={<Activity size={17} />} label="Jobs" count={jobs.length} onClick={() => setView("jobs")} />
+          <NavButton active={view === "glossary"} icon={<Library size={17} />} label="Glossary" onClick={() => setView("glossary")} />
           <NavButton active={view === "diagnostics"} icon={<Gauge size={17} />} label="Diagnostics" onClick={() => setView("diagnostics")} />
           <NavButton active={view === "settings"} icon={<Settings2 size={17} />} label="Settings" onClick={() => setView("settings")} />
         </nav>
@@ -150,6 +152,7 @@ function App() {
         {view === "new" && <NewTranslation sourcePath={sourcePath} setSourcePath={setSourcePath} onStart={startTranslation} onPickPdf={pickPdf} onBrowserFile={handleBrowserFile} fileInputRef={fileInputRef} />}
         {view === "jobs" && <Jobs jobs={jobs} onCancel={cancelJob} cancelling={cancelling} onOpen={openJobDetails} />}
         {view === "details" && selectedJobId && <JobDetails job={jobs.find((candidate) => candidate.job_id === selectedJobId) ?? null} onBack={() => setView("jobs")} onCancel={cancelJob} cancelling={cancelling} onRefresh={refreshJob} refreshing={refreshingJob === selectedJobId} />}
+        {view === "glossary" && <Glossary store={store} onNotice={(notice) => setSnapshot((current) => ({ ...current, notice }))} />}
         {view === "diagnostics" && <Diagnostics connection={snapshot.connection} onReconnect={() => void store.reconnect()} />}
         {view === "settings" && <Settings />}
       </section>
@@ -211,6 +214,124 @@ function Fact({ label, value }: { label: string; value: string }): React.ReactEl
 function ArtifactRow({ artifact }: { artifact: Artifact }): React.ReactElement { return <div className="artifact-row"><div><strong>{artifact.artifact_type.replaceAll("_", " ")}</strong><span>{artifact.path}</span>{artifact.sha256 && <small className="artifact-hash">sha256 · {artifact.sha256}</small>}</div><div><small>{formatBytes(artifact.size)}</small><Badge variant={artifact.validated ? "success" : "warning"}>{artifact.validated ? "validated" : "pending"}</Badge></div></div>; }
 function formatDate(value?: string): string { if (!value) return "not recorded"; const date = new Date(value); return Number.isNaN(date.valueOf()) ? value : date.toLocaleString(); }
 function formatBytes(value: number): string { if (value < 1024) return `${value} B`; if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`; return `${(value / (1024 * 1024)).toFixed(1)} MB`; }
+
+const EMPTY_ENTRY: GlossaryEntry = { source: "", target: "", notes: "", enabled: true };
+
+function Glossary({ store, onNotice }: { store: JobStore; onNotice: (notice: string) => void }): React.ReactElement {
+  const [scope, setScope] = useState<"global" | "document">("global");
+  const [documentId, setDocumentId] = useState("");
+  const [entries, setEntries] = useState<GlossaryEntry[]>([]);
+  const [version, setVersion] = useState<string | null>(null);
+  const [context, setContext] = useState<ContextResult>({ document_id: "", text: "", title: "", abstract: "", version: null });
+  const [contextText, setContextText] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [contextSaving, setContextSaving] = useState(false);
+
+  const loadData = async () => {
+    if (scope === "document" && !documentId.trim()) {
+      onNotice("Enter a document stem before loading document glossary.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const glossary = await store.listGlossary(scope, scope === "document" ? documentId.trim() : undefined);
+      setEntries(glossary.entries);
+      setVersion(glossary.version);
+      if (scope === "document") {
+        const loadedContext = await store.getContext(documentId.trim());
+        setContext(loadedContext);
+        setContextText(loadedContext.text);
+      } else {
+        setContext({ document_id: "", text: "", title: "", abstract: "", version: null });
+        setContextText("");
+      }
+      onNotice("Glossary and context loaded");
+    } catch (error) {
+      onNotice(error instanceof Error ? error.message : "Unable to load glossary");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const saveGlossary = async () => {
+    if (scope === "document" && !documentId.trim()) {
+      onNotice("Enter a document stem before saving document glossary.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const result: GlossaryResult = await store.saveGlossary(scope, entries, scope === "document" ? documentId.trim() : undefined);
+      setEntries(result.entries);
+      setVersion(result.version);
+      onNotice("Glossary saved");
+    } catch (error) {
+      onNotice(error instanceof Error ? error.message : "Unable to save glossary");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveContext = async () => {
+    if (!documentId.trim()) {
+      onNotice("Enter a document stem before saving context.");
+      return;
+    }
+    setContextSaving(true);
+    try {
+      const result = await store.saveContext(documentId.trim(), contextText);
+      setContext(result);
+      setContextText(result.text);
+      onNotice("Document context saved");
+    } catch (error) {
+      onNotice(error instanceof Error ? error.message : "Unable to save context");
+    } finally {
+      setContextSaving(false);
+    }
+  };
+
+  const updateEntry = (index: number, patch: Partial<GlossaryEntry>) => {
+    setEntries((current) => current.map((entry, entryIndex) => entryIndex === index ? { ...entry, ...patch } : entry));
+  };
+
+  return <div className="content-column reveal">
+    <div className="section-heading"><div><span className="eyebrow">LANGUAGE MEMORY / 05</span><h2>Glossary</h2></div><Badge variant="muted">{version ? `v ${version.slice(0, 8)}` : "not saved"}</Badge></div>
+    <Card className="editor-card">
+      <CardHeader className="card-label"><Library size={16} /> TERMINOLOGY</CardHeader>
+      <CardContent>
+        <div className="editor-toolbar">
+          <div className="scope-tabs" role="group" aria-label="Glossary scope">
+            <Button variant={scope === "global" ? "default" : "secondary"} size="sm" onClick={() => setScope("global")}>Global</Button>
+            <Button variant={scope === "document" ? "default" : "secondary"} size="sm" onClick={() => setScope("document")}>Document</Button>
+          </div>
+          <Button variant="secondary" size="sm" disabled={loading} onClick={() => void loadData()}>{loading ? "loading" : "load"}</Button>
+        </div>
+        <label htmlFor="glossary-document">Document stem <small>(required for document scope)</small></label>
+        <input id="glossary-document" value={documentId} onChange={(event) => setDocumentId(event.target.value)} placeholder="research-paper" />
+        <div className="glossary-list">
+          {entries.length === 0 && <div className="empty-state">No terms in this scope yet. Add the first term below.</div>}
+          {entries.map((entry, index) => <div className="glossary-row" key={`${index}-${entry.source}`}>
+            <input aria-label={`Source term ${index + 1}`} value={entry.source} onChange={(event) => updateEntry(index, { source: event.target.value })} placeholder="source term" />
+            <input aria-label={`Target term ${index + 1}`} value={entry.target} onChange={(event) => updateEntry(index, { target: event.target.value })} placeholder="target term" />
+            <input aria-label={`Notes ${index + 1}`} value={entry.notes} onChange={(event) => updateEntry(index, { notes: event.target.value })} placeholder="notes" />
+            <label className="check-label"><input type="checkbox" checked={entry.enabled} onChange={(event) => updateEntry(index, { enabled: event.target.checked })} /> enabled</label>
+            <Button variant="ghost" size="sm" aria-label={`Remove term ${index + 1}`} onClick={() => setEntries((current) => current.filter((_, entryIndex) => entryIndex !== index))}>remove</Button>
+          </div>)}
+        </div>
+        <div className="editor-actions"><Button variant="secondary" onClick={() => setEntries((current) => [...current, { ...EMPTY_ENTRY }])}>Add term</Button><Button onClick={() => void saveGlossary()} disabled={saving}>{saving ? "saving" : "Save glossary"}</Button></div>
+      </CardContent>
+    </Card>
+    {scope === "document" && <Card className="editor-card context-editor">
+      <CardHeader className="card-label"><BookOpen size={16} /> DOCUMENT CONTEXT</CardHeader>
+      <CardContent>
+        <p className="editor-help">Keep a short title/abstract or terminology note. The service normalizes and bounds the context before it reaches Codex.</p>
+        <label htmlFor="document-context">Context sidecar</label>
+        <textarea id="document-context" value={contextText} onChange={(event) => setContextText(event.target.value)} placeholder="Paper title\nAbstract\nA concise document context..." />
+        <div className="editor-footer"><small>{context.version ? `version ${context.version.slice(0, 8)}` : "not saved"}</small><Button onClick={() => void saveContext()} disabled={contextSaving}>{contextSaving ? "saving" : "Save context"}</Button></div>
+      </CardContent>
+    </Card>}
+  </div>;
+}
 
 function Diagnostics({ connection, onReconnect }: { connection: { status: string }; onReconnect: () => void }) { return <div className="content-column reveal"><div className="section-heading"><div><span className="eyebrow">SYSTEM CHECK / 03</span><h2>Quiet confidence</h2></div><Button variant="secondary" className="reconnect-action" onClick={onReconnect}>reconnect</Button></div><div className="diagnostic-grid"><Diagnostic icon={<ShieldCheck />} title="Path allowlist" value="Enforced" detail="Input PDFs are scoped to the configured directory." /><Diagnostic icon={<Activity />} title="Sidecar protocol" value={connection.status === "ready" ? "v1 online" : connection.status} detail="JSONL request / response transport is available." /><Diagnostic icon={<Library />} title="Codex session" value="Not checked" detail="Live authentication is only used when a translation starts." /></div></div>; }
 function Diagnostic({ icon, title, value, detail }: { icon: React.ReactNode; title: string; value: string; detail: string }) { return <Card className="diag-card">{icon}<span className="eyebrow">{title}</span><strong>{value}</strong><p>{detail}</p></Card>; }

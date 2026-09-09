@@ -114,6 +114,33 @@ export class JobStore {
     return result.job;
   }
 
+  async listGlossary(scope: "global" | "document", documentId?: string): Promise<GlossaryResult> {
+    return this.request<GlossaryResult>("list_glossary", {
+      scope,
+      ...(documentId ? { document_id: documentId } : {}),
+    });
+  }
+
+  async saveGlossary(
+    scope: "global" | "document",
+    entries: GlossaryEntry[],
+    documentId?: string,
+  ): Promise<GlossaryResult> {
+    return this.request<GlossaryResult>("save_glossary", {
+      scope,
+      entries,
+      ...(documentId ? { document_id: documentId } : {}),
+    });
+  }
+
+  async getContext(documentId: string): Promise<ContextResult> {
+    return this.request<ContextResult>("get_context", { document_id: documentId });
+  }
+
+  async saveContext(documentId: string, text: string): Promise<ContextResult> {
+    return this.request<ContextResult>("save_context", { document_id: documentId, text });
+  }
+
   watchJob(jobId: string, intervalMs = 1000): () => void {
     let stopped = false;
     const refresh = async (): Promise<void> => {
@@ -247,3 +274,25 @@ export class JobStore {
 }
 
 export const isActiveJob = (job: JobState): boolean => !TERMINAL_STATUSES.has(job.status);
+
+export interface GlossaryEntry {
+  source: string;
+  target: string;
+  notes: string;
+  enabled: boolean;
+}
+
+export interface GlossaryResult {
+  scope: "global" | "document";
+  document_id: string | null;
+  entries: GlossaryEntry[];
+  version: string | null;
+}
+
+export interface ContextResult {
+  document_id: string;
+  text: string;
+  title: string;
+  abstract: string;
+  version: string | null;
+}

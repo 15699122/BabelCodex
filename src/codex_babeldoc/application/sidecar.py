@@ -33,6 +33,10 @@ class SidecarMethod(StrEnum):
     LIST_JOBS = "list_jobs"
     CANCEL_JOB = "cancel_job"
     POLL_EVENTS = "poll_events"
+    LIST_GLOSSARY = "list_glossary"
+    SAVE_GLOSSARY = "save_glossary"
+    GET_CONTEXT = "get_context"
+    SAVE_CONTEXT = "save_context"
     SHUTDOWN = "shutdown"
 
 
@@ -99,6 +103,14 @@ class JsonlSidecar:
                 result = self._cancel(request)
             elif method is SidecarMethod.POLL_EVENTS:
                 result = self._poll_events(request)
+            elif method is SidecarMethod.LIST_GLOSSARY:
+                result = self._list_glossary(request)
+            elif method is SidecarMethod.SAVE_GLOSSARY:
+                result = self._save_glossary(request)
+            elif method is SidecarMethod.GET_CONTEXT:
+                result = self._get_context(request)
+            elif method is SidecarMethod.SAVE_CONTEXT:
+                result = self._save_context(request)
             elif method is SidecarMethod.SHUTDOWN:
                 result = {"closing": True}
                 self.close()
@@ -261,6 +273,55 @@ class JsonlSidecar:
             ]
             next_sequence = self._next_sequence - 1
         return {"events": events, "next_sequence": next_sequence}
+
+    def _list_glossary(self, request: dict[str, object]) -> dict[str, object]:
+        scope = str(request.get("scope", "global"))
+        document_id = self._optional_document_id(request)
+        return self.service.list_glossary(scope=scope, document_id=document_id)
+
+    def _save_glossary(self, request: dict[str, object]) -> dict[str, object]:
+        raw_entries = request.get("entries")
+        if not isinstance(raw_entries, list) or not all(
+            isinstance(entry, dict) for entry in raw_entries
+        ):
+            raise SidecarError("entries must be a JSON array of objects")
+        scope = str(request.get("scope", "global"))
+        document_id = self._optional_document_id(request)
+        return self.service.save_glossary(
+            [dict(entry) for entry in raw_entries], scope=scope, document_id=document_id
+        )
+
+    def _get_context(self, request: dict[str, object]) -> dict[str, object]:
+        return self.service.get_context(self._required_document_id(request))
+
+    def _save_context(self, request: dict[str, object]) -> dict[str, object]:
+        text = request.get("text")
+        if not isinstance(text, str):
+            raise SidecarError("text must be a string")
+        return self.service.save_context(self._required_document_id(request), text)
+
+    @staticmethod
+    def _required_document_id(request: dict[str, object]) -> str:
+        document_id = str(request.get("document_id", "")).strip()
+        if not document_id:
+            raise SidecarError("document_id is required")
+        if (
+            Path(document_id).name != document_id
+            or "/" in document_id
+            or "\\" in document_id
+            or document_id in {".", ".."}
+        ):
+            raise SidecarError("document_id must be a single document stem")
+        return document_id
+
+    @classmethod
+    def _optional_document_id(cls, request: dict[str, object]) -> str | None:
+        raw = str(request.get("document_id", "")).strip()
+        if not raw:
+            return None
+        if Path(raw).name != raw or "/" in raw or "\\" in raw or raw in {".", ".."}:
+            raise SidecarError("document_id must be a single document stem")
+        return raw
 
     def _emit(self, event_type: EventType, job_id: str, payload: dict[str, object]) -> None:
         with self._lock:

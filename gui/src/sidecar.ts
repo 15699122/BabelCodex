@@ -140,6 +140,40 @@ export class MockSidecarTransport implements SidecarTransport {
           : null,
       } as T;
     }
+    if (method === "list_glossary") {
+      return {
+        scope: String(params.scope ?? "global"),
+        document_id: params.document_id ? String(params.document_id) : null,
+        entries: [],
+        version: null,
+      } as T;
+    }
+    if (method === "save_glossary") {
+      return {
+        scope: String(params.scope ?? "global"),
+        document_id: params.document_id ? String(params.document_id) : null,
+        entries: (params.entries ?? []) as unknown[],
+        version: "mock-glossary-version",
+      } as T;
+    }
+    if (method === "get_context") {
+      return {
+        document_id: String(params.document_id ?? ""),
+        text: "",
+        title: "",
+        abstract: "",
+        version: null,
+      } as T;
+    }
+    if (method === "save_context") {
+      return {
+        document_id: String(params.document_id ?? ""),
+        text: String(params.text ?? ""),
+        title: "",
+        abstract: "",
+        version: "mock-context-version",
+      } as T;
+    }
     if (method === "shutdown") return { closing: true } as T;
     return {} as T;
   }

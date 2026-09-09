@@ -234,6 +234,7 @@ GUI host 技术验证位于仓库根目录的 `gui/`：Tauri 2 只启动固定�
 - `context.py`：从 `context/<pdf-stem>.txt` 提取标题/摘要，归一化并限制上下文长度，生成稳定版本 hash。
 
 glossary、context 和 thread state 均属于用户本地数据，不得提交到公开仓库。Orchestrator 按 PDF stem 构造合并 guidance，将 glossary/context 版本写入 `TranslationRequest` 和 cache key，并通过统一 `TranslatorSpec` 传给 in-process 与 subprocess translator。Codex thread prime 只接收已经截断的合并 prompt；thread state 只保存 provider、document ID、thread ID 和 generation，成功 prime 后才落盘。`max_turns_before_compact` 默认为 0；启用后在下一次翻译 turn 前优先调用官方 `Thread.compact()`，若 SDK 不支持或调用失败，则新建 thread、重新 prime 并在成功后原子轮换 state。
+- GUI 的 Glossary 页面不直接读写用户文件，而是通过 sidecar 的 `list_glossary`、`save_glossary`、`get_context` 和 `save_context` scoped methods 调用同一个 Application Service。服务端只接受 global/document scope 和单个 document stem，并负责 CSV、UTF-8 sidecar、版本 hash、布尔值解析和原子保存。
 
 ### `translators/`
 

@@ -1,6 +1,6 @@
 # Compatibility Baseline
 
-Last verified: 2026-09-08
+Last verified: 2026-09-09
 
 ## Local development baseline
 
@@ -110,6 +110,7 @@ WSL/Linux 的 `cargo check`、浏览器端 Vitest、Vite build、bundle audit �
 - glossary/context 到 TranslationGateway cache key、worker `TranslatorSpec` 和 Codex thread prime 的接入；
 - CLI glossary 管理、MCP/CLI 共用 Application Service、状态保存跨平台加固以及相关 contract/regression tests。
 - 可配置的 Codex compact contract：官方 `Thread.compact()` 优先，失败时采用新 thread + prime + state rotation fallback；不依赖 Windows。
+- GUI Glossary/Document Context 编辑页及其 scoped sidecar contract；不依赖 Windows，可在 Linux/WSL 通过 mock transport 和 JSONL contract tests 验证。
 
 仍强制依赖 Windows 原生环境的内容包括：
 
@@ -123,6 +124,7 @@ WSL/Linux 的 `cargo check`、浏览器端 Vitest、Vite build、bundle audit �
 - Codex 客户端实际注册和 stdio MCP discovery；
 - 真实 Codex thread resume/rotation、thread compact 和 ChatGPT-plan PDF 翻译；
 - 长文档术语一致性与真实账户下的 throughput/usage benchmark。
+- packaged sidecar 下的 GUI glossary/context 保存、干净用户目录和真实桌面编辑交互仍需目标平台验证。
 
 
 ## Windows native validation incidents and execution boundary
@@ -162,16 +164,17 @@ WSL/Linux 的 `cargo check`、浏览器端 Vitest、Vite build、bundle audit �
 
 ## Current Linux/WSL implementation verification
 
-本轮非 Windows 开发完成后，在 2026-09-08 的 Linux/WSL 工作区复验：
+本轮非 Windows 开发完成后，在 2026-09-09 的 Linux/WSL 工作区复验：
 
-- `uv run pytest -q`：135 passed，3 deselected；
-- GUI `npm test -- --run`：14 passed；`npm run build`：通过；
+- `uv run pytest -q`：140 passed，3 deselected；
+- GUI `npm test -- --run`：17 passed；`npm run build`：通过；
 - Ruff format/check、Python compileall、JSON/YAML/Markdown checks：通过；
-- glossary CLI `list` smoke、MCP stdio smoke 和 glossary/context contract tests：通过；
-- PDF metadata/opening-page context adapter、thread identity persistence 和 mocked Codex `thread_resume` contract：通过；
+- glossary CLI `list` smoke、MCP stdio smoke、glossary/context contract tests 和 scoped sidecar editor API tests：通过；
+- PDF metadata/opening-page context adapter、thread identity persistence、mocked Codex `thread_resume`/compact contract 和 GUI glossary/context editor behavior：通过；
+- GUI glossary/context 编辑器已通过 sidecar scoped API 读写 global/document glossary、enabled/notes、文档 stem 校验和 UTF-8 context sidecar；
 - 未生成或提交 glossary/context 用户文件；配置目录仅在本地运行时创建为空目录。
 
-上述结果不能替代 Windows 原生 packaged GUI、Windows 完整 pytest、Codex 客户端实际注册、真实 Codex thread resume/rotation 行为、目标 Linux 机器 smoke 或正式签名/发布验收。
+上述结果不能替代 Windows 原生 packaged GUI、Windows 完整 pytest、Codex 客户端实际注册、真实 Codex thread resume/rotation 行为、packaged/clean-profile GUI 编辑交互、目标 Linux 机器 smoke 或正式签名/发布验收。
 ## Upgrade policy
 
 Changing Python, BabelDOC, openai-codex or uv requires:

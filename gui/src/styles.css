@@ -171,6 +171,23 @@ input:focus { border-color: var(--lime); box-shadow: 0 0 0 3px rgba(216, 232, 11
 .settings-card div { display: flex; justify-content: space-between; gap: 40px; padding: 22px 25px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 11px; }
 .settings-card div:last-child { border-bottom: 0; }
 .settings-card strong { color: var(--ink); font-weight: 400; text-align: right; }
+.editor-card { margin-bottom: 14px; overflow: hidden; }
+.editor-card .ui-card-content { padding: 0 24px 24px; }
+.editor-toolbar, .editor-actions, .editor-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.editor-toolbar { margin-top: 20px; }
+.scope-tabs { display: flex; gap: 8px; }
+.editor-card label small { color: #65705f; font-size: 9px; text-transform: none; letter-spacing: 0; }
+.glossary-list { margin-top: 20px; border-top: 1px solid var(--line); }
+.glossary-row { display: grid; grid-template-columns: 1fr 1fr 1.2fr auto auto; gap: 8px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.glossary-row input { min-width: 0; padding: 10px 9px; font-size: 10px; }
+.glossary-row .ui-button { color: var(--orange); font-size: 9px; text-transform: uppercase; }
+.check-label { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--muted); white-space: nowrap; }
+.check-label input { width: auto; accent-color: var(--lime); }
+.editor-actions { justify-content: flex-end; margin-top: 20px; }
+.editor-help { margin-top: 20px; color: var(--muted); font-size: 11px; line-height: 1.6; }
+textarea { width: 100%; min-height: 180px; resize: vertical; padding: 14px 12px; border: 1px solid rgba(240, 241, 220, .2); border-radius: 2px; outline: none; color: var(--ink); background: #101610; font: inherit; font-size: 11px; line-height: 1.6; }
+textarea:focus { border-color: var(--lime); box-shadow: 0 0 0 3px rgba(216, 232, 117, .08); }
+.editor-footer { margin-top: 14px; color: var(--muted); font-size: 9px; }
 .reveal { animation: rise .55s ease both; }
 @keyframes rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes spin { to { transform: rotate(360deg); } }

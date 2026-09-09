@@ -107,6 +107,7 @@ BabelCodex 主要面向个人、本地使用。用户需要自行确认待翻译
 - versioned glossary/context guidance with bounded Codex prompt input
 - `babelcodex glossary list|import|export` local glossary management
 - bounded PDF metadata/opening-page context extraction
+- GUI glossary and document-context editor through the scoped sidecar protocol
 - provider-neutral Codex thread identity persistence and resume contract
 - placeholder and structured-output validation
 - exact-output retry on validation failure
@@ -123,6 +124,7 @@ BabelCodex 主要面向个人、本地使用。用户需要自行确认待翻译
 - Scanned-PDF OCR quality
 - Terminology consistency for very long books
 - real Codex account/thread resume behavior and long-thread stability
+- GUI glossary/context editor behavior against a packaged sidecar and clean user profile
 
 ### Planned
 

@@ -24,6 +24,8 @@ def _service(tmp_path: Path) -> BabelCodexService:
     cfg.project.state_dir = tmp_path / "state"
     cfg.project.output_dir = tmp_path / "translated"
     cfg.project.log_dir = tmp_path / "logs"
+    cfg.project.glossary_dir = tmp_path / "glossary"
+    cfg.project.context_dir = tmp_path / "context"
     cfg.babeldoc.working_dir = tmp_path / "work"
     cfg.ensure_dirs()
     return BabelCodexService(cfg)
@@ -59,6 +61,97 @@ def test_sidecar_lists_jobs_without_exposing_shell(tmp_path):
     )[0]
     assert response["ok"] is True
     assert response["result"] == {"jobs": []}
+    sidecar.close()
+
+
+def test_sidecar_reads_and_writes_scoped_glossary_and_context(tmp_path):
+    service = _service(tmp_path)
+    sidecar = JsonlSidecar(service)
+
+    saved_glossary = sidecar.handle(
+        {
+            "protocol_version": PROTOCOL_VERSION,
+            "request_id": "glossary-save",
+            "method": "save_glossary",
+            "scope": "document",
+            "document_id": "paper",
+            "entries": [
+                {"source": "model", "target": "模型", "notes": "preferred", "enabled": True},
+                {"source": "disabled", "target": "忽略", "enabled": False},
+            ],
+        }
+    )[0]
+    assert saved_glossary["ok"] is True
+    assert any(
+        entry["source"] == "disabled" and entry["enabled"] is False
+        for entry in saved_glossary["result"]["entries"]
+    )
+
+    listed = sidecar.handle(
+        {
+            "protocol_version": PROTOCOL_VERSION,
+            "request_id": "glossary-list",
+            "method": "list_glossary",
+            "scope": "document",
+            "document_id": "paper",
+        }
+    )[0]
+    assert listed["result"]["version"]
+    assert (tmp_path / "glossary" / "documents" / "paper.csv").is_file()
+
+    context = sidecar.handle(
+        {
+            "protocol_version": PROTOCOL_VERSION,
+            "request_id": "context-save",
+            "method": "save_context",
+            "document_id": "paper",
+            "text": "A Paper\nAbstract\nA useful context.",
+        }
+    )[0]
+    assert context["result"]["title"] == "A Paper"
+    assert context["result"]["abstract"] == "A useful context."
+
+    loaded = sidecar.handle(
+        {
+            "protocol_version": PROTOCOL_VERSION,
+            "request_id": "context-get",
+            "method": "get_context",
+            "document_id": "paper",
+        }
+    )[0]
+    assert loaded["result"]["text"] == "A Paper\nAbstract\nA useful context."
+    sidecar.close()
+
+
+def test_sidecar_rejects_document_path_traversal(tmp_path):
+    service = _service(tmp_path)
+    sidecar = JsonlSidecar(service)
+    response = sidecar.handle(
+        {
+            "protocol_version": PROTOCOL_VERSION,
+            "request_id": "bad-document",
+            "method": "get_context",
+            "document_id": "../outside",
+        }
+    )[0]
+    assert response["ok"] is False
+    assert "single document stem" in response["error"]["safe_message"]
+    sidecar.close()
+
+
+def test_sidecar_rejects_windows_style_document_path_traversal(tmp_path):
+    service = _service(tmp_path)
+    sidecar = JsonlSidecar(service)
+    response = sidecar.handle(
+        {
+            "protocol_version": PROTOCOL_VERSION,
+            "request_id": "bad-windows-document",
+            "method": "get_context",
+            "document_id": "..\\outside",
+        }
+    )[0]
+    assert response["ok"] is False
+    assert "single document stem" in response["error"]["safe_message"]
     sidecar.close()
 
 

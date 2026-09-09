@@ -367,7 +367,7 @@ Fixture 内容：
 
 **优先级：P1 | 复杂度：L | 预计：4–7 个开发日**
 
-**状态：Python sidecar、事件/取消协议、Tauri 2 host spike、一轮 Windows 原生 sidecar/package 验证，以及 Linux/WSL 侧 GUI 自动重连与构建准备已完成；目标平台 GUI 交互矩阵和干净用户环境桌面 E2E 待完成（2026 年 9 月 8 日）**
+**状态：Python sidecar、事件/取消协议、Tauri 2 host spike、一轮 Windows 原生 sidecar/package 验证，以及 Linux/WSL 侧 GUI 自动重连、构建准备和 glossary/context 编辑器已完成；目标平台 GUI 交互矩阵和干净用户环境桌面 E2E 待完成（2026 年 9 月 9 日）**
 
 任务：
 
@@ -397,7 +397,7 @@ Fixture 内容：
 - 已验证 GUI 的 Vitest/Vite 构建与 Tauri Rust host 的 `cargo check`；
 - 已在 Windows 原生环境用 target triple sidecar 完成 `cargo check`、NSIS/MSI bundle 构建、MSI 隔离解包和 sidecar JSONL `list_jobs` smoke；
 - 已完成解包 GUI 的进程级启动检查；
-- 尚未完成 sidecar 自身重启编排、GUI 文件选择/allowlist/取消/输出目录等交互 E2E、干净用户目录验收、Defender/SmartScreen 矩阵、签名/SBOM 和 Linux 目标机实际 smoke/发布验收；sidecar 指数退避与 Linux bundle 构建已完成。
+- 尚未完成 sidecar 自身重启编排、GUI 文件选择/allowlist/取消/输出目录等 packaged 交互 E2E、干净用户目录验收、Defender/SmartScreen 矩阵、签名/SBOM 和 Linux 目标机实际 smoke/发布验收；sidecar 指数退避、Linux bundle 构建和 glossary/context 编辑器已完成。
 - 源配置已声明 `icons/icon.png`；Linux `.deb`/AppImage 构建已通过，目标机图标显示和正式发布资源审计仍待完成。
 
 Phase 8 的以下步骤已完成：
@@ -423,7 +423,7 @@ Phase 8 的以下步骤已完成：
 
 **优先级：P1 | 复杂度：XL | 预计：8–15 个开发日**
 
-**状态：Windows unsigned NSIS/MSI bundle、Linux `.deb`/AppImage bundle 和包内 sidecar smoke 已完成；正式 portable/clean-user GUI 验收、签名/SBOM、目标机 smoke 和发布审计待完成（2026 年 9 月 8 日）**
+**状态：Windows unsigned NSIS/MSI bundle、Linux `.deb`/AppImage bundle、包内 sidecar smoke 和 Linux/WSL GUI Alpha 编辑能力已完成；正式 portable/clean-user GUI 验收、签名/SBOM、目标机 smoke 和发布审计待完成（2026 年 9 月 9 日）**
 
 任务：
 
@@ -432,7 +432,7 @@ Phase 8 的以下步骤已完成：
 - 任务中心、任务详情、完成结果和产物卡片
 - Codex/BabelDOC/sidecar 环境检查
 - 任务列表、阶段时间线、进度、取消、错误、输出目录
-- glossary 选择和分区设置页面
+- glossary 选择、global/document 术语编辑和文档 context 分区设置页面
 - 暖纸张/墨水蓝视觉主题、浅色/深色模式和 UI 缩放
 - Windows portable bundle
 - Linux portable bundle 或 AppImage
@@ -453,7 +453,7 @@ Windows 本轮执行记录与边界（2026 年 9 月 8 日）：
 
 - 本次 E 盘复核中，完整 uv run pytest -q 两次均在 test_cancel_uses_the_active_job_handle 失败：一次超时后仍为 RUNNING，一次因 Windows os.replace 返回 PermissionError: [WinError 5] 而为 FAILED；单独重跑一次通过，故 Python 全套质量门禁暂记为部分通过，需修复取消/状态持久化时序后复验。
 - 已针对该 Windows 回归增加 StateStore 保存锁、短暂 `PermissionError` 退避重试和 10 秒 terminal 状态轮询测试；Windows 原生完整 pytest 仍需重新复验。
-- Linux 侧修复后完整 pytest 已通过（123 passed，3 deselected）；该结果验证跨平台代码路径，但不能替代 Windows 原生复验。新增 glossary/context/thread state 后的最终 Linux/WSL 结果为 135 passed，3 deselected。
+- Linux 侧修复后完整 pytest 已通过（123 passed，3 deselected）；该结果验证跨平台代码路径，但不能替代 Windows 原生复验。新增 glossary/context/thread state、Codex compact 和 GUI glossary/context editor 后的最终 Linux/WSL 结果为 140 passed，3 deselected。
 
 - 已处理的验证错误：相对路径排除参数导致首次同步未完整排除生成目录；Tauri 首次 bundle 缺少 icons/icon.ico；PyInstaller 直接模块入口触发相对导入错误；旧 bundle 中 sidecar 过期；sidecar 从解包目录启动时未显式传入配置导致 FileNotFoundError；以及一次 PowerShell args 参数转发错误导致 uv 只显示帮助。上述问题均已通过绝对排除路径、生成构建图标、临时包级入口、限定范围清理/重建、项目根目录加受控 --config 和显式命令调用处理。
 - 未执行完整桌面 GUI 交互、干净用户目录、Defender/SmartScreen、签名/SBOM、正式 portable 发布审计和目标 Linux 机器 smoke；原因分别是本轮只覆盖自动化测试/协议 smoke/进程级启动、仍依赖项目根配置、使用 unsigned 开发包、尚未进入发布审计流程，以及 WSL/Linux 不能代表目标 Linux 机器。
@@ -474,7 +474,7 @@ GUI 页面信息架构：
 
 GUI 必须通过 Application Service 访问任务；Tauri Rust 层只负责窗口、文件对话框、受控 sidecar、协议转发和权限，不实现 PDF 翻译。
 
-当前 GUI Alpha 切片记录（2026 年 9 月 8 日）：
+当前 GUI Alpha 切片记录（2026 年 9 月 9 日）：
 
 - 已新增集中式 `JobStore`，统一管理 sidecar 启动、关闭、任务列表同步、事件游标和轮询；
 - 已实现 `start_translation`、`list_jobs`、`poll_events`、`get_job`、`cancel_job` 的前端 contract；
@@ -489,8 +489,10 @@ GUI 必须通过 Application Service 访问任务；Tauri Rust 层只负责窗�
 - 已增加跨平台 GUI bundle 审计脚本：校验 target-triple sidecar、拒绝用户状态/凭据/缓存/开发目录和疑似机器绝对路径，并生成 SHA-256 manifest；GitHub Actions 已加入 Linux GUI test/build job；
 - 已增加跨平台 GUI bundle 审计脚本、Linux bundle 构建脚本、512×512 方形 Tauri 图标和 Linux CI GUI test/build job；
 - 已完成 Linux `.deb`/AppImage bundle、512×512 方形图标、bundle audit、Linux bundle 构建脚本和 Linux CI GUI test/build job；
-- 尚未完成完整 GUI 交互 E2E、干净用户环境验收、输入/输出 allowlist 与 Windows 路径矩阵、sidecar 自身重启编排、Linux 目标机 smoke、签名/SBOM 和正式发布验收；GUI 的重试、输出目录打开、cleanup 和 `validate_output` 仍需扩展 sidecar/Application Service contract，MCP 侧 scoped cleanup/validate 已完成。
-- Linux/WSL 可完成的 glossary/context 基础接入已完成；剩余 GUI packaged 交互、目标机运行、签名/SBOM 和正式发布验收继续保留在 Windows/目标平台清单中。
+- 已完成 GUI Glossary 页面：通过 `JobStore` 调用 scoped sidecar API，支持 global/document glossary、enabled/notes、增删保存、版本显示和 document stem 校验；
+- 已完成 document context 编辑：通过同一 sidecar API 加载/保存 UTF-8 context sidecar，并显示服务端返回的 bounded parser/version 结果；
+- 尚未完成完整 GUI packaged 交互 E2E、干净用户环境验收、输入/输出 allowlist 与 Windows 路径矩阵、sidecar 自身重启编排、Linux 目标机 smoke、签名/SBOM 和正式发布验收；GUI 的重试、输出目录打开、cleanup 和 `validate_output` 仍需扩展 sidecar/Application Service contract，MCP 侧 scoped cleanup/validate 已完成。
+- Linux/WSL 可完成的 glossary/context 基础接入与编辑页面已完成；剩余 packaged 交互、目标机运行、签名/SBOM 和正式发布验收继续保留在 Windows/目标平台清单中。
 
 ### Phase 10：Codex MCP Server Alpha
 
@@ -539,7 +541,7 @@ MCP 与 GUI 共用 Python Application Service、JobState、事件和错误码；
 
 **优先级：P2 | 复杂度：L | 预计：5–8 个开发日**
 
-**状态：已完成 Linux/WSL 可验证的 glossary/context 与 thread identity contract；真实 Codex 账户行为、compact 策略、长文档 benchmark、GUI 编辑页面及 Windows GUI 交互仍待完成（2026 年 9 月 8 日）**
+**状态：已完成 Linux/WSL 可验证的 glossary/context、thread identity、compact contract 和 GUI 编辑页面；真实 Codex 账户行为、长文档 benchmark、packaged GUI 交互及 Windows-only 验收仍待完成（2026 年 9 月 9 日）**
 
 任务：
 
@@ -571,9 +573,10 @@ MCP 与 GUI 共用 Python Application Service、JobState、事件和错误码；
 - glossary/context prompt 与版本已接入 in-process/subprocess 共用的 `TranslatorSpec`、TranslationGateway cache key 和 Codex thread prime；
 - PDF metadata/opening-page context adapter、provider-neutral `ThreadStateStore`、官方 SDK `thread_resume` 接入和成功 prime 后持久化已完成；
 - compact 策略已接入：配置开启后优先调用官方 SDK `Thread.compact()`，不支持或失败时回退到新 thread + prime + state rotation；默认仍关闭；
-- contract tests 已覆盖覆盖规则、导入导出、禁用术语、长度边界、文本/PDF context 提取、版本隔离、thread state rotation、mocked thread resume/compact、失败回滚和 worker protocol round-trip。
+- GUI Glossary 页面已通过 scoped sidecar API 支持 global/document glossary、enabled/notes、增删保存，以及 document context sidecar 编辑和保存；
+- contract tests 已覆盖覆盖规则、导入导出、禁用术语、长度边界、文本/PDF context 提取、版本隔离、thread state rotation、mocked thread resume/compact、失败回滚、worker protocol round-trip 和 GUI sidecar editor API。
 
-仍需后续完成：真实 Codex 账户下的 thread resume/rotation/compact 行为验收、长文档稳定性 benchmark、真实 Codex-plan integration，以及 GUI glossary/context 编辑页面；这些不应通过单元测试伪造或消耗默认测试额度。
+仍需后续完成：真实 Codex 账户下的 thread resume/rotation/compact 行为验收、长文档稳定性 benchmark、真实 Codex-plan integration，以及 packaged/clean-profile GUI 编辑交互验收；这些不应通过单元测试伪造或消耗默认测试额度。
 
 ### Phase 12：恢复、Part 与任务运维
 

@@ -63,6 +63,28 @@ describe("JobStore", () => {
     await store.close();
   });
 
+  it("routes glossary and context editors through scoped sidecar methods", async () => {
+    const transport = new MockSidecarTransport();
+    const store = new JobStore(() => transport);
+    await store.connect();
+    await store.listGlossary("document", "paper");
+    await store.saveGlossary("document", [{ source: "model", target: "模型", notes: "", enabled: true }], "paper");
+    await store.getContext("paper");
+    await store.saveContext("paper", "Paper\nAbstract\nContext.");
+    expect(transport.requests.map((request) => request.method)).toEqual(
+      expect.arrayContaining(["list_glossary", "save_glossary", "get_context", "save_context"]),
+    );
+    expect(transport.requests.find((request) => request.method === "save_glossary")?.params).toMatchObject({
+      scope: "document",
+      document_id: "paper",
+    });
+    expect(transport.requests.find((request) => request.method === "save_context")?.params).toMatchObject({
+      document_id: "paper",
+      text: "Paper\nAbstract\nContext.",
+    });
+    await store.close();
+  });
+
   it("refreshes a watched job immediately and stops after cleanup", async () => {
     const transport = new MockSidecarTransport();
     const store = new JobStore(() => transport);
