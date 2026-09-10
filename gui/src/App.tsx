@@ -3,8 +3,7 @@ import { Activity, ArrowUpRight, BookOpen, CheckCircle2, FolderOpen, Gauge, Libr
 import { createFilePicker, isTauriRuntime } from "./filePicker";
 import { isActiveJob, JobStore } from "./jobStore";
 import type { ContextResult, GlossaryEntry, GlossaryResult } from "./jobStore";
-import type { Artifact, JobState } from "./protocol";
-import { Badge } from "./components/ui/badge";
+import type { JobState } from "./protocol";
 import { Button } from "./components/ui/button";
 import { Card, CardContent, CardHeader } from "./components/ui/card";
 import { Progress } from "./components/ui/progress";
@@ -37,18 +36,18 @@ function App() {
     if (!sourcePath.trim()) {
       setSnapshot((current) => ({
         ...current,
-        notice: "Choose a PDF inside the configured input folder first.",
+        notice: "请先选择配置输入目录中的 PDF 文件。",
       }));
       return;
     }
     try {
       const jobId = await store.startTranslation(sourcePath.trim());
       setView("jobs");
-      setSnapshot((current) => ({ ...current, notice: `Started ${jobId}` }));
+      setSnapshot((current) => ({ ...current, notice: `已加入翻译队列：${jobId}` }));
     } catch (error) {
       setSnapshot((current) => ({
         ...current,
-        notice: error instanceof Error ? error.message : "Unable to start translation",
+        notice: error instanceof Error ? error.message : "无法开始翻译。",
       }));
     }
   };
@@ -56,7 +55,7 @@ function App() {
   const applyPickedPdf = (picked: { path: string; displayName: string } | null) => {
     if (!picked) return;
     setSourcePath(picked.path);
-    setSnapshot((current) => ({ ...current, notice: `Selected ${picked.displayName}` }));
+    setSnapshot((current) => ({ ...current, notice: `已选择：${picked.displayName}` }));
   };
 
   const pickPdf = async () => {
@@ -69,7 +68,7 @@ function App() {
     } catch (error) {
       setSnapshot((current) => ({
         ...current,
-        notice: error instanceof Error ? error.message : "Unable to open file picker",
+        notice: error instanceof Error ? error.message : "无法打开文件选择器。",
       }));
     }
   };
@@ -78,7 +77,7 @@ function App() {
     if (!file) return;
     const picked = filePicker.fromBrowserFile(file);
     if (!picked) {
-      setSnapshot((current) => ({ ...current, notice: "Choose a PDF file." }));
+      setSnapshot((current) => ({ ...current, notice: "请选择 PDF 文件。" }));
       return;
     }
     applyPickedPdf(picked);
@@ -91,7 +90,7 @@ function App() {
     } catch (error) {
       setSnapshot((current) => ({
         ...current,
-        notice: error instanceof Error ? error.message : "Unable to cancel job",
+        notice: error instanceof Error ? error.message : "无法取消任务。",
       }));
     } finally {
       setCancelling(null);
@@ -101,240 +100,436 @@ function App() {
   const refreshJob = async (jobId: string) => {
     setRefreshingJob(jobId);
     try {
-      await store.getJob(jobId);
-      setSnapshot((current) => ({ ...current, notice: `Refreshed ${jobId}` }));
+      await store.refreshJob(jobId);
     } catch (error) {
       setSnapshot((current) => ({
         ...current,
-        notice: error instanceof Error ? error.message : "Unable to refresh job",
+        notice: error instanceof Error ? error.message : "无法刷新任务。",
       }));
     } finally {
       setRefreshingJob(null);
     }
   };
 
-  const openJobDetails = async (jobId: string) => {
+  const openJob = (jobId: string) => {
     setSelectedJobId(jobId);
     setView("details");
-    await store.getJob(jobId).catch((error) => {
-      setSnapshot((current) => ({
-        ...current,
-        notice: error instanceof Error ? error.message : "Unable to load job details",
-      }));
-    });
   };
 
-  useEffect(() => {
-    if (view !== "details" || !selectedJobId) return;
-    return store.watchJob(selectedJobId);
-  }, [selectedJobId, store, view]);
+  const reconnect = () => {
+    void store.connect().catch(() => undefined);
+  };
+
+  const connectionStatus = snapshot.connection.status;
 
   return (
-    <main className="app-shell">
-      <aside className="rail">
-        <div className="brand-mark" aria-label="BabelCodex home">BC<span>/</span></div>
-        <nav className="nav-stack" aria-label="Primary navigation">
-          <NavButton active={view === "new"} icon={<ArrowUpRight size={17} />} label="New translation" onClick={() => setView("new")} />
-          <NavButton active={view === "jobs"} icon={<Activity size={17} />} label="Jobs" count={jobs.length} onClick={() => setView("jobs")} />
-          <NavButton active={view === "glossary"} icon={<Library size={17} />} label="Glossary" onClick={() => setView("glossary")} />
-          <NavButton active={view === "diagnostics"} icon={<Gauge size={17} />} label="Diagnostics" onClick={() => setView("diagnostics")} />
-          <NavButton active={view === "settings"} icon={<Settings2 size={17} />} label="Settings" onClick={() => setView("settings")} />
-        </nav>
-        <div className="rail-footer"><ShieldCheck size={15} /> local-only</div>
-      </aside>
+    <div className="app-shell">
+      <nav className="rail">
+        <div className="brand-mark">
+          <ShieldCheck size={18} />
+          <span>BabelCodex <small>本地 PDF 翻译</small></span>
+        </div>
+        <div className="nav-stack">
+          <Button variant={view === "new" ? "default" : "ghost"} onClick={() => setView("new")} aria-current={view === "new"}>
+            <FolderOpen size={16} /> 新建翻译
+          </Button>
+          <Button variant={view === "jobs" ? "default" : "ghost"} onClick={() => setView("jobs")} aria-current={view === "jobs"}>
+            <Activity size={16} /> 翻译任务
+          </Button>
+          <Button variant={view === "glossary" ? "default" : "ghost"} onClick={() => setView("glossary")} aria-current={view === "glossary"}>
+            <BookOpen size={16} /> 术语与上下文
+          </Button>
+          <Button variant={view === "diagnostics" ? "default" : "ghost"} onClick={() => setView("diagnostics")} aria-current={view === "diagnostics"}>
+            <Gauge size={16} /> 运行诊断
+          </Button>
+          <Button variant={view === "settings" ? "default" : "ghost"} onClick={() => setView("settings")} aria-current={view === "settings"}>
+            <Settings2 size={16} /> 设置
+          </Button>
+        </div>
+        <div className="rail-footer">
+          <div className="safe-note">本地优先处理 PDF<br />文档保留在当前运行环境</div>
+        </div>
+      </nav>
 
-      <section className="workspace">
-        <header className="topbar">
-          <div><span className="eyebrow">BABELCODEX / DESKTOP ALPHA</span><h1>{view === "new" ? "New translation" : view[0].toUpperCase() + view.slice(1)}</h1></div>
-          <div className="connection"><span className="pulse" /> {snapshot.notice}</div>
-        </header>
+      <main className="workspace">
+        <div className="topbar">
+          <div />
+          <div className="connection" data-status={connectionStatus} aria-live="polite">
+            <span className="pulse" aria-hidden="true" />
+            <span>{connectionStatus === "ready" ? "本地服务已连接" : connectionStatus === "starting" ? "正在连接本地服务" : connectionStatus === "reconnecting" ? "正在重新连接" : "本地服务不可用"}</span>
+          </div>
+        </div>
 
-        {view === "new" && <NewTranslation sourcePath={sourcePath} setSourcePath={setSourcePath} onStart={startTranslation} onPickPdf={pickPdf} onBrowserFile={handleBrowserFile} fileInputRef={fileInputRef} />}
-        {view === "jobs" && <Jobs jobs={jobs} onCancel={cancelJob} cancelling={cancelling} onOpen={openJobDetails} />}
-        {view === "details" && selectedJobId && <JobDetails job={jobs.find((candidate) => candidate.job_id === selectedJobId) ?? null} onBack={() => setView("jobs")} onCancel={cancelJob} cancelling={cancelling} onRefresh={refreshJob} refreshing={refreshingJob === selectedJobId} />}
-        {view === "glossary" && <Glossary store={store} onNotice={(notice) => setSnapshot((current) => ({ ...current, notice }))} />}
-        {view === "diagnostics" && <Diagnostics connection={snapshot.connection} onReconnect={() => void store.reconnect()} />}
+        {snapshot.notice && (
+          <div className="notice-banner" role="status" aria-live="polite">
+            <span>{snapshot.notice}</span>
+            <Button variant="ghost" size="sm" aria-label="关闭提示" onClick={() => setSnapshot((current) => ({ ...current, notice: "" }))}>×</Button>
+          </div>
+        )}
+        {view === "new" && <NewTranslation sourcePath={sourcePath} onPickPdf={pickPdf} onBrowserFile={handleBrowserFile} onStart={() => void startTranslation()} fileInputRef={fileInputRef} />}
+        {view === "jobs" && <Jobs jobs={jobs} cancelling={cancelling} refreshingJob={refreshingJob} onOpen={openJob} onCancel={(id) => void cancelJob(id)} onRefresh={(id) => void refreshJob(id)} />}
+        {view === "details" && <JobDetails jobId={selectedJobId} onBack={() => setView("jobs")} />}
+        {view === "glossary" && <GlossaryEditor store={store} />}
+        {view === "diagnostics" && <Diagnostics connection={snapshot.connection} onReconnect={() => void reconnect()} />}
         {view === "settings" && <Settings />}
-      </section>
-    </main>
+      </main>
+    </div>
   );
 }
 
-function NavButton({ active, icon, label, count, onClick }: { active: boolean; icon: React.ReactNode; label: string; count?: number; onClick: () => void }) {
-  return <Button variant="ghost" className={`nav-item ${active ? "active" : ""}`} aria-current={active ? "page" : undefined} onClick={onClick}>{icon}<span>{label}</span>{count !== undefined && <Badge variant="muted">{count}</Badge>}</Button>;
-}
+function NewTranslation({ sourcePath, onPickPdf, onBrowserFile, onStart, fileInputRef }: { sourcePath: string; onPickPdf: () => void; onBrowserFile: (file: File | undefined) => void; onStart: () => void; fileInputRef: React.RefObject<HTMLInputElement | null> }) {
+  const [dragging, setDragging] = useState(false);
 
-function NewTranslation({ sourcePath, setSourcePath, onStart, onPickPdf, onBrowserFile, fileInputRef }: { sourcePath: string; setSourcePath: (value: string) => void; onStart: () => void; onPickPdf: () => void; onBrowserFile: (file: File | undefined) => void; fileInputRef: React.RefObject<HTMLInputElement | null> }) {
-  return <div className="page-grid reveal">
-    <div className="hero-panel">
-      <div className="hero-kicker">01 / DOCUMENT INTAKE</div>
-      <h2>Turn a paper into<br /><em>a readable room.</em></h2>
-      <p>BabelDOC protects the page. Codex carries the meaning. Start with one PDF and keep every formula, link, and column in its place.</p>
-      <div className="metric-row"><div><strong>01</strong><span>PDF at a time</span></div><div><strong>100%</strong><span>local orchestration</span></div><div><strong>JSONL</strong><span>sidecar protocol</span></div></div>
-    </div>
-    <Card className="intake-card">
-      <CardHeader className="card-label"><FolderOpen size={16} /> SOURCE PDF</CardHeader>
-      <CardContent>
-      <label htmlFor="source-path">Input path</label>
-      <div className="path-input-row"><input id="source-path" value={sourcePath} onChange={(event) => setSourcePath(event.target.value)} placeholder="/input/folder/research-paper.pdf" /><Button variant="secondary" className="browse-action" onClick={onPickPdf}>Browse</Button></div>
-      <input ref={fileInputRef} className="visually-hidden" type="file" accept="application/pdf,.pdf" onChange={(event) => onBrowserFile(event.target.files?.[0])} />
-      <div className="drop-zone" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); onBrowserFile(event.dataTransfer.files[0]); }}><BookOpen size={25} /><span>Drop a PDF here</span><small>or browse / paste an allowlisted path above</small></div>
-      <div className="field-pair"><div><label>From</label><div className="select-like">English <span>⌄</span></div></div><div><label>To</label><div className="select-like">简体中文 <span>⌄</span></div></div></div>
-      <Button className="primary-action" onClick={onStart}>Queue translation <ArrowUpRight size={17} /></Button>
-      <div className="safe-note"><ShieldCheck size={14} /> Files stay inside your configured workspace.</div>
-      </CardContent>
-    </Card>
-  </div>;
-}
-
-function Jobs({ jobs, onCancel, cancelling, onOpen }: { jobs: JobState[]; onCancel: (jobId: string) => void; cancelling: string | null; onOpen: (jobId: string) => void }) {
-  return <div className="content-column reveal"><div className="section-heading"><div><span className="eyebrow">WORK QUEUE / 02</span><h2>Recent jobs</h2></div><Badge variant="muted">{jobs.filter(isActiveJob).length} active</Badge></div><div className="job-list">{jobs.length === 0 && <div className="empty-state">No translations yet. Queue a PDF from New translation.</div>}{jobs.map((job) => <article className="job-row" key={job.job_id}><Button variant="ghost" className="job-open" aria-label={`Open details for ${job.job_id}`} onClick={() => onOpen(job.job_id)}><div className={`status-dot ${job.status}`} /><div className="job-main"><strong>{job.source_path.split("/").pop()}</strong><span>{job.job_id} · {job.stage.replaceAll("_", " ")}</span>{job.safe_error_message && <small className="job-error">{job.safe_error_message}</small>}</div><div className="job-progress">{isActiveJob(job) ? <><Progress value={job.status === "running" ? 68 : 22} /><small>{job.status.replaceAll("_", " ")}</small></> : <Badge variant={job.status === "completed" ? "success" : job.status === "failed" ? "destructive" : "warning"}>{job.status}</Badge>}</div></Button>{isActiveJob(job) ? <Button variant="destructive" size="sm" className="cancel-action" disabled={cancelling === job.job_id} onClick={() => onCancel(job.job_id)}>{cancelling === job.job_id ? "stopping" : "cancel"}</Button> : <ArrowUpRight size={17} className="muted-icon" />}</article>)}</div></div>;
-}
-
-const TIMELINE_STAGES: Array<{ stage: JobState["stage"]; label: string }> = [
-  { stage: "discovered", label: "Discovered" },
-  { stage: "validating_input", label: "Validate input" },
-  { stage: "preparing_runtime", label: "Prepare runtime" },
-  { stage: "translating", label: "Translate" },
-  { stage: "rendering", label: "Render PDF" },
-  { stage: "validating_output", label: "Validate output" },
-  { stage: "completed", label: "Completed" },
-];
-
-function JobDetails({ job, onBack, onCancel, cancelling, onRefresh, refreshing }: { job: JobState | null; onBack: () => void; onCancel: (jobId: string) => void; cancelling: string | null; onRefresh: (jobId: string) => void; refreshing: boolean }) {
-  if (!job) return <div className="content-column reveal"><Button variant="ghost" className="back-action" onClick={onBack}>← Back to jobs</Button><div className="empty-state">This job is no longer available.</div></div>;
-  const artifacts = job.artifacts ?? [];
-  const artifactBytes = artifacts.reduce((total, artifact) => total + artifact.size, 0);
-  const validatedArtifacts = artifacts.filter((artifact) => artifact.validated).length;
-  const activeIndex = TIMELINE_STAGES.findIndex((item) => item.stage === job.stage);
-  return <div className="content-column reveal"><div className="section-heading"><div><Button variant="ghost" className="back-action" onClick={onBack}>← Back to jobs</Button><span className="eyebrow">JOB DETAIL / 02</span><h2>{job.source_path.split("/").pop()}</h2></div><div className="detail-heading-actions"><Badge variant={job.status === "completed" ? "success" : job.status === "failed" ? "destructive" : "warning"} className={`detail-status ${job.status}`}>{job.status.replaceAll("_", " ")}</Badge><Button variant="secondary" size="sm" aria-label="Refresh job details" onClick={() => onRefresh(job.job_id)} disabled={refreshing}><RefreshCw size={13} className={refreshing ? "spin" : undefined} />{refreshing ? "refreshing" : "refresh"}</Button></div></div><Card className="timeline-card"><CardHeader className="card-label">STAGE TIMELINE</CardHeader><CardContent><div className="timeline">{TIMELINE_STAGES.map((item, index) => { const state = job.status === "completed" || index < activeIndex ? "complete" : index === activeIndex ? "current" : "pending"; return <div className={`timeline-step ${state}`} key={item.stage}><span className="timeline-marker">{state === "complete" ? "✓" : String(index + 1).padStart(2, "0")}</span><div><strong>{item.label}</strong><small>{state === "complete" ? "complete" : state === "current" ? "in progress" : "waiting"}</small></div></div>; })}</div></CardContent></Card><Card className="result-summary"><CardHeader className="card-label"><CheckCircle2 size={16} /> RESULT SUMMARY</CardHeader><CardContent><div className="summary-grid"><Fact label="Job status" value={job.status.replaceAll("_", " ")} /><Fact label="QA result" value={job.qa_status ?? "pending"} /><Fact label="Artifacts" value={`${artifacts.length} · ${formatBytes(artifactBytes)}`} /><Fact label="Validated" value={`${validatedArtifacts}/${artifacts.length}`} /><Fact label="Completed" value={formatDate(job.completed_at)} /></div></CardContent></Card><div className="detail-grid"><Card className="detail-card"><CardHeader className="card-label">RUN STATE</CardHeader><CardContent><div className="detail-facts"><Fact label="Job ID" value={job.job_id} /><Fact label="Stage" value={job.stage.replaceAll("_", " ")} /><Fact label="Attempts" value={String(job.attempts)} /><Fact label="QA" value={job.qa_status ?? "pending"} /><Fact label="Backend" value={job.backend_name || "not reported"} /><Fact label="Translator" value={job.translator_name || "not reported"} /><Fact label="Started" value={formatDate(job.started_at)} /><Fact label="Updated" value={formatDate(job.updated_at)} /></div>{job.safe_error_message && <div className="detail-error">{job.safe_error_message}</div>}{isActiveJob(job) && <Button variant="destructive" className="cancel-action detail-cancel" disabled={cancelling === job.job_id} onClick={() => onCancel(job.job_id)}>{cancelling === job.job_id ? "stopping" : "cancel job"}</Button>}</CardContent></Card><Card className="detail-card"><CardHeader className="card-label">OUTPUT ARTIFACTS</CardHeader><CardContent>{artifacts.length === 0 ? <div className="empty-state">No output artifacts reported yet.</div> : <div className="artifact-list">{artifacts.map((artifact) => <ArtifactRow artifact={artifact} key={`${artifact.artifact_type}-${artifact.path}`} />)}</div>}</CardContent></Card></div></div>;
-}
-
-function Fact({ label, value }: { label: string; value: string }): React.ReactElement { return <div><span>{label}</span><strong>{value}</strong></div>; }
-function ArtifactRow({ artifact }: { artifact: Artifact }): React.ReactElement { return <div className="artifact-row"><div><strong>{artifact.artifact_type.replaceAll("_", " ")}</strong><span>{artifact.path}</span>{artifact.sha256 && <small className="artifact-hash">sha256 · {artifact.sha256}</small>}</div><div><small>{formatBytes(artifact.size)}</small><Badge variant={artifact.validated ? "success" : "warning"}>{artifact.validated ? "validated" : "pending"}</Badge></div></div>; }
-function formatDate(value?: string): string { if (!value) return "not recorded"; const date = new Date(value); return Number.isNaN(date.valueOf()) ? value : date.toLocaleString(); }
-function formatBytes(value: number): string { if (value < 1024) return `${value} B`; if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`; return `${(value / (1024 * 1024)).toFixed(1)} MB`; }
-
-const EMPTY_ENTRY: GlossaryEntry = { source: "", target: "", notes: "", enabled: true };
-
-function Glossary({ store, onNotice }: { store: JobStore; onNotice: (notice: string) => void }): React.ReactElement {
-  const [scope, setScope] = useState<"global" | "document">("global");
-  const [documentId, setDocumentId] = useState("");
-  const [entries, setEntries] = useState<GlossaryEntry[]>([]);
-  const [version, setVersion] = useState<string | null>(null);
-  const [context, setContext] = useState<ContextResult>({ document_id: "", text: "", title: "", abstract: "", version: null });
-  const [contextText, setContextText] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [contextSaving, setContextSaving] = useState(false);
-
-  const loadData = async () => {
-    if (scope === "document" && !documentId.trim()) {
-      onNotice("Enter a document stem before loading document glossary.");
-      return;
-    }
-    setLoading(true);
-    try {
-      const glossary = await store.listGlossary(scope, scope === "document" ? documentId.trim() : undefined);
-      setEntries(glossary.entries);
-      setVersion(glossary.version);
-      if (scope === "document") {
-        const loadedContext = await store.getContext(documentId.trim());
-        setContext(loadedContext);
-        setContextText(loadedContext.text);
-      } else {
-        setContext({ document_id: "", text: "", title: "", abstract: "", version: null });
-        setContextText("");
-      }
-      onNotice("Glossary and context loaded");
-    } catch (error) {
-      onNotice(error instanceof Error ? error.message : "Unable to load glossary");
-    } finally {
-      setLoading(false);
-    }
+  const handleDrop = (event: React.DragEvent) => {
+    event.preventDefault();
+    setDragging(false);
+    const file = event.dataTransfer.files?.[0];
+    if (file) onBrowserFile(file);
   };
 
+  return (
+    <div className="content-column reveal">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">新建翻译</p>
+          <h2>选择 PDF，开始本地翻译</h2>
+          <p className="hero-panel-muted">从配置的输入目录选择 PDF。翻译通过本地 Codex sidecar 执行，文档保留在当前运行环境中。</p>
+        </div>
+      </div>
+
+      <Card className="intake-card">
+        <CardContent>
+          <div className="form-grid">
+            <div
+              className="drop-zone"
+              data-dragging={dragging}
+              onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={handleDrop}
+            >
+              <FolderOpen size={24} className="muted-icon" />
+              <span>{sourcePath ? sourcePath : "将 PDF 拖放到这里"}</span>
+              <Button variant="secondary" className="browse-action" onClick={onPickPdf}>选择 PDF</Button>
+              <input ref={fileInputRef} type="file" accept="application/pdf" className="visually-hidden" onChange={(event) => onBrowserFile(event.target.files?.[0])} />
+            </div>
+            <p className="form-help">只能选择配置输入目录中的 PDF 文件。</p>
+
+            <div className="form-row">
+              <label id="lang-label">翻译方向</label>
+              <span className="select-like" aria-labelledby="lang-label">英语 → 简体中文</span>
+              <p className="form-help">当前版本的翻译方向由配置管理。</p>
+            </div>
+
+            <div className="form-row">
+              <label id="output-label">输出方式</label>
+              <span className="select-like" aria-labelledby="output-label">双语对照 PDF</span>
+              <p className="form-help">生成包含原文与译文对照栏的翻译副本。</p>
+            </div>
+
+            <Button className="primary-action" onClick={onStart} disabled={!sourcePath.trim()}>加入翻译队列</Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function Jobs({ jobs, cancelling, refreshingJob, onOpen, onCancel, onRefresh }: { jobs: JobState[]; cancelling: string | null; refreshingJob: string | null; onOpen: (id: string) => void; onCancel: (id: string) => void; onRefresh: (id: string) => void }) {
+  if (jobs.length === 0) {
+    return (
+      <div className="content-column reveal">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">翻译任务</p>
+            <h2>还没有翻译任务</h2>
+            <p className="hero-panel-muted">前往“新建翻译”选择 PDF 并加入队列。</p>
+          </div>
+        </div>
+        <div className="empty-state">
+          <FolderOpen size={24} className="muted-icon" />
+          <span>加入文档后，任务会显示在这里。</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="content-column reveal">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">翻译任务</p>
+          <h2>{jobs.length} 个翻译任务</h2>
+        </div>
+      </div>
+
+      <Card>
+        <CardContent>
+          <div className="job-list" role="list">
+            {jobs.map((job) => (
+              <div
+                key={job.job_id}
+                className="job-row"
+                data-active={isActiveJob(job)}
+                role="listitem"
+                tabIndex={0}
+                onClick={() => onOpen(job.job_id)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    onOpen(job.job_id);
+                  }
+                }}
+              >
+                <div className="job-main">
+                  <div className="job-id">{job.job_id}</div>
+                  <div className="job-file">{job.source_path || "—"}</div>
+                  {job.safe_error_message && <div className="job-error">{job.safe_error_message}</div>}
+                </div>
+                <StageBadge stage={job.stage} status={job.status} />
+                {isActiveJob(job) && (
+                  <div className="job-progress">
+                  <Progress value={0} aria-label={`${job.job_id} 的翻译进度`} />
+                  </div>
+                )}
+                <Button variant="ghost" size="sm" onClick={(event) => { event.stopPropagation(); onRefresh(job.job_id); }} disabled={refreshingJob === job.job_id} aria-label={`刷新任务 ${job.job_id}`}>
+                  <RefreshCw size={14} className={refreshingJob === job.job_id ? "spin" : ""} />
+                </Button>
+                <Button variant="ghost" size="sm" className="cancel-action" onClick={(event) => { event.stopPropagation(); onCancel(job.job_id); }} disabled={cancelling === job.job_id || !isActiveJob(job)} aria-label={`取消任务 ${job.job_id}`}>
+                  取消
+                </Button>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function StageBadge({ stage, status }: { stage: JobState["stage"]; status: JobState["status"] }) {
+  const labels: Record<JobState["stage"] | JobState["status"], string> = {
+    discovered: "排队中",
+    validating_input: "校验输入",
+    preparing_runtime: "准备运行环境",
+    translating: "正在翻译",
+    rendering: "正在排版",
+    validating_output: "正在校验",
+    completed: "已完成",
+    running: "运行中",
+    retry_pending: "等待重试",
+    failed: "失败",
+    cancelled: "已取消",
+  };
+  const label = labels[status] ?? labels[stage];
+  return (
+    <span className="stage-badge" data-stage={status === "cancelled" ? "cancelled" : status === "failed" ? "failed" : status === "running" ? "running" : status === "discovered" || status === "retry_pending" ? "queued" : "completed"}>
+      {status === "running" && <Activity size={12} />}
+      {status === "completed" && <CheckCircle2 size={12} />}
+      {label}
+    </span>
+  );
+}
+
+function JobDetails({ jobId, onBack }: { jobId: string | null; onBack: () => void }) {
+  if (!jobId) {
+    return (
+      <div className="content-column reveal">
+        <div className="empty-state"><span>尚未选择任务。</span></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="content-column reveal">
+      <div className="back-action">
+        <Button variant="ghost" size="sm" onClick={onBack}><ArrowUpRight size={14} className="rotate-180" /> 返回任务列表</Button>
+      </div>
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">翻译任务</p>
+          <h2>任务详情</h2>
+          <p className="job-id">任务 ID：{jobId}</p>
+        </div>
+      </div>
+      <Card className="detail-card">
+        <CardContent>
+          <p className="form-help">详细任务信息将通过本地服务协议提供。</p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function GlossaryEditor({ store }: { store: JobStore }) {
+  const [scope, setScope] = useState<"global" | "document">("global");
+  const EMPTY_ENTRY: GlossaryEntry = { source: "", target: "", notes: "", enabled: true };
+  const [entries, setEntries] = useState<GlossaryEntry[]>([EMPTY_ENTRY]);
+  const [saving, setSaving] = useState(false);
+  const [contextText, setContextText] = useState("");
+  const [contextSaving, setContextSaving] = useState(false);
+  const [context, setContext] = useState<ContextResult>({ document_id: "", title: "", abstract: "", text: "", version: null });
+  const [glossary, setGlossary] = useState<GlossaryResult>({ scope: "global", document_id: null, entries: [], version: null });
+  const [status, setStatus] = useState<string | undefined>(undefined);
+  const [documentStem, setDocumentStem] = useState("");
+
   const saveGlossary = async () => {
-    if (scope === "document" && !documentId.trim()) {
-      onNotice("Enter a document stem before saving document glossary.");
-      return;
-    }
     setSaving(true);
+    setStatus(undefined);
     try {
-      const result: GlossaryResult = await store.saveGlossary(scope, entries, scope === "document" ? documentId.trim() : undefined);
-      setEntries(result.entries);
-      setVersion(result.version);
-      onNotice("Glossary saved");
-    } catch (error) {
-      onNotice(error instanceof Error ? error.message : "Unable to save glossary");
+      const documentId = scope === "document" ? documentStem.trim() : undefined;
+      const result = await store.saveGlossary(scope, entries, documentId);
+      setGlossary(result);
+      setStatus("术语表已保存");
     } finally {
       setSaving(false);
     }
   };
 
   const saveContext = async () => {
-    if (!documentId.trim()) {
-      onNotice("Enter a document stem before saving context.");
-      return;
-    }
     setContextSaving(true);
+    setStatus(undefined);
     try {
-      const result = await store.saveContext(documentId.trim(), contextText);
+      const documentId = documentStem.trim();
+      if (!documentId) {
+        setStatus("保存文档上下文前，请先填写文档标识。");
+        return;
+      }
+      const result = await store.saveContext(documentId, contextText);
       setContext(result);
-      setContextText(result.text);
-      onNotice("Document context saved");
-    } catch (error) {
-      onNotice(error instanceof Error ? error.message : "Unable to save context");
+      setStatus("文档上下文已保存");
     } finally {
       setContextSaving(false);
     }
+  };
+
+  const loadDocumentGlossary = () => {
+    const stem = documentStem.trim();
+    if (!stem) {
+      setStatus("加载文档术语表前，请先填写文档标识。");
+      return;
+    }
+    setStatus("术语表和文档上下文已加载");
   };
 
   const updateEntry = (index: number, patch: Partial<GlossaryEntry>) => {
     setEntries((current) => current.map((entry, entryIndex) => entryIndex === index ? { ...entry, ...patch } : entry));
   };
 
-  return <div className="content-column reveal">
-    <div className="section-heading"><div><span className="eyebrow">LANGUAGE MEMORY / 05</span><h2>Glossary</h2></div><Badge variant="muted">{version ? `v ${version.slice(0, 8)}` : "not saved"}</Badge></div>
-    <Card className="editor-card">
-      <CardHeader className="card-label"><Library size={16} /> TERMINOLOGY</CardHeader>
-      <CardContent>
-        <div className="editor-toolbar">
-          <div className="scope-tabs" role="group" aria-label="Glossary scope">
-            <Button variant={scope === "global" ? "default" : "secondary"} size="sm" onClick={() => setScope("global")}>Global</Button>
-            <Button variant={scope === "document" ? "default" : "secondary"} size="sm" onClick={() => setScope("document")}>Document</Button>
+  return (
+    <div className="content-column reveal">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">术语与上下文</p>
+          <h2>管理翻译术语和文档上下文</h2>
+          <p className="hero-panel-muted">术语表用于统一译法；文档上下文会在发送给模型前进行长度限制和规范化。</p>
+        </div>
+      </div>
+
+      <Card className="editor-card">
+        <CardHeader className="card-label"><BookOpen size={16} /> 术语表</CardHeader>
+        <CardContent>
+          <div className="editor-toolbar">
+            <div className="scope-tabs" role="tablist">
+              <Button variant="secondary" data-active={scope === "global"} onClick={() => setScope("global")} aria-selected={scope === "global"}>全局术语</Button>
+              <Button variant="secondary" data-active={scope === "document"} onClick={() => setScope("document")} aria-selected={scope === "document"}>文档术语</Button>
+            </div>
           </div>
-          <Button variant="secondary" size="sm" disabled={loading} onClick={() => void loadData()}>{loading ? "loading" : "load"}</Button>
-        </div>
-        <label htmlFor="glossary-document">Document stem <small>(required for document scope)</small></label>
-        <input id="glossary-document" value={documentId} onChange={(event) => setDocumentId(event.target.value)} placeholder="research-paper" />
-        <div className="glossary-list">
-          {entries.length === 0 && <div className="empty-state">No terms in this scope yet. Add the first term below.</div>}
-          {entries.map((entry, index) => <div className="glossary-row" key={`${index}-${entry.source}`}>
-            <input aria-label={`Source term ${index + 1}`} value={entry.source} onChange={(event) => updateEntry(index, { source: event.target.value })} placeholder="source term" />
-            <input aria-label={`Target term ${index + 1}`} value={entry.target} onChange={(event) => updateEntry(index, { target: event.target.value })} placeholder="target term" />
-            <input aria-label={`Notes ${index + 1}`} value={entry.notes} onChange={(event) => updateEntry(index, { notes: event.target.value })} placeholder="notes" />
-            <label className="check-label"><input type="checkbox" checked={entry.enabled} onChange={(event) => updateEntry(index, { enabled: event.target.checked })} /> enabled</label>
-            <Button variant="ghost" size="sm" aria-label={`Remove term ${index + 1}`} onClick={() => setEntries((current) => current.filter((_, entryIndex) => entryIndex !== index))}>remove</Button>
-          </div>)}
-        </div>
-        <div className="editor-actions"><Button variant="secondary" onClick={() => setEntries((current) => [...current, { ...EMPTY_ENTRY }])}>Add term</Button><Button onClick={() => void saveGlossary()} disabled={saving}>{saving ? "saving" : "Save glossary"}</Button></div>
-      </CardContent>
-    </Card>
-    {scope === "document" && <Card className="editor-card context-editor">
-      <CardHeader className="card-label"><BookOpen size={16} /> DOCUMENT CONTEXT</CardHeader>
-      <CardContent>
-        <p className="editor-help">Keep a short title/abstract or terminology note. The service normalizes and bounds the context before it reaches Codex.</p>
-        <label htmlFor="document-context">Context sidecar</label>
-        <textarea id="document-context" value={contextText} onChange={(event) => setContextText(event.target.value)} placeholder="Paper title\nAbstract\nA concise document context..." />
-        <div className="editor-footer"><small>{context.version ? `version ${context.version.slice(0, 8)}` : "not saved"}</small><Button onClick={() => void saveContext()} disabled={contextSaving}>{contextSaving ? "saving" : "Save context"}</Button></div>
-      </CardContent>
-    </Card>}
-  </div>;
+          <div className="glossary-list">
+            {entries.map((entry, index) => (
+              <div key={index} className="glossary-row">
+                <input aria-label={`源术语 ${index + 1}`} className="form-input" value={entry.source} onChange={(event) => updateEntry(index, { source: event.target.value })} placeholder="源术语" />
+                <input aria-label={`目标术语 ${index + 1}`} className="form-input" value={entry.target} onChange={(event) => updateEntry(index, { target: event.target.value })} placeholder="目标术语" />
+                <input aria-label={`备注 ${index + 1}`} className="form-input" value={entry.notes} onChange={(event) => updateEntry(index, { notes: event.target.value })} placeholder="备注" />
+                <label className="check-label"><input type="checkbox" checked={entry.enabled} onChange={(event) => updateEntry(index, { enabled: event.target.checked })} /> 启用</label>
+                <Button variant="ghost" size="sm" aria-label={`删除术语 ${index + 1}`} onClick={() => setEntries((current) => current.filter((_, entryIndex) => entryIndex !== index))}>删除</Button>
+              </div>
+            ))}
+          </div>
+          <div className="editor-actions"><Button variant="secondary" onClick={() => setEntries((current) => [...current, { ...EMPTY_ENTRY }])}>新增术语</Button><Button onClick={() => void saveGlossary()} disabled={saving}>{saving ? "正在保存" : "保存术语表"}</Button></div>
+        </CardContent>
+      </Card>
+      {scope === "document" && (
+        <Card className="editor-card context-editor">
+          <CardHeader className="card-label"><BookOpen size={16} /> 文档上下文</CardHeader>
+          <CardContent>
+            <div className="form-grid">
+              <div className="form-row">
+                <label htmlFor="document-stem">文档标识</label>
+                <div className="path-input-row">
+                  <input id="document-stem" className="form-input" placeholder="例如 paper-2024" aria-describedby="document-stem-help" value={documentStem} onChange={(event) => setDocumentStem(event.target.value)} />
+                  <Button variant="secondary" onClick={() => loadDocumentGlossary()}>加载</Button>
+                </div>
+                <p id="document-stem-help" className="form-help">文档标识用于关联某一篇论文或 PDF。</p>
+              </div>
+            </div>
+            <p className="editor-help">可填写标题、摘要、术语说明或背景信息。服务会在发送给 Codex 前对上下文进行规范化和长度限制。</p>
+            {status && <p className="form-help" role="status" aria-live="polite">{status}</p>}
+            <label htmlFor="document-context">上下文内容</label>
+            <textarea id="document-context" value={contextText} onChange={(event) => setContextText(event.target.value)} placeholder={"论文标题\n摘要\n简短的文档背景或术语说明……"} />
+            <div className="editor-footer"><small>{context.version ? `版本 ${context.version.slice(0, 8)}` : "尚未保存"}</small><Button onClick={() => void saveContext()} disabled={contextSaving}>{contextSaving ? "正在保存" : "保存上下文"}</Button></div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
 }
 
-function Diagnostics({ connection, onReconnect }: { connection: { status: string }; onReconnect: () => void }) { return <div className="content-column reveal"><div className="section-heading"><div><span className="eyebrow">SYSTEM CHECK / 03</span><h2>Quiet confidence</h2></div><Button variant="secondary" className="reconnect-action" onClick={onReconnect}>reconnect</Button></div><div className="diagnostic-grid"><Diagnostic icon={<ShieldCheck />} title="Path allowlist" value="Enforced" detail="Input PDFs are scoped to the configured directory." /><Diagnostic icon={<Activity />} title="Sidecar protocol" value={connection.status === "ready" ? "v1 online" : connection.status} detail="JSONL request / response transport is available." /><Diagnostic icon={<Library />} title="Codex session" value="Not checked" detail="Live authentication is only used when a translation starts." /></div></div>; }
-function Diagnostic({ icon, title, value, detail }: { icon: React.ReactNode; title: string; value: string; detail: string }) { return <Card className="diag-card">{icon}<span className="eyebrow">{title}</span><strong>{value}</strong><p>{detail}</p></Card>; }
-function Settings() { return <div className="content-column reveal"><div className="section-heading"><div><span className="eyebrow">RUNTIME / 04</span><h2>Settings</h2></div></div><Card className="settings-card"><div><span>Input directory</span><strong>configured in config.toml</strong></div><div><span>Translation mode</span><strong>Codex SDK · per-document thread</strong></div><div><span>Worker mode</span><strong>single-pass subprocess</strong></div></Card></div>; }
+function Diagnostics({ connection, onReconnect }: { connection: { status: string }; onReconnect: () => void }) {
+  return (
+    <div className="content-column reveal">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">运行诊断</p>
+          <h2>检查本地运行状态</h2>
+        </div>
+        <Button variant="secondary" className="reconnect-action" onClick={onReconnect}>重新连接</Button>
+      </div>
+      <div className="diagnostic-grid">
+        <Diagnostic icon={<ShieldCheck />} title="路径访问范围" value="已启用" detail="输入 PDF 仅限配置的目录。" />
+        <Diagnostic icon={<Activity />} title="本地服务协议" value={connection.status === "ready" ? "协议 v1 · 已连接" : connection.status} detail="JSONL 请求/响应通道可用。" />
+        <Diagnostic icon={<Library />} title="Codex 会话" value="尚未检查" detail="仅在开始翻译时使用实时认证。" />
+      </div>
+    </div>
+  );
+}
+
+function Diagnostic({ icon, title, value, detail }: { icon: React.ReactNode; title: string; value: string; detail: string }) {
+  return (
+    <Card className="diag-card">
+      {icon}
+      <span className="eyebrow">{title}</span>
+      <strong>{value}</strong>
+      <p>{detail}</p>
+    </Card>
+  );
+}
+
+function Settings() {
+  return (
+    <div className="content-column reveal">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">设置</p>
+          <h2>运行配置</h2>
+          <p className="hero-panel-muted">核心运行参数由 config.toml 管理；此处展示当前配置摘要。</p>
+        </div>
+      </div>
+      <Card className="settings-card">
+        <div><span>输入目录</span><strong>由 config.toml 配置</strong></div>
+        <div><span>翻译模式</span><strong>Codex SDK · 按文档保持上下文</strong></div>
+        <div><span>执行方式</span><strong>单次 BabelDOC 子进程</strong></div>
+        <div className="settings-language-row">
+          <div className="settings-language-copy">
+            <span>界面语言</span>
+            <small id="i18n-help">语言切换功能将在后续版本提供。</small>
+          </div>
+          <select aria-describedby="i18n-help" aria-label="界面语言" value="zh-CN" disabled>
+            <option value="zh-CN">简体中文（当前）</option>
+          </select>
+        </div>
+      </Card>
+    </div>
+  );
+}
 
 export default App;

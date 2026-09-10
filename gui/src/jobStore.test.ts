@@ -32,6 +32,48 @@ describe("JobStore", () => {
     await store.close();
   });
 
+  it("does not duplicate a job when a created event is replayed after list_jobs", async () => {
+    const state = {
+      sequence: 1,
+      jobs: [
+        {
+          job_id: "mock-job-1",
+          source_path: "/workspace/incoming/replayed.pdf",
+          status: "running" as const,
+          stage: "translating" as const,
+          attempts: 2,
+          safe_error_message: null,
+          updated_at: "2026-09-10T00:00:02.000Z",
+          completed_at: "",
+        },
+      ],
+      events: [
+        {
+          event_type: "job_created" as const,
+          job_id: "mock-job-1",
+          sequence: 2,
+          timestamp: "2026-09-10T00:00:03.000Z",
+          payload: {
+            status: "running",
+            source_path: "/workspace/incoming/replayed.pdf",
+          },
+        },
+      ],
+    };
+    const transport = new MockSidecarTransport(state);
+    const store = new JobStore(() => transport);
+
+    await store.connect();
+
+    expect(store.getSnapshot().jobs).toHaveLength(1);
+    expect(store.getSnapshot().jobs[0]).toMatchObject({
+      job_id: "mock-job-1",
+      stage: "translating",
+      attempts: 2,
+    });
+    await store.close();
+  });
+
   it("recreates the transport and reconciles active jobs after reconnect", async () => {
     const state = { sequence: 0, jobs: [], events: [] as Array<import("./protocol").JobEvent> };
     const first = new MockSidecarTransport(state);

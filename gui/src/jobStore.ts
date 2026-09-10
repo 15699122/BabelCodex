@@ -114,6 +114,10 @@ export class JobStore {
     return result.job;
   }
 
+  async refreshJob(jobId: string): Promise<JobState | null> {
+    return this.getJob(jobId);
+  }
+
   async listGlossary(scope: "global" | "document", documentId?: string): Promise<GlossaryResult> {
     return this.request<GlossaryResult>("list_glossary", {
       scope,
@@ -244,9 +248,35 @@ export class JobStore {
 
   private applyEvent(jobs: JobState[], event: JobEvent): JobState[] {
     const index = jobs.findIndex((job) => job.job_id === event.job_id);
+    const payload = event.payload;
+    if (event.event_type === "job_created" && payload.source_path) {
+      const createdJob: JobState = {
+        job_id: event.job_id,
+        source_path: String(payload.source_path),
+        status: payload.status === "running" ? "running" : "discovered",
+        stage: "preparing_runtime",
+        attempts: 1,
+        safe_error_message: null,
+        updated_at: event.timestamp,
+        completed_at: "",
+      };
+      if (index < 0) return [createdJob, ...jobs];
+
+      // `list_jobs` may already contain the job when the event is replayed
+      // after a start or reconnect. Keep the event application idempotent and
+      // preserve richer state returned by the sidecar.
+      const current = jobs[index];
+      const next: JobState = {
+        ...createdJob,
+        ...current,
+        source_path: current.source_path || createdJob.source_path,
+        status: current.status || createdJob.status,
+        updated_at: current.updated_at || createdJob.updated_at,
+      };
+      return jobs.map((job, jobIndex) => (jobIndex === index ? next : job));
+    }
     if (index < 0) return jobs;
     const current = jobs[index];
-    const payload = event.payload;
     const next: JobState = { ...current };
     if (event.event_type === "status_changed") {
       const status = payload.status;
