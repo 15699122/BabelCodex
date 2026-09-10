@@ -70,5 +70,4 @@ class BabelDocInternalBackend:
         backend_kwargs = {}
         if on_progress is not None:
             backend_kwargs["on_progress"] = on_progress
-        result = self._backend.translate(request, translator_factory, **backend_kwargs)
-        return result.raw
+        return self._backend.translate(request, translator_factory, **backend_kwargs)

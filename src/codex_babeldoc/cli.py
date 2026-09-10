@@ -12,7 +12,6 @@ from pathlib import Path
 
 from codex_babeldoc.application.service import BabelCodexService
 from codex_babeldoc.core.config import load_config
-from codex_babeldoc.core.orchestrator import Orchestrator
 from codex_babeldoc.translation.glossary import GlossaryStore
 
 
@@ -115,6 +114,12 @@ def main(argv=None) -> int:
     one = sub.add_parser("one")
     one.add_argument("pdf")
     one.add_argument("--force", action="store_true")
+    inspect = sub.add_parser("inspect")
+    inspect.add_argument("job_id")
+    validate = sub.add_parser("validate")
+    validate.add_argument("job_id")
+    retry = sub.add_parser("retry")
+    retry.add_argument("job_id")
     mcp = sub.add_parser("mcp")
     mcp_sub = mcp.add_subparsers(dest="mcp_command", required=True)
     mcp_sub.add_parser("serve")
@@ -153,7 +158,32 @@ def main(argv=None) -> int:
             print(json.dumps({"exported": count, "document": args.document}, ensure_ascii=False))
         return 0
 
-    orch = Orchestrator(cfg)
+    service = BabelCodexService(cfg)
+    if args.command == "inspect":
+        result = service.inspect_job(args.job_id)
+        if result is None:
+            print(json.dumps({"error": "job was not found"}, ensure_ascii=False))
+            return 1
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "validate":
+        try:
+            result = service.validate_output(args.job_id)
+        except ValueError as exc:
+            print(json.dumps({"error": str(exc)}, ensure_ascii=False))
+            return 1
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0 if result["validated"] else 1
+    if args.command == "retry":
+        try:
+            result = service.retry_job(args.job_id)
+        except ValueError as exc:
+            print(json.dumps({"error": str(exc)}, ensure_ascii=False))
+            return 1
+        print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+        return 0
+
+    orch = service.orchestrator
     if args.command == "run":
         print(json.dumps(orch.run_all(force=args.force), ensure_ascii=False, indent=2))
         return 0

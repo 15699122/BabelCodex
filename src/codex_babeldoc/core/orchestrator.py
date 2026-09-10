@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -10,6 +11,8 @@ from codex_babeldoc.backends.babeldoc_internal import BabelDocInternalBackend
 from codex_babeldoc.backends.base import ProgressEvent
 from codex_babeldoc.backends.worker_client import build_worker_request, run_worker
 from codex_babeldoc.backends.worker_protocol import TranslatorSpec
+from codex_babeldoc.core.artifact_manifest import validate_artifacts
+from codex_babeldoc.core.artifacts import Artifact, ArtifactType
 from codex_babeldoc.core.config import AppConfig
 from codex_babeldoc.core.errors import classify_exception
 from codex_babeldoc.core.state import JobStage, JobStatus, StateStore
@@ -25,6 +28,9 @@ class Orchestrator:
         self.cfg = cfg
         self.cfg.ensure_dirs()
         self.state = StateStore(cfg.project.state_dir)
+        recovered = self.state.recover_interrupted_jobs()
+        if recovered:
+            log.warning("Recovered %s interrupted translation job(s)", len(recovered))
         self.backend = BabelDocInternalBackend()
 
     def discover(self) -> list[Path]:
@@ -101,7 +107,7 @@ class Orchestrator:
         *,
         on_progress: Callable[[ProgressEvent], None] | None = None,
         cancel_event: Event | None = None,
-    ) -> None:
+    ) -> list[Artifact]:
         b = self.cfg.babeldoc
         t = self.cfg.translation
         request = {
@@ -145,13 +151,21 @@ class Orchestrator:
                 "max_turns_before_compact": spec.max_turns_before_compact,
             },
         )
-        run_worker(
+        result = run_worker(
             worker_request,
             working_dir=b.working_dir / f"job-{source.stem}",
             job_id=f"job-{source.stem}",
             on_progress=lambda event: self._forward_progress(event, on_progress),
             cancel_event=cancel_event,
         )
+        return [
+            Artifact(
+                artifact_type=ArtifactType(artifact.artifact_type),
+                path=artifact.path,
+                size=artifact.size,
+            )
+            for artifact in result.artifacts
+        ]
 
     @staticmethod
     def _forward_progress(
@@ -184,8 +198,16 @@ class Orchestrator:
         job.backend_name = self.cfg.babeldoc.backend
         job.translator_name = self.cfg.translation.translator
         job.model = self.cfg.translation.model
-        if job.status is JobStatus.COMPLETED and not force:
-            return "skipped"
+        if job.status == JobStatus.COMPLETED and not force:
+            valid, _ = validate_artifacts(job.artifacts, self.cfg.project.output_dir, update=False)
+            if valid:
+                return "skipped"
+            job.status = JobStatus.DISCOVERED
+            job.stage = JobStage.DISCOVERED
+            job.attempts = 0
+            job.completed_at = ""
+            job.qa_status = "failed"
+            self.state.save(job)
 
         # A forced re-run of an already-completed job must reset the attempt
         # counter, otherwise the retry loop range is empty and we never run.
@@ -202,6 +224,7 @@ class Orchestrator:
             job.error_category = None
             job.error_code = None
             job.safe_error_message = None
+            job.runner_pid = os.getpid()
             if not job.started_at:
                 job.started_at = job.updated_at
             self.state.save(job)
@@ -209,7 +232,7 @@ class Orchestrator:
                 job.stage = JobStage.TRANSLATING
                 self.state.save(job)
                 if b.worker_mode == "subprocess":
-                    self._translate_via_worker(
+                    job.artifacts = self._translate_via_worker(
                         source,
                         on_progress=on_progress,
                         cancel_event=cancel_event,
@@ -233,15 +256,23 @@ class Orchestrator:
                     }
                     if on_progress is not None:
                         backend_kwargs["on_progress"] = on_progress
-                    self.backend.translate(
+                    result = self.backend.translate(
                         source,
                         self.cfg.project.output_dir,
                         **backend_kwargs,
                     )
+                    job.artifacts = result.artifacts
+                artifacts_valid, _ = validate_artifacts(
+                    job.artifacts, self.cfg.project.output_dir, update=True
+                )
+                if not artifacts_valid:
+                    raise RuntimeError("translation did not produce valid output artifacts")
                 job.status = JobStatus.COMPLETED
                 job.stage = JobStage.COMPLETED
                 job.completed_at = job.updated_at
                 job.safe_error_message = None
+                job.qa_status = "passed"
+                job.runner_pid = None
                 self.state.save(job)
                 return "completed"
             except Exception as exc:
@@ -251,6 +282,7 @@ class Orchestrator:
                     job.error_category = None
                     job.error_code = None
                     job.safe_error_message = None
+                    job.runner_pid = None
                     self.state.save(job)
                     return "cancelled"
                 error = classify_exception(exc)
@@ -266,6 +298,8 @@ class Orchestrator:
                     self.state.save(job)
                     time.sleep(min(2 ** (attempt - 1), 8))
                 else:
+                    job.runner_pid = None
+                    self.state.save(job)
                     break
         raise RuntimeError(f"Translation failed after {t.max_retries} attempts: {last_error}")
 

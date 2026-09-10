@@ -7,7 +7,6 @@ translation, shell execution, arbitrary file reads, or unrestricted deletion.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import shutil
 import time
@@ -291,43 +290,15 @@ class McpServer:
 
     def _validate_output(self, arguments: dict[str, object]) -> dict[str, object]:
         job = self._job(arguments)
-        if job.status in {JobStatus.RUNNING, JobStatus.RETRY_PENDING}:
-            raise McpError(-32004, "cannot validate an active job")
-        output_root = self.context.service.config.project.output_dir.resolve()
-        results: list[dict[str, object]] = []
-        all_valid = bool(job.artifacts)
-        for artifact in job.artifacts:
-            path = Path(artifact.path).expanduser().resolve()
-            try:
-                path.relative_to(output_root)
-            except ValueError:
-                raise McpError(-32003, "artifact path is outside the configured output directory")
-            exists = path.is_file()
-            actual_size = path.stat().st_size if exists else 0
-            actual_hash = _file_sha256(path) if exists else ""
-            pdf_valid = path.suffix.lower() != ".pdf" or _looks_like_pdf(path)
-            valid = exists and pdf_valid
-            all_valid = all_valid and valid
-            artifact.size = actual_size
-            artifact.sha256 = actual_hash
-            artifact.validated = valid
-            results.append(
-                {
-                    "path": str(path),
-                    "exists": exists,
-                    "size": actual_size,
-                    "sha256": actual_hash,
-                    "validated": valid,
-                }
-            )
-        job.qa_status = "passed" if all_valid else "failed"
-        self.context.service.orchestrator.state.save(job)
-        return {
-            "job_id": job.job_id,
-            "validated": all_valid,
-            "qa_status": job.qa_status,
-            "artifacts": results,
-        }
+        try:
+            result = self.context.service.validate_output(job.job_id)
+        except ValueError as exc:
+            raise McpError(-32004, str(exc)) from exc
+        if any(
+            artifact.get("reason") == "outside_output_directory" for artifact in result["artifacts"]
+        ):
+            raise McpError(-32003, "artifact path is outside the configured output directory")
+        return result
 
     def _cleanup_job(self, arguments: dict[str, object]) -> dict[str, object]:
         job = self._job(arguments)
@@ -400,22 +371,6 @@ class McpServer:
         if data is not None:
             error["data"] = data
         return {"jsonrpc": JSONRPC_VERSION, "id": request_id, "error": error}
-
-
-def _file_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def _looks_like_pdf(path: Path) -> bool:
-    try:
-        with path.open("rb") as handle:
-            return handle.read(5) == b"%PDF-"
-    except OSError:
-        return False
 
 
 def run_stdio(server: McpServer, stdin: TextIO, stdout: TextIO) -> None:

@@ -75,3 +75,21 @@ def test_glossary_cli_import_and_list(tmp_path, monkeypatch, capsys):
 def test_toml_string_escapes_windows_path() -> None:
     isolated = _toml_string(Path(r"C:\Users\Tester\BabelCodex\incoming"))
     assert isolated == '"C:\\\\Users\\\\Tester\\\\BabelCodex\\\\incoming"'
+
+
+def test_inspect_and_validate_cli_for_missing_job(tmp_path, capsys):
+    from codex_babeldoc.cli import main
+
+    config = tmp_path / "config.toml"
+    config.write_text(
+        "[project]\n"
+        f"input_dir = {_toml_string(tmp_path / 'incoming')}\n"
+        f"output_dir = {_toml_string(tmp_path / 'translated')}\n"
+        f"state_dir = {_toml_string(tmp_path / 'state')}\n"
+        f"log_dir = {_toml_string(tmp_path / 'logs')}\n",
+        encoding="utf-8",
+    )
+    assert main(["--config", str(config), "inspect", "missing"]) == 1
+    assert json.loads(capsys.readouterr().out)["error"] == "job was not found"
+    assert main(["--config", str(config), "validate", "missing"]) == 1
+    assert json.loads(capsys.readouterr().out)["error"] == "job was not found"

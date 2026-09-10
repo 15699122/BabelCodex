@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -56,6 +57,7 @@ class JobState:
     translator_name: str = ""
     model: str = ""
     codex_thread_id: str | None = None
+    runner_pid: int | None = None
     invocation_source: str = "cli"
     started_at: str = ""
     updated_at: str = ""
@@ -100,6 +102,7 @@ class JobState:
             "translator_name": self.translator_name,
             "model": self.model,
             "codex_thread_id": self.codex_thread_id,
+            "runner_pid": self.runner_pid,
             "invocation_source": self.invocation_source,
             "started_at": self.started_at,
             "updated_at": self.updated_at,
@@ -139,6 +142,7 @@ class JobState:
             codex_thread_id=(
                 str(values["codex_thread_id"]) if values.get("codex_thread_id") else None
             ),
+            runner_pid=int(values["runner_pid"]) if values.get("runner_pid") is not None else None,
             invocation_source=str(values.get("invocation_source", "cli")),
             started_at=str(values.get("started_at", "")),
             updated_at=str(values.get("updated_at", "")),
@@ -263,6 +267,36 @@ class StateStore:
                 continue
         return sorted(jobs, key=lambda job: job.updated_at, reverse=True)
 
+    def recover_interrupted_jobs(
+        self, *, process_alive: Callable[[int], bool] | None = None
+    ) -> list[JobState]:
+        """Terminalize active states left behind by a dead or unknown runner.
+
+        The state store cannot safely resume a BabelDOC subprocess or a Codex
+        thread after its owning process exits. It therefore records a durable,
+        operator-actionable worker crash instead of starting a new translation.
+        A live PID is left untouched so independent CLI, GUI-sidecar and MCP
+        processes do not invalidate each other's active jobs.
+        """
+        is_process_alive = process_alive or _process_is_alive
+        recovered: list[JobState] = []
+        for job in self.list_jobs():
+            if job.status not in {JobStatus.RUNNING, JobStatus.RETRY_PENDING}:
+                continue
+            if job.runner_pid is not None and is_process_alive(job.runner_pid):
+                continue
+            job.status = JobStatus.FAILED
+            job.error_category = ErrorCategory.WORKER
+            job.error_code = ErrorCode.WORKER_CRASHED
+            job.safe_error_message = (
+                "The previous translation runner stopped before the job finished. "
+                "Review the job and retry it explicitly."
+            )
+            job.runner_pid = None
+            self.save(job)
+            recovered.append(job)
+        return recovered
+
     def save(self, job: JobState) -> None:
         with self._save_lock:
             job.touch()
@@ -291,3 +325,19 @@ class StateStore:
                         time.sleep(STATE_TRANSIENT_BACKOFF_SECONDS * (2**attempt))
             finally:
                 temporary_path.unlink(missing_ok=True)
+
+
+def _process_is_alive(pid: int) -> bool:
+    """Return whether a local PID is alive without assuming a Unix-only API."""
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # A foreign process can be alive even when the current user cannot
+        # signal it; preserving its state is safer than falsely recovering it.
+        return True
+    else:
+        return True

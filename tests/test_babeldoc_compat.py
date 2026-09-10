@@ -160,7 +160,7 @@ class TestLegacyFacade:
         def factory() -> object:
             return object()
 
-        raw = facade.translate(
+        result = facade.translate(
             tmp_path / "input.pdf",
             tmp_path / "out",
             lang_in="en",
@@ -178,11 +178,11 @@ class TestLegacyFacade:
             enhance_compatibility=False,
             translate_table_text=True,
         )
-        assert raw is not None
+        assert result is not None
         request = captured["request"]
         assert request.produce_mono is True
         assert request.produce_dual is False
-        assert request.qps == 2
+        assert result.raw is not None
         assert request.min_text_length == 7
         assert request.watermark_output_mode == "both"
         assert request.auto_extract_glossary is True

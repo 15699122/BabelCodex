@@ -9,9 +9,10 @@ from tempfile import NamedTemporaryFile
 from threading import Event
 
 from codex_babeldoc.backends.base import ProgressEvent
+from codex_babeldoc.core.artifact_manifest import validate_artifacts
 from codex_babeldoc.core.config import AppConfig
 from codex_babeldoc.core.orchestrator import Orchestrator
-from codex_babeldoc.core.state import JobState
+from codex_babeldoc.core.state import JobState, JobStatus
 from codex_babeldoc.translation.context import ContextExtractor
 from codex_babeldoc.translation.glossary import (
     GlossaryEntry,
@@ -64,6 +65,44 @@ class BabelCodexService:
 
     def list_jobs(self) -> list[JobState]:
         return self.orchestrator.state.list_jobs()
+
+    def inspect_job(self, job_id: str) -> dict[str, object] | None:
+        job = self.get_job(job_id)
+        return job.to_dict() if job is not None else None
+
+    def validate_output(self, job_id: str) -> dict[str, object]:
+        job = self.get_job(job_id)
+        if job is None:
+            raise ValueError("job was not found")
+        if job.status in {JobStatus.RUNNING, JobStatus.RETRY_PENDING}:
+            raise ValueError("cannot validate an active job")
+        validated, artifacts = validate_artifacts(
+            job.artifacts, self.config.project.output_dir, update=True
+        )
+        job.qa_status = "passed" if validated else "failed"
+        self.orchestrator.state.save(job)
+        return {
+            "job_id": job.job_id,
+            "validated": validated,
+            "qa_status": job.qa_status,
+            "artifacts": artifacts,
+        }
+
+    def retry_job(
+        self, job_id: str, *, invocation_source: InvocationSource = InvocationSource.CLI
+    ) -> JobState:
+        job = self.get_job(job_id)
+        if job is None:
+            raise ValueError("job was not found")
+        if job.status in {JobStatus.RUNNING, JobStatus.RETRY_PENDING}:
+            raise ValueError("cannot retry an active job")
+        return self.start_translation(
+            StartTranslationCommand(
+                source_path=Path(job.source_path),
+                force=True,
+                invocation_source=invocation_source,
+            )
+        )
 
     def list_glossary(
         self, *, scope: str = "global", document_id: str | None = None

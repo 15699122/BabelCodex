@@ -173,3 +173,41 @@ def test_list_jobs_skips_corrupt_state(tmp_path):
 
     jobs = store.list_jobs()
     assert all(j.job_id == job.job_id for j in jobs)
+
+
+def test_recover_interrupted_job_marks_dead_runner_as_worker_crash(tmp_path):
+    pdf = tmp_path / "interrupted.pdf"
+    pdf.write_bytes(b"%PDF")
+    store = StateStore(tmp_path / "state")
+    job = store.load(pdf, config_fingerprint="f")
+    job.status = JobStatus.RETRY_PENDING
+    job.stage = JobStage.TRANSLATING
+    job.runner_pid = 999_999
+    store.save(job)
+
+    recovered = store.recover_interrupted_jobs(process_alive=lambda _pid: False)
+
+    assert [item.job_id for item in recovered] == [job.job_id]
+    restored = store.load_by_job_id(job.job_id)
+    assert restored is not None
+    assert restored.status is JobStatus.FAILED
+    assert restored.error_category is ErrorCategory.WORKER
+    assert restored.error_code is ErrorCode.WORKER_CRASHED
+    assert restored.runner_pid is None
+
+
+def test_recover_interrupted_job_keeps_live_runner_untouched(tmp_path):
+    pdf = tmp_path / "active.pdf"
+    pdf.write_bytes(b"%PDF")
+    store = StateStore(tmp_path / "state")
+    job = store.load(pdf, config_fingerprint="f")
+    job.status = JobStatus.RETRY_PENDING
+    job.stage = JobStage.TRANSLATING
+    job.runner_pid = 1234
+    store.save(job)
+
+    assert store.recover_interrupted_jobs(process_alive=lambda pid: pid == 1234) == []
+    restored = store.load_by_job_id(job.job_id)
+    assert restored is not None
+    assert restored.status is JobStatus.RETRY_PENDING
+    assert restored.runner_pid == 1234

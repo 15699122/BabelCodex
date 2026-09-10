@@ -82,3 +82,31 @@ class TestMockEndToEnd:
         assert orch.run_one(source) == "completed"
         assert orch.run_one(source) == "skipped"
         assert orch.run_one(source, force=True) == "completed"
+
+    def test_missing_completed_artifact_is_not_skipped(self, tmp_path: Path) -> None:
+        from codex_babeldoc.backends.base import PdfTranslateResult
+        from codex_babeldoc.core.artifacts import Artifact, ArtifactType
+
+        cfg = _make_config(tmp_path, "inprocess")
+        source = cfg.project.input_dir / FIXTURE.name
+        orch = Orchestrator(cfg)
+        assert orch.run_one(source) == "completed"
+        job = orch.state.load(source, config_fingerprint=cfg.fingerprint())
+        assert job.artifacts
+        output = Path(job.artifacts[0].path)
+        output.unlink()
+        calls = 0
+
+        class _ReplacementBackend:
+            def translate(self, *_args, **_kwargs):
+                nonlocal calls
+                calls += 1
+                output.write_bytes(b"%PDF-recreated")
+                return PdfTranslateResult(
+                    job_id="replacement",
+                    artifacts=[Artifact(ArtifactType.MONO_PDF, str(output))],
+                )
+
+        orch.backend = _ReplacementBackend()
+        assert orch.run_one(source) == "completed"
+        assert calls == 1
