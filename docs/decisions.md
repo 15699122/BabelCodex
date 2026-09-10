@@ -249,6 +249,17 @@ UNKNOWN
 
 认证、模型不可用、输入损坏、磁盘不足和 BabelDOC 不兼容默认不自动重试；网络超时、服务过载、空响应、非法输出和占位符错误可进行有界重试。
 
+### ADR-024：保守崩溃恢复
+
+**状态：已接受**
+
+真实执行会在持久化 JobState 中记录 owning runner PID。任何入口（CLI、GUI sidecar、MCP）创建 Orchestrator 时扫描遗留 `RUNNING` / `RETRY_PENDING` 状态：
+
+- runner PID 缺失或已死亡：状态保守终止为 `FAILED` + `ErrorCategory.WORKER` / `WORKER_CRASHED`，指向显式 `babelcodex retry <job-id>`；不自动重跑、不消耗 Codex 用量；
+- runner PID 仍存活：状态保持不变；存活判断不回收其他入口的活动任务，避免 CLI、GUI 与 MCP 进程互相误判。
+
+选择保守终止而非自动恢复的原因：崩溃后的输入状态（输出半写、工作目录残留）未经验证，自动续跑可能覆盖证据或重复消耗用量；显式 retry 会走与正常执行相同的 manifest 验证路径。BabelDOC part-level resume、失败工作目录保留期限和可配置 cleanup policy 属于后续演进，不改变本契约。
+
 ## 6. 后续演进路径
 
 ### 短期

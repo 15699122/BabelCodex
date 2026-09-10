@@ -92,7 +92,8 @@ BabelCodex 主要面向个人、本地使用。用户需要自行确认待翻译
 - PDF discovery from `incoming/`
 - SHA-256 based job identity
 - JSON state files
-- completed-job skip / `--force`
+- artifact manifest（大小、SHA-256、PDF header）和可验证的 completed-job skip / `--force`
+- 保守 worker crash recovery：遗留 dead/unknown runner 标为 `WORKER_CRASHED`，仅通过显式 retry 重新开始
 - bounded retry with backoff
 - file + console logging
 - Codex Python SDK translator adapter
@@ -114,6 +115,7 @@ BabelCodex 主要面向个人、本地使用。用户需要自行确认待翻译
 - BabelDOC worker process and versioned protocol
 - paragraph translation cache independent of BabelDOC cache
 - scoped local stdio MCP Server
+- `babelcodex inspect|validate|retry <job-id>` 任务运维入口
 
 ### Experimental / needs validation on your machine
 
@@ -129,7 +131,7 @@ BabelCodex 主要面向个人、本地使用。用户需要自行确认待翻译
 ### Planned
 
 - batch translation requests to reduce Codex turn overhead
-- worker recovery and PDF QA pass (missing glyphs, overflow, untranslated text)
+- PDF QA pass（missing glyphs、overflow、untranslated text）和更细粒度的 part-level recovery
 - experimental two-phase extract/translate/render mode
 - remaining Windows/Linux GUI release audit and target-machine validation
 - Codex client registration and packaged MCP smoke validation
@@ -143,6 +145,8 @@ babelcodex doctor
 babelcodex translate document.pdf
 babelcodex run
 babelcodex inspect <job-id>
+babelcodex validate <job-id>
+babelcodex retry <job-id>
 ```
 
 `cbpdf` will remain as a compatibility alias during migration.

@@ -128,6 +128,19 @@ This workflow is mandatory for Windows-specific implementation and validation ta
 
 The current WSL project directory is the source of truth for source code, project state, project documentation, and final validation records. A Windows `E:`-drive checkout is only a disposable validation workspace. Windows changes must not be synchronized back to WSL, except for validation results written to the designated WSL validation documentation.
 
+### Deferred Windows validation rule
+
+Linux is the primary development environment. Use **batch development, concentrated validation**:
+
+```text
+Linux Feature A → Linux Feature B → Linux Feature C
+→ Linux verification → Windows Validation Preparation → Windows validation phase
+```
+
+Do not interrupt normal Linux development merely because a completed feature will eventually require Windows verification. After each Linux-implementable change, run its applicable Linux checks, add the Windows-only follow-up to the cumulative Windows Validation Queue in `docs/validation/windows.md`, and continue with the next non-blocked Linux task.
+
+Use `WINDOWS_VERIFICATION_PENDING` by default. Use `WINDOWS_VERIFICATION_BLOCKING` only when a Windows-specific result is a hard prerequisite for reliable further development: for example, a critical Windows API/filesystem/process/installer assumption, a Windows-only reproducible failure that blocks progress, or an explicit user request for immediate Windows validation. See `docs/development/cross-platform-validation.md` for the required queue fields, preparation phase, and final handoff format.
+
 Use `docs/validation/windows.md` for the detailed Windows validation procedure and result format. The procedure is mandatory whenever Windows platform validation is requested:
 
 1. Investigate the current WSL repository before synchronization. Record the branch, commit, working-tree state, repository structure, languages/frameworks, Windows documentation, scripts/configuration, available test/lint/typecheck/build/package commands, compatibility requirements, agent instructions, and external dependencies or credentials.

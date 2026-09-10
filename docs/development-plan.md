@@ -425,6 +425,8 @@ Phase 8 的以下步骤已完成：
 
 **状态：Windows unsigned NSIS/MSI bundle、Linux `.deb`/AppImage bundle、包内 sidecar smoke 和 Linux/WSL GUI Alpha 编辑能力已完成；正式 portable/clean-user GUI 验收、签名/SBOM、目标机 smoke 和发布审计待完成（2026 年 9 月 9 日）**
 
+**执行节奏：** 本计划默认在 Linux 连续完成所有不依赖 Windows 结果的同范围开发项，并执行 Linux 验证；每个 Windows-only 事项累计登记到 `docs/validation/windows.md` 的 Windows Validation Queue。只有 `WINDOWS_VERIFICATION_BLOCKING`、无法从代码/文档可靠判断的关键 Windows 假设，或用户明确要求时，才在开发中提前进入 Windows 验证。当前批次结束后，以最终 diff 合并生成一次集中 Windows 验证计划，而不是按每个 feature 单独切换平台。
+
 任务：
 
 - AppShell、左侧导航和页面路由
@@ -441,12 +443,12 @@ Phase 8 的以下步骤已完成：
 
 Windows 专属执行清单：
 
-1. [已完成，未签名] 在 Windows 原生环境构建 GUI 与 `babelcodex-service.exe`；
-2. [已完成] 使用 Tauri target-triple sidecar 执行 NSIS/MSI `tauri build`（2026-09-09 最新轮：NSIS `D653629B...`、MSI `4E885B1E...` 均已生成并记录；旧 MSI 未作为证据）；
-3. [部分完成] MSI 已隔离解包并运行 sidecar；干净用户环境安装/解压运行仍待完成；
-4. [部分完成] 已验证 JSONL handshake、sidecar 退出和 GUI 进程级启动；文件选择、allowlist、进度、取消、完成产物和诊断 UI 仍待完成；
-5. [部分完成] MSI 解包仅含 GUI 与 sidecar 可执行文件，未完成完整绝对路径/敏感内容审计；
-6. [部分完成] 已生成 bundle/sidecar SHA-256 和构建日志；SBOM、签名和正式发布附件仍待完成。
+1. [已完成，未签名] 在 Windows 原生环境构建当前源 GUI 与 `babelcodex-service.exe`；
+2. [已完成] 使用当前源 Tauri target-triple sidecar 执行 NSIS/MSI `tauri build`，并记录最新 bundle/sidecar SHA-256；
+3. [已完成，交互待验] MSI 已隔离解包并完成包内 sidecar smoke 与 GUI 进程级启动；干净用户环境安装/解压运行仍待完成；
+4. [部分完成] 已验证 JSONL handshake、sidecar 退出、GUI 进程级启动和源级 GUI 测试；文件选择、allowlist、进度、取消、完成产物、重连和诊断 UI 的真实 packaged 交互仍待完成；
+5. [已完成，交互待验] 当前源 bundle audit、MSI 解包内容和包内 sidecar 哈希一致性已通过；完整 clean-user、路径/权限和敏感内容验收仍待完成；
+6. [部分完成，未签名] 已生成最新 bundle/sidecar SHA-256 和构建记录；SBOM、签名和正式发布附件仍待完成。
 
 Windows 验收依赖原生 Windows GUI 运行结果；Linux 或 WSL 上的同名构建、Rust `cargo check` 和浏览器端测试只能作为先决检查。
 Windows 本轮执行记录与边界（2026 年 9 月 8 日）：
@@ -514,7 +516,7 @@ GUI 必须通过 Application Service 访问任务；Tauri Rust 层只负责窗�
 - 尚未完成完整 GUI packaged 交互 E2E、干净用户环境验收、输入/输出 allowlist 与 Windows 路径矩阵、sidecar 自身重启编排、Linux 目标机 smoke、签名/SBOM 和正式发布验收；GUI 的重试、输出目录打开、cleanup 和 `validate_output` 仍需扩展 sidecar/Application Service contract，MCP 侧 scoped cleanup/validate 已完成。
 - Linux/WSL 可完成的 glossary/context 基础接入与编辑页面已完成；剩余 packaged 交互、目标机运行、签名/SBOM 和正式发布验收继续保留在 Windows/目标平台清单中。
 
-#### Phase 9B：白色 Vercel 风格 GUI 设计重构（PLANNED，2026 年 9 月 10 日）
+#### Phase 9B：白色 Vercel 风格 GUI 设计与中文排版重构（LINUX_VERIFIED，2026 年 9 月 10 日；Windows 原生交互仍为 WINDOWS_VERIFICATION_PENDING）
 
 **设计原则：**
 
@@ -548,6 +550,15 @@ GUI 必须通过 Application Service 访问任务；Tauri Rust 层只负责窗�
 **验证要求：**
 
 Linux 侧执行 Vitest、Vite build、axe/keyboard/overflow/reduced-motion 探针和截图矩阵；Windows packaged 侧（NSIS/MSI、DPI 125/150/200%、NVDA/键盘、文件选择、路径、取消、重连、干净用户）继续标记为 `WINDOWS_VERIFICATION_PENDING`，仅在实际通过后改为 `WINDOWS_PASS`。
+
+- 2026-09-10 计划和解：
+
+- Windows 最新验证中暴露的重复 `mock-job-1` 行属于共享 GUI 状态同步问题。Linux 已让 `JobStore.applyEvent()` 对重复/重放的 `job_created` 事件幂等：已存在的 `job_id` 原位合并并保留更丰富状态，未知任务才插入；新增回归测试覆盖 `list_jobs` 后重放事件的单任务不变量。
+- 详情页已将 `Job details` 设为实际可访问 heading，job ID 作为独立元数据显示，修复了 Linux 测试与 UI 语义不一致的问题。
+- Linux 验证：GUI Vitest `3 files, 19 tests passed`；Vite/TypeScript build 通过；Python `157 passed, 3 deselected`；Ruff format/check、compileall、`git diff --check` 通过。
+- 该修复先在 Linux 标记为 `LINUX_VERIFIED`，随后已在最新 Windows working-tree revalidation 中通过 GUI 19-test suite，因此当前该修复为 `WINDOWS_PASS`；后续 Linux 修复仍必须遵守“先 Linux 验证、再 Windows re-validation”的状态流转，不得仅凭 Linux 结果标记 Windows PASS。
+- Windows `doctor()` 的 `babeldoc_cli = null` 与 PyInstaller 环境缺失属于此前验证轮次的历史问题；最新 Windows revalidation 已通过 doctor 和当前源 PyInstaller。当前仍未完成的 packaged GUI 交互、clean-user、NVDA、DPI、签名/SBOM 和 release 检查继续保持 `WINDOWS_VERIFICATION_PENDING` 或 `NOT RUN`。
+- 中文重排后的 Linux 验证：GUI Vitest `3 files, 19 tests passed`；Vite/TypeScript build 通过；Python `157 passed, 3 deselected`；Ruff format/check、compileall 和 Linux bundle audit 通过。最新 Windows current UI revalidation 已通过 GUI 19-test suite、当前源构建和包级 smoke，因此这些已执行项目为 `WINDOWS_PASS`；真实 packaged 中文显示、键盘/DPI/NVDA、文件选择、取消/重连、clean-user、路径权限、签名/SBOM 和 release audit 仍保持 `WINDOWS_VERIFICATION_PENDING` 或 `NOT RUN`。
 
 **建议实施顺序：**
 
@@ -639,7 +650,7 @@ MCP 与 GUI 共用 Python Application Service、JobState、事件和错误码；
 
 ### Phase 12：恢复、Part 与任务运维
 
-**优先级：P3 | 复杂度：L | 预计：5–8 个开发日**
+**优先级：P3 | 复杂度：L | 预计：5–8 个开发日；artifact manifest、CLI 运维入口、安全完成跳过及保守 worker crash recovery 已完成 Linux 验证（2026 年 9 月 10 日）**
 
 任务：
 
@@ -661,6 +672,17 @@ MCP 与 GUI 共用 Python Application Service、JobState、事件和错误码；
 - 已完成任务可验证后跳过
 - 输出丢失时不会仅依赖 `status=completed` 跳过
 - 所有产物有哈希
+
+当前 Linux/WSL 完成记录：
+
+- 新增共享 artifact manifest 校验：仅接受已持久化且位于配置 output directory 内的 artifact，流式重算大小和 SHA-256，并对 PDF 执行 magic-header 检查；已持久化 hash 不匹配会被识别为篡改，不能静默覆盖；
+- in-process legacy compatibility facade 现保留标准 `PdfTranslateResult`，使其 artifact 列表与 subprocess worker 结果在 Orchestrator 中使用同一 manifest 路径；worker protocol 中未携带 hash 的 artifact 由主进程首次验证后持久化；
+- `status=completed` 只会在 manifest 完整验证通过时返回 `skipped`。输出缺失、路径越界、PDF header 异常或 hash 不匹配时，任务会恢复为新的可执行尝试（重置 attempts），而不是仅依赖旧状态跳过；
+- Application Service 新增 `inspect_job`、`validate_output`、`retry_job`；CLI 已提供 `babelcodex inspect <job-id>`、`babelcodex validate <job-id>`、`babelcodex retry <job-id>`，MCP `babelcodex_validate_output` 复用同一验证规则；
+- 每次执行在 persisted job state 中写入 `runner_pid`；新建 Orchestrator 时扫描遗留 `RUNNING` / `RETRY_PENDING` job。runner PID 缺失或已死亡时，状态会被保守地终止为 `FAILED`、`ErrorCategory.WORKER` / `WORKER_CRASHED`，并要求用户使用显式 `retry` 开始新尝试；不会自动重跑或消耗 Codex 用量。PID 仍存活的任务保持不变，避免 CLI、GUI sidecar 和 MCP 进程互相误判活动任务；
+- Linux 验证：`uv run pytest -q` 为 162 passed、4 deselected；`uv run pytest -q -m integration tests/test_e2e_mock.py` 为 4 passed；`uv run ruff check .`、`uv run ruff format --check .`、`python -m compileall -q src` 和 `git diff --check` 均通过。
+
+仍需后续完成：按错误类别的操作员可见 retry policy、BabelDOC part 元数据与 part-level resume 可行性、失败工作目录保留期限和可配置 cleanup policy。Windows packaged 路径、权限、sidecar 重启与 clean-user 回归仍累计在 `WVQ-003`/`WVQ-004`，保持 `WINDOWS_VERIFICATION_PENDING`，不阻塞 Linux 开发。
 
 ### Phase 13：PDF QA 与发布硬化
 
@@ -990,3 +1012,43 @@ peak memory
 - 新 NSIS SHA-256 为 `259D3531...`（195,746,309 bytes），MSI SHA-256 为 `8307FD99...`（195,715,072 bytes），均 `NotSigned`；包级启动/sidecar 通过，但不能替代交互式 GUI 和 clean-user 验收。
 - 当前状态仍为 `WINDOWS_VERIFICATION_PENDING`；bundle audit 子项为 `WINDOWS_FAIL`，交互式 GUI、clean-user、取消/重连/路径权限矩阵、Defender/SmartScreen、签名/SBOM/release 审计和 live Codex/PDF 仍为 `NOT RUN`。
 - Linux 后续只需在开发阶段修正/测试 audit 正则并重新验证；本轮未修改业务代码、配置或依赖。
+
+### Windows 验证复核（2026-09-10，最新 Linux 工作树）
+
+- WSL `dev` HEAD `8f6ee91`（含未提交 GUI 工作树）已通过受控单向同步在 Windows E: 副本复验；依赖/lock、Ruff、compileall、Python 全量 `157 passed、3 deselected`、doctor、GUI 构建、focused store tests、Cargo、Tauri 配置/icon、PyInstaller、冻结/target-triple/MSI 解包 sidecar smoke、bundle audit、NSIS/MSI 构建和包级 GUI 启动均通过。
+- 当前 GUI 全量 Vitest 为 `FAIL`：17 项中 15 项通过，取消和详情两个 App 测试因 mock 事件与 `list_jobs` 状态合并后出现重复 `mock-job-1` 行而失败；这是 Linux GUI 代码/测试需处理的问题，不在 Windows 验证中修复。
+- 当前 fresh sidecar SHA-256 为 `8E899E68...`；NSIS `CB6476F0...`（195,748,979 bytes），MSI `AF0F9103...`（195,710,976 bytes），MSI 管理员解包及解包 sidecar smoke 通过；均为 unsigned 开发产物。
+- 安装/portable GUI 真实交互、clean-user、路径/权限矩阵、取消/重连、Defender/SmartScreen、签名/SBOM/release 审计、live Codex/PDF 仍为 `NOT RUN`；目标 Linux machine smoke 为 `NOT APPLICABLE`；整体保持 `WINDOWS_VERIFICATION_PENDING`。
+- Linux 后续：修正 mock job/event reconciliation 并在 Linux、Windows 重跑 GUI 全套；之后再安排干净用户/真实桌面交互和发布安全验收。本轮未修改业务代码、配置或依赖。
+
+### Windows 验证复核（2026-09-10，GUI 修复后的最新工作树）
+
+- WSL `dev` HEAD `8f6ee91`（含未提交 GUI reconciliation 变化）已完成受控单向同步并在 Windows E: 验证；依赖/lock、Ruff、compileall、Python 全量 `157 passed、3 deselected`、doctor、GUI 全量 `18 passed`、Vite、Cargo、Tauri 配置/icon、PyInstaller、冻结/target-triple/MSI 解包 sidecar smoke、bundle audit、NSIS/MSI 构建和包级 GUI 启动均为 `PASS`。
+- 上轮 GUI 重复 `mock-job-1` 失败在当前同步工作树中未复现；`jobStore` 相关 focused tests 为 8 项通过。npm 仍报告 2 个 moderate advisories 和 esbuild pending-script warning，未执行自动修复。
+- 当前 fresh sidecar SHA-256 为 `CDE9A9DB...`；NSIS `14975F49...`（195,747,786 bytes），MSI `C8CD3C61...`（195,710,976 bytes）；MSI 管理员解包、包内 sidecar smoke 和解包 GUI 进程启动均通过，产物均为 unsigned 开发包。
+- 安装/portable GUI 真实交互、clean-user、路径/权限矩阵、取消/重连、Defender/SmartScreen、签名/SBOM/release 审计、live Codex/PDF 仍为 `NOT RUN`；目标 Linux machine smoke 为 `NOT APPLICABLE`；本轮无 `FAIL` 或 `BLOCKED`，整体仍为 `WINDOWS_VERIFICATION_PENDING`。
+- Linux 后续：保持 GUI reconciliation 回归测试，在后续 GUI 改动后重跑 Linux/Windows GUI 套件；再安排真实桌面/clean-user 与发布安全验收。本轮未修改业务代码、配置或依赖。
+
+### Windows 验证复核（2026-09-10，最新工作树确认）
+
+- 当前 WSL `dev` HEAD `8f6ee91`（含未提交 GUI、架构和文档变化）已完成受控单向同步并在 Windows E: 验证；依赖/lock、Ruff、compileall、Python 全量 `157 passed、3 deselected`、doctor、GUI 全量 `18 passed`、Vite、Cargo、Tauri 配置/icon、PyInstaller、冻结/target-triple/MSI 解包 sidecar smoke、bundle audit、NSIS/MSI 构建和包级 GUI 启动均为 `PASS`。
+- 上轮 GUI 重复 `mock-job-1` 问题在当前同步工作树中未复现；相关 reconciliation 回归覆盖保留。npm 仍报告 2 个 moderate advisories 和 esbuild pending-script warning，未执行自动修复。
+- 当前 fresh sidecar SHA-256 为 `CDE9A9DB...`；NSIS `14975F49...`（195,747,786 bytes），MSI `C8CD3C61...`（195,710,976 bytes）；MSI 管理员解包、包内 sidecar smoke 和解包 GUI 启动均通过，产物为 unsigned 开发包。
+- 安装/portable GUI 真实交互、clean-user、路径/权限矩阵、取消/重连、Defender/SmartScreen、签名/SBOM/release 审计、live Codex/PDF 仍为 `NOT RUN`；目标 Linux machine smoke 为 `NOT APPLICABLE`；本轮无 `FAIL` 或 `BLOCKED`，整体仍为 `WINDOWS_VERIFICATION_PENDING`。
+- Linux 后续：后续 GUI 改动后继续重跑 Linux/Windows GUI 套件，再安排真实桌面/clean-user 与发布安全验收。本轮未修改业务代码、配置或依赖。
+
+### Windows 验证复核（2026-09-10，当前 UI 工作树）
+
+- 当前 WSL `dev` HEAD `8f6ee91`（含未提交 GUI、架构和文档变化）已完成受控单向同步并在 Windows E: 验证；依赖/lock、Ruff、compileall、Python 全量 `157 passed、3 deselected`、doctor、GUI 全量 `19 passed`、Vite、Cargo、Tauri 配置/icon、PyInstaller、冻结/target-triple/MSI 解包 sidecar smoke、bundle audit、NSIS/MSI 构建和包级 GUI 启动均为 `PASS`。
+- 本轮最新 UI 变更已通过自动化测试和构建/进程级 smoke；中文界面真实渲染、键盘导航、DPI 125/150/200%、NVDA、clean-user 和真实桌面交互仍未执行。npm 仍报告 2 个 moderate advisories 和 esbuild pending-script warning，未执行自动修复。
+- 当前 fresh sidecar SHA-256 为 `4577E0D4...`；NSIS `9C9332AD...`（195,743,723 bytes），MSI `D0C5D8B8...`（195,715,072 bytes）；MSI 管理员解包、包内 sidecar smoke 和解包 GUI 启动均通过，产物为 unsigned 开发包。
+- 本轮无 `FAIL` 或 `BLOCKED`；安装/portable GUI 真实交互、中文 UI/accessibility、clean-user、路径/权限矩阵、取消/重连、Defender/SmartScreen、签名/SBOM/release 审计、live Codex/PDF 为 `NOT RUN`；目标 Linux machine smoke 为 `NOT APPLICABLE`；整体仍为 `WINDOWS_VERIFICATION_PENDING`。
+- Linux 后续：安排上述真实桌面与发布安全验证；后续 GUI 改动后继续重跑 Linux/Windows GUI 套件。本轮未修改业务代码、配置或依赖。
+
+### Windows 验证复核（2026-09-10，当前工作树确认）
+
+- 当前 WSL `dev` HEAD `8f6ee91`（含未提交 GUI、架构和文档变化）已完成受控单向同步并在 Windows E: 验证；依赖/lock、Ruff、compileall、Python 全量 `157 passed、3 deselected`、doctor、GUI 全量 `19 passed`、Vite、Cargo、Tauri 配置/icon、PyInstaller、冻结/target-triple/MSI 解包 sidecar smoke、bundle audit、NSIS/MSI 构建和包级 GUI 启动均为 `PASS`。
+- 上轮 GUI 重复 `mock-job-1` 问题在当前同步工作树中未复现；reconciliation 回归覆盖继续通过。npm 仍报告 2 个 moderate advisories 和 esbuild pending-script warning，未执行自动修复。
+- 当前 fresh sidecar SHA-256 为 `4577E0D4...`；NSIS `9C9332AD...`（195,743,723 bytes），MSI `D0C5D8B8...`（195,715,072 bytes）；MSI 管理员解包、包内 sidecar smoke 和解包 GUI 启动均通过，产物为 unsigned 开发包。
+- 安装/portable GUI 真实交互、clean-user、路径/权限矩阵、取消/重连、Defender/SmartScreen、签名/SBOM/release 审计、live Codex/PDF 仍为 `NOT RUN`；目标 Linux machine smoke 为 `NOT APPLICABLE`；本轮无 `FAIL` 或 `BLOCKED`，整体仍为 `WINDOWS_VERIFICATION_PENDING`。
+- Linux 后续：后续 GUI 改动后继续重跑 Linux/Windows GUI 套件，再安排真实桌面/clean-user 与发布安全验收。本轮未修改业务代码、配置或依赖。

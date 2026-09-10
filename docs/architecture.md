@@ -214,8 +214,9 @@ GUI host 技术验证位于仓库根目录的 `gui/`：Tauri 2 只启动固定�
 
 不依赖 BabelDOC 或 Codex 具体实现。
 
-- `orchestrator.py`：discover / run one / run all / 任务状态迁移 / backend 选择 / retry 决策 / 产物保存。
-- `state.py`：原子状态写入 / schema version / job fingerprint / config fingerprint / 错误类别 / artifact 索引。
+- `orchestrator.py`：discover / run one / run all / 任务状态迁移 / backend 选择 / retry 决策 / 产物保存；完成任务只在 artifact manifest 仍完整有效时安全跳过，缺失或被篡改的输出会重置为可执行恢复尝试。真实执行会写入 owning runner PID；初始化时仅将 dead/unknown PID 的遗留 active state 终止为 `WORKER_CRASHED`，不会自动重试。
+- `state.py`：原子状态写入 / schema version / job fingerprint / config fingerprint / 错误类别 / artifact 索引 / runner PID。PID 仍存活的 active state 不会被另一入口回收，避免 CLI、GUI 和 MCP 之间互相误判。
+- `artifact_manifest.py`：对持久化 job artifact 执行 output-root allowlist、存在性、大小、流式 SHA-256 和 PDF magic-header 校验；已记录 digest 不匹配时报告完整性失败，而不是更新旧 digest。
 - `errors.py`：稳定错误分类。
 - `events.py`：统一事件模型。
 
@@ -488,7 +489,7 @@ BabelCodex 不直接复制 CopyPolish 的 Rust 排版引擎，因为 BabelCodex 
 
 ### 12.2 产品界面定位
 
-BabelCodex GUI 定位为“个人 PDF 翻译工作台”，而不是聊天窗口或在线翻译网站。视觉方向已调整为白色主色调的 Vercel 风格（PLANNED，2026 年 9 月 10 日）：白底、黑白灰层级、黑色主按钮、语义色仅用于状态表达，强调文档处理、进度和人工复核；旧暖纸张/墨水蓝方向不再作为目标。详细重构范围见 `docs/development-plan.md` Phase 9B。
+BabelCodex GUI 定位为“个人 PDF 翻译工作台”，而不是聊天窗口或在线翻译网站。视觉方向已调整为白色主色调的 Vercel 风格，并完成简体中文界面重排（Linux/WSL implementation `LINUX_VERIFIED`，Windows packaged interaction 仍为 `WINDOWS_VERIFICATION_PENDING`）：白底、黑白灰层级、黑色主按钮、语义色仅用于状态表达，强调文档处理、进度和人工复核；旧暖纸张/墨水蓝方向不再作为目标。设置页保留暂未启用的 i18n 语言选项，不改变运行时 locale 或 sidecar contract。详细重构范围见 `docs/development-plan.md` Phase 9B。
 
 首期 GUI 使用系统原生窗口装饰，以降低 Windows、Linux、Wayland、DPI 和无边框窗口兼容风险。后续若确有品牌化需求，再评估类似 CopyPolish 的自定义标题栏。
 

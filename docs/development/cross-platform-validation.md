@@ -39,6 +39,25 @@ Linux → Windows
 
 ## 3. Development / Validation Cycle
 
+默认开发策略是**批量 Linux 开发、集中 Windows 验证**，而不是每完成一个功能就立即切换到 Windows。
+
+不得采用：
+
+```text
+Feature A → Windows test → Feature B → Windows test → Feature C → Windows test
+```
+
+应采用：
+
+```text
+Feature A → Feature B → Feature C
+→ 完成当前所有 Linux 可执行开发工作
+→ Linux verification
+→ 汇总 Windows Validation Queue
+→ Windows Validation Preparation
+→ Windows validation phase
+```
+
 标准工作流：
 
 1. Linux implementation；
@@ -51,7 +70,7 @@ Linux → Windows
 8. Continue implementation or fixes；
 9. Repeat Windows validation when required。
 
-不得将“Linux 已修复”视为“Windows 已验证通过”。
+不得将“Linux 已修复”视为“Windows 已验证通过”。除非 Windows 验证是继续开发的硬性前置条件，不得因“最终需要 Windows 测试”“可能存在 Windows 兼容性问题”或“代码是跨平台的”而提前进入 Windows 阶段。
 
 ## 4. Validation State Model
 
@@ -60,6 +79,7 @@ Linux → Windows
 - `IMPLEMENTED`；
 - `LINUX_VERIFIED`；
 - `WINDOWS_VERIFICATION_PENDING`；
+- `WINDOWS_VERIFICATION_BLOCKING`；
 - `WINDOWS_PASS`；
 - `WINDOWS_FAIL`；
 - `WINDOWS_BLOCKED`；
@@ -360,3 +380,108 @@ Windows verified
 ```
 
 Linux 代码已实现或 Linux 测试已通过，只能分别支持 `IMPLEMENTED` 或 `LINUX_VERIFIED`，不能单独支持 `WINDOWS_PASS`。
+
+## 16. Development Phase and Windows Validation Queue
+
+### Development Phase
+
+在当前 Linux 开发阶段，连续完成所有同时满足以下条件的任务：
+
+- 可以在 Linux 环境实现；
+- 不依赖新的 Windows 验证结果；
+- 可以通过代码、静态分析、Linux 测试或已有文档合理确定实现方式；
+- 与当前任务范围一致。
+
+每个功能完成后：
+
+1. 实现功能；
+2. 运行适用的 Linux unit/integration/regression tests、lint、typecheck、formatter、build 和静态检查；
+3. 将 Windows-only 跟进项加入累计 Windows Validation Queue；
+4. 继续下一个 Linux 可执行项。
+
+不要把 Linux 验证整体推迟到最后；目标是在进入 Windows 阶段前尽可能消除非平台相关问题。
+
+### When Windows validation may interrupt development
+
+只有下列情况可以提前中断开发并要求 Windows 验证：
+
+1. 后续设计依赖某个 Windows-specific 行为；
+2. Windows API、filesystem、process 或 installer 行为无法从代码/文档可靠判断；
+3. 一个关键兼容性假设若错误会使后续大量工作失效；
+4. 当前失败只能在 Windows 复现且阻塞继续开发；
+5. 用户明确要求立即执行 Windows 验证。
+
+否则继续 Linux Development Phase，并使用 `WINDOWS_VERIFICATION_PENDING` 记录后续验证。
+
+### Queue state and item format
+
+`WINDOWS_VERIFICATION_PENDING` 是默认状态，表示该项已累计但不阻塞后续 Linux 开发。只有缺少 Windows 结果会使后续实现无法可靠继续时，才使用 `WINDOWS_VERIFICATION_BLOCKING`。
+
+每个累计项至少包含：
+
+| Field | Required content |
+| --- | --- |
+| ID | Stable queue identifier |
+| Validation item | Concise scenario name |
+| Related feature/change | What changed |
+| Relevant files/modules | Affected paths or components |
+| Why Windows is required | Platform-specific uncertainty |
+| Exact behavior to verify | Observable behavior |
+| Prerequisites | Build, account, package, fixture, hardware, or environment |
+| Expected result | Pass criterion |
+| Priority | P0 / P1 / P2 |
+| Development impact | `WINDOWS_VERIFICATION_PENDING` or `WINDOWS_VERIFICATION_BLOCKING` |
+| Blocks further Linux development | Yes / No and reason |
+
+`docs/validation/windows.md` 是累计队列和最终交接的权威位置。
+
+## 17. End of Development Phase
+
+结束当前 Linux Development Phase 前，确认：
+
+- 当前 Plan 中所有不依赖 Windows 的开发项均已完成；
+- 所有 Linux 可执行验证均已完成；
+- 已知 Linux 错误已经处理；
+- 所有 Windows-required 项已经加入累计队列；
+- 没有遗漏明显的平台相关要求。
+
+满足后进入 **Windows Validation Preparation**。不要在此之后零散实现无关功能；应以最终 diff 为单位准备集中验证。
+
+## 18. Windows Validation Preparation
+
+基于最终 `git diff`、current Plan、changed modules、Windows 相关代码路径、CI/build configuration、历史 Windows 记录和累计队列生成一个集中验证计划。
+
+合并重复或高度相关场景。例如一次完整应用启动可以覆盖多个同一构建的启动需求时，应合并为一个场景，而不是为每个 feature 重复列出启动测试。
+
+按以下类别组织：
+
+1. **Build / Toolchain**：Windows build、compiler/toolchain、native dependency resolution；
+2. **Runtime**：application/sidecar startup、subprocess、environment detection；
+3. **Filesystem**：drive-letter、Unicode、path-space、file locking、permissions；
+4. **Integration**：IPC、native APIs、external integrations；
+5. **Packaging**：installer、bundled resources、sidecar packaging、upgrade；
+6. **Regression**：因本轮 diff 需要重新确认的已有 Windows 行为。
+
+## 19. Final Windows Validation Handoff
+
+集中验证计划中的每个项目必须包含：
+
+| Field | Required content |
+| --- | --- |
+| ID | Stable test identifier |
+| Test name | Human-readable name |
+| Purpose | Risk or behavior covered |
+| Related changes | Diff/module linkage |
+| Prerequisites | Required environment or artifacts |
+| Steps / command | Exact procedure or command |
+| Expected result | Pass criterion |
+| Priority | P0 / P1 / P2 |
+| Manual interaction | Required / Not required |
+
+Priority meanings:
+
+- `P0`: 必须验证；失败意味着当前任务不能完成；
+- `P1`: 重要的平台兼容性验证；
+- `P2`: 建议验证，但不阻塞主要功能。
+
+最终开发报告应说明：已完成开发、Linux 验证、Linux 剩余问题、为何可以结束 Linux Development Phase、完整队列、合并后的 Windows 验证计划、P0/P1/P2、是否存在 `WINDOWS_VERIFICATION_BLOCKING`，以及下一次 Windows 环境应一次性执行的项目。

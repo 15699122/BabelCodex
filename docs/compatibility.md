@@ -1,6 +1,6 @@
 # Compatibility Baseline
 
-Last verified: 2026-09-09
+Last verified: 2026-09-10
 
 ## Local development baseline
 
@@ -74,6 +74,17 @@ GitHub Actions uses:
 - pytest without live Codex usage or BabelDOC model warmup.
 
 ## Windows native validation
+
+### Latest current-GUI working-tree run: 2026-09-10 (post-reconciliation confirmation)
+
+The current Linux working tree (`dev`, `8f6ee91b2fe449845ccc8abaa59f55f689ab82ca`, with uncommitted GUI and documentation changes) was synchronized one-way to `E:\Shiraishi\VSCode Workspace\Codex_Translator` and revalidated with the target Python 3.12.13 environment.
+
+- PASS: dependency/lock checks, Ruff format/check, compileall, Python tests (`157 passed, 3 deselected`), runtime doctor, GUI Vitest (`19 passed`), GUI production build, Tauri `cargo check`, Tauri configuration/icon checks, current-source PyInstaller, frozen/target-triple/MSI-extracted sidecar smoke, bundle audit, NSIS/MSI generation, MSI extraction and package-level GUI launch.
+- The previous GUI duplicate `mock-job-1` failure was fixed in Linux through idempotent `job_created` reconciliation and was not reproduced in the latest Windows revalidation. The reconciled GUI and subsequent Chinese UI regression coverage are `WINDOWS_PASS` for the validated working tree; the historical failure remains documented below.
+- The previous PyInstaller environment block and `doctor()` installation-shape failure were resolved or not reproduced in the latest Windows revalidation. Their historical records remain unchanged and are not current blockers.
+- Current status: `WINDOWS_VERIFICATION_PENDING` because packaged GUI interaction, clean-user/path-permission coverage, NVDA, DPI, Defender/SmartScreen, signing/SBOM, formal release audit and live Codex/PDF integration remain unexecuted.
+
+Detailed commands, evidence, failure classification and follow-up actions are recorded in `docs/validation/windows.md` under the `2026-09-10` validation run.
 
 Windows 原生验证已于 2026-09-08 在 E 盘 checkout 完成一轮。以下结果来自 Windows 11 x86-64（OS build 10.0.29648）：
 
@@ -205,6 +216,54 @@ WSL/Linux 的 `cargo check`、浏览器端 Vitest、Vite build、bundle audit �
 - Current artifacts: NSIS `259D35315741EF3DA4D7318C1DEF36016031524133601108EBE580E55E608FD3` (195,746,309 bytes) and MSI `8307FD99E183E0B8074E1EC863B5CF3EEB12C69BAB9C839D647502624B8A3DE7` (195,715,072 bytes), both unsigned. MSI-contained sidecar hash matched the target-triple sidecar.
 - Overall status remains `WINDOWS_VERIFICATION_PENDING`; interactive/clean-user GUI, cancellation/reconnection/path-permission matrix, Defender/SmartScreen, signing/SBOM/release audit and live Codex/PDF integration remain `NOT RUN`.
 - Linux follow-up: narrow/fix the bundle-audit regex with regression coverage for URL schemes, then rerun the audit. Do not treat the previous audit `PASS` entries as overriding this newer current-source result.
+
+## Latest Windows validation reconciliation (2026-09-10)
+
+- The latest WSL `dev` working tree (HEAD `8f6ee91`, including the uncommitted current GUI redesign and documentation changes) was synchronized one-way to E: and revalidated on Windows 11 with project Python 3.12.13, `uv 0.12.10`, Node.js 24.19.0, npm 11.17.0 and Rust/cargo 1.98.0.
+- Dependency/lock checks, Ruff, compileall, Python tests (`157 passed, 3 deselected`), doctor, GUI production build, focused store tests, Cargo, Tauri config/icon checks, fresh PyInstaller sidecar, frozen/target-triple/MSI-extracted sidecar smoke, bundle audit, NSIS/MSI generation, MSI extraction and package-level GUI process launches passed.
+- Full GUI Vitest is `WINDOWS_FAIL`: 15/17 passed; two App tests found duplicate `mock-job-1` rows after mock job/event reconciliation. This is a current GUI project-code issue and needs Linux-side correction and cross-platform rerun.
+- Fresh frozen/target/package sidecar SHA-256 is `8E899E6833943E1BF201313E8F3EF25BEA0F8F95C69B4A9709AAF679F307B668`. NSIS is `CB6476F09664D5B6F8AD4E188FD48E733B069FA13D0D65A006768353AB600708` (195,748,979 bytes); MSI is `AF0F910308C1BC412484417FF6EFD929C1EBA49040FEC0DFDD76812C139552E8` (195,710,976 bytes). All are unsigned development artifacts.
+- Packaged GUI interaction, clean-user/path-permission matrix, Defender/SmartScreen, signing/SBOM/release audit and live Codex/PDF integration remain `NOT RUN`; target Linux machine smoke is `NOT APPLICABLE`. Overall status remains `WINDOWS_VERIFICATION_PENDING`.
+
+## Latest Linux reconciliation after Windows validation (2026-09-10)
+
+- The Windows duplicate `mock-job-1` failure was classified as a shared GUI state-reconciliation issue: `JobStore.applyEvent()` appended a `job_created` event even when `list_jobs` had already supplied the same `job_id`.
+- Linux fixed the issue by making `job_created` application idempotent. Existing jobs are merged in place without losing richer state, while unseen jobs are inserted once. A regression test covers replay after `list_jobs` and verifies that only one job remains.
+- Linux also corrected the App test/UI accessibility mismatch by exposing `Job details` as the actual heading and retaining the job ID as separate metadata.
+- Linux verification after these fixes: GUI Vitest `3 files, 18 tests passed`; `npm run build` passed; `uv run pytest -q --tb=short` reported `157 passed, 3 deselected`; Ruff format/check, compileall and `git diff --check` passed.
+- The GUI fix was first `LINUX_VERIFIED` and has since reached `WINDOWS_PASS` in the latest Windows revalidation. The historical Windows `doctor()` installation-shape failure and current-source PyInstaller block were resolved or not reproduced in subsequent runs; packaged desktop interaction, clean-user, NVDA, DPI, signing/SBOM and release checks remain `WINDOWS_VERIFICATION_PENDING` or `NOT RUN` exactly as recorded in `docs/validation/windows.md`.
+
+## Latest Windows validation reconciliation (2026-09-10, GUI fix revalidation)
+
+- The latest WSL `dev` working tree at HEAD `8f6ee91` (including uncommitted GUI reconciliation changes) was synchronized one-way to E: and revalidated on Windows 11 with project Python 3.12.13, `uv 0.12.10`, Node.js 24.19.0, npm 11.17.0 and Rust/cargo 1.98.0.
+- Dependency/lock checks, Ruff, compileall, Python tests (`157 passed, 3 deselected`), doctor, GUI tests (`18 passed`), GUI build, Cargo, Tauri config/icon checks, fresh PyInstaller sidecar, frozen/target-triple/MSI-extracted sidecar smoke, bundle audit, NSIS/MSI generation and package-level GUI launches all passed.
+- The prior GUI duplicate `mock-job-1` failure was not reproduced after the synchronized Linux working-tree reconciliation; the current GUI source and its 18-test suite pass on Windows.
+- Fresh sidecar SHA-256 is `CDE9A9DBDD4F47671EBE576BB2DCBED5DAF19E88615E56AC344D8A6CC7F0956A`. NSIS is `14975F49B62A070D97B1649460BCD87955559541209BD259EFDD8F64C9A9AC27` (195,747,786 bytes); MSI is `C8CD3C61AF7E97890B97B7FD17C0D000B50BC34318B5D1E0B6D5BE315D905275` (195,710,976 bytes). All are unsigned development artifacts.
+- Packaged GUI interaction, clean-user/path-permission matrix, Defender/SmartScreen, signing/SBOM/release audit and live Codex/PDF integration remain `NOT RUN`; target Linux machine smoke is `NOT APPLICABLE`. Overall status remains `WINDOWS_VERIFICATION_PENDING`.
+
+## Latest Windows validation reconciliation (2026-09-10, post-reconciliation confirmation)
+
+- The latest WSL `dev` working tree at HEAD `8f6ee91` (including uncommitted GUI, architecture and documentation changes) was synchronized one-way to E: and revalidated on Windows 11 with project Python 3.12.13, `uv 0.12.10`, Node.js 24.19.0, npm 11.17.0 and Rust/cargo 1.98.0.
+- Dependency/lock checks, Ruff, compileall, Python tests (`157 passed, 3 deselected`), doctor, GUI tests (`18 passed`), GUI build, Cargo, Tauri config/icon checks, fresh PyInstaller sidecar, frozen/target-triple/MSI-extracted sidecar smoke, bundle audit, NSIS/MSI generation and package-level GUI launches all passed.
+- The earlier GUI duplicate `mock-job-1` failure remains historical and was not reproduced after the synchronized Linux reconciliation changes.
+- Fresh sidecar SHA-256 is `CDE9A9DBDD4F47671EBE576BB2DCBED5DAF19E88615E56AC344D8A6CC7F0956A`. NSIS is `14975F49B62A070D97B1649460BCD87955559541209BD259EFDD8F64C9A9AC27` (195,747,786 bytes); MSI is `C8CD3C61AF7E97890B97B7FD17C0D000B50BC34318B5D1E0B6D5BE315D905275` (195,710,976 bytes). All are unsigned development artifacts.
+- Packaged GUI interaction, clean-user/path-permission matrix, Defender/SmartScreen, signing/SBOM/release audit and live Codex/PDF integration remain `NOT RUN`; target Linux machine smoke is `NOT APPLICABLE`. Overall status remains `WINDOWS_VERIFICATION_PENDING`.
+
+## Latest Windows validation reconciliation (2026-09-10, current GUI confirmation)
+
+- The latest WSL `dev` working tree at HEAD `8f6ee91` (including uncommitted GUI, architecture and documentation changes) was synchronized one-way to E: and revalidated on Windows 11 with project Python 3.12.13, `uv 0.12.10`, Node.js 24.19.0, npm 11.17.0 and Rust/cargo 1.98.0.
+- Dependency/lock checks, Ruff, compileall, Python tests (`157 passed, 3 deselected`), doctor, GUI tests (`19 passed`), GUI build, Cargo, Tauri config/icon checks, fresh PyInstaller sidecar, frozen/target-triple/MSI-extracted sidecar smoke, bundle audit, NSIS/MSI generation and package-level GUI launches all passed.
+- The earlier GUI duplicate `mock-job-1` issue remains historical and was not reproduced after the synchronized Linux reconciliation changes; the current GUI suite passes 19/19.
+- Fresh sidecar SHA-256 is `4577E0D453C8665507981A6D33620C4D41F9E80D78C22CF2D765C9D55400C06A`. NSIS is `9C9332AD3FE09FAFFB71AAE35F157D1333DEAC6F57E369BA052B3511DA4B4F1B` (195,743,723 bytes); MSI is `D0C5D8B87EB9BA7D5F21F66445C46BD827F0A0558E28F1416573ECE848B7CC23` (195,715,072 bytes). All are unsigned development artifacts.
+- Packaged GUI interaction, clean-user/path-permission matrix, Defender/SmartScreen, signing/SBOM/release audit and live Codex/PDF integration remain `NOT RUN`; target Linux machine smoke is `NOT APPLICABLE`. Overall status remains `WINDOWS_VERIFICATION_PENDING`.
+
+## Latest Windows validation reconciliation (2026-09-10, current UI revalidation)
+
+- The latest WSL `dev` working tree at HEAD `8f6ee91` (including uncommitted GUI, architecture and documentation changes) was synchronized one-way to E: and revalidated on Windows 11 with project Python 3.12.13, `uv 0.12.10`, Node.js 24.19.0, npm 11.17.0 and Rust/cargo 1.98.0.
+- Dependency/lock checks, Ruff, compileall, Python tests (`157 passed, 3 deselected`), doctor, GUI tests (`19 passed`), GUI build, Cargo, Tauri config/icon checks, fresh PyInstaller sidecar, frozen/target-triple/MSI-extracted sidecar smoke, bundle audit, NSIS/MSI generation and package-level GUI launches all passed.
+- The current UI change is verified at automated/build/process level only; packaged Chinese rendering, keyboard navigation, DPI and NVDA remain `NOT RUN`.
+- Fresh sidecar SHA-256 is `4577E0D453C8665507981A6D33620C4D41F9E80D78C22CF2D765C9D55400C06A`. NSIS is `9C9332AD3FE09FAFFB71AAE35F157D1333DEAC6F57E369BA052B3511DA4B4F1B` (195,743,723 bytes); MSI is `D0C5D8B87EB9BA7D5F21F66445C46BD827F0A0558E28F1416573ECE848B7CC23` (195,715,072 bytes). All are unsigned development artifacts.
+- Packaged GUI interaction, clean-user/path-permission/accessibility matrix, Defender/SmartScreen, signing/SBOM/release audit and live Codex/PDF integration remain `NOT RUN`; target Linux machine smoke is `NOT APPLICABLE`. Overall status remains `WINDOWS_VERIFICATION_PENDING`.
 
 ## Upgrade policy
 
