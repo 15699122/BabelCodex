@@ -650,7 +650,7 @@ MCP 与 GUI 共用 Python Application Service、JobState、事件和错误码；
 
 ### Phase 12：恢复、Part 与任务运维
 
-**优先级：P3 | 复杂度：L | 预计：5–8 个开发日；artifact manifest、CLI 运维入口、安全完成跳过及保守 worker crash recovery 已完成 Linux 验证（2026 年 9 月 10 日）**
+**优先级：P3 | 复杂度：L | 预计：5–8 个开发日；artifact manifest、CLI 运维入口、安全完成跳过、保守 worker crash recovery、错误分类 retry policy、pipeline 元数据/part-resume 评估及 cleanup/保留策略均已完成 Linux 验证（2026 年 9 月 10 日）**
 
 任务：
 
@@ -680,9 +680,12 @@ MCP 与 GUI 共用 Python Application Service、JobState、事件和错误码；
 - `status=completed` 只会在 manifest 完整验证通过时返回 `skipped`。输出缺失、路径越界、PDF header 异常或 hash 不匹配时，任务会恢复为新的可执行尝试（重置 attempts），而不是仅依赖旧状态跳过；
 - Application Service 新增 `inspect_job`、`validate_output`、`retry_job`；CLI 已提供 `babelcodex inspect <job-id>`、`babelcodex validate <job-id>`、`babelcodex retry <job-id>`，MCP `babelcodex_validate_output` 复用同一验证规则；
 - 每次执行在 persisted job state 中写入 `runner_pid`；新建 Orchestrator 时扫描遗留 `RUNNING` / `RETRY_PENDING` job。runner PID 缺失或已死亡时，状态会被保守地终止为 `FAILED`、`ErrorCategory.WORKER` / `WORKER_CRASHED`，并要求用户使用显式 `retry` 开始新尝试；不会自动重跑或消耗 Codex 用量。PID 仍存活的任务保持不变，避免 CLI、GUI sidecar 和 MCP 进程互相误判活动任务；
-- Linux 验证：`uv run pytest -q` 为 162 passed、4 deselected；`uv run pytest -q -m integration tests/test_e2e_mock.py` 为 4 passed；`uv run ruff check .`、`uv run ruff format --check .`、`python -m compileall -q src` 和 `git diff --check` 均通过。
+- 错误分类 retry policy：`core.errors.DEFAULT_RETRY_LIMITS` 定义每类别默认尝试上限，`[translation] retry_policy` 可操作员覆盖；全局 `max_retries` 仍是总尝试次数的上限，类别策略只能降低它。认证/配置/输入/验证/输出类默认 1 次、不自动循环（验收项），翻译/资源类有界重试；失败日志与持久化状态记录 category、code 与 `retry_limit/max_retries`；
+- BabelDOC part 元数据与 resume 可行性：每次执行把 `pipeline_meta`（backend、babeldoc_version、source_page_count、`part_resume_supported=False`、note）持久化到 JobState，`babelcodex inspect` 直接可见；结论：0.6.x 高层单遍流水线 `SplitManager` 仅用于可选的复杂度估算、无稳定 part 级产物，part-level resume 不采用（ADR-026），恢复语义由显式 retry + 类别重试提供；
+- cleanup/保留策略：`[babeldoc] work_retention_days`（默认 7 天）控制终态 job 工作目录保留期，0 表示终态立即清理；`babelcodex cleanup [--dry-run]` 走 Application Service 共享逻辑，活动 job 永不清理；路径安全规则与 Windows 瞬时锁重试共享于 `core.workdir`，MCP `babelcodex_cleanup_job` 一并复用（ADR-027）；
+- Linux 验证：`uv run pytest -q` 为 179 passed、4 deselected；`uv run pytest -q -m integration tests/test_e2e_mock.py` 为 4 passed；`uv run ruff check .`、`uv run ruff format --check .`、`python -m compileall -q src` 和 `git diff --check` 均通过。
 
-仍需后续完成：按错误类别的操作员可见 retry policy、BabelDOC part 元数据与 part-level resume 可行性、失败工作目录保留期限和可配置 cleanup policy。Windows packaged 路径、权限、sidecar 重启与 clean-user 回归仍累计在 `WVQ-003`/`WVQ-004`，保持 `WINDOWS_VERIFICATION_PENDING`，不阻塞 Linux 开发。
+仍需后续完成：真实 Codex 账户下的 retry/compact/thread resume 行为验收、长文档稳定性 benchmark 和 packaged/clean-user Windows sidecar 回归。Windows 侧新增工作目录清理/锁定行为与类别重试观察并入 `WVQ-007`/`WVQ-003`/`WVQ-004`，保持 `WINDOWS_VERIFICATION_PENDING`，不阻塞 Linux 开发。
 
 ### Phase 13：PDF QA 与发布硬化
 

@@ -260,6 +260,30 @@ UNKNOWN
 
 选择保守终止而非自动恢复的原因：崩溃后的输入状态（输出半写、工作目录残留）未经验证，自动续跑可能覆盖证据或重复消耗用量；显式 retry 会走与正常执行相同的 manifest 验证路径。BabelDOC part-level resume、失败工作目录保留期限和可配置 cleanup policy 属于后续演进，不改变本契约。
 
+### ADR-025：按错误类别的操作员可见 retry policy
+
+**状态：已接受**
+
+重试上限按 `ErrorCategory` 分级，默认值编码在 `core.errors.DEFAULT_RETRY_LIMITS`，并可通过 `[translation] retry_policy` 覆盖。全局 `max_retries` 仍是每任务总尝试次数上限，类别策略只能降低它、不能提高它。认证/配置/输入/验证/输出类默认不自动重试（1 次）；翻译/资源类允许有界重试。既有的单一 `retryable` 标志保留为领域层第二道门禁：`attempt < 类别上限` 且 `error.retryable` 才会进入 `RETRY_PENDING`。因此认证错误即使被领域层误标为 retryable，类别上限也会阻止自动循环（接受标准）。
+
+操作员可见性：`retry_policy` 出现在 `config/example.toml`；失败时日志与 persisted job state 记录 category、code 与 `retry_limit/max_retries`。
+
+### ADR-026：BabelDOC part-level resume 对当前流水线不可行，按 job 记录 pipeline 元数据
+
+**状态：已接受（评估结论）**
+
+BabelDOC 0.6.x 高层单遍 `async_translate` 是不透明调用；内部 `SplitManager` 仅在可选 `split_strategy`（CLI 的 `--max-pages-per-part`）启用时被调用，且 `determine_split_points` 的结果只用于分片复杂度估算与内存分片执行，不输出稳定的 part 级可续跑产物。本项目适配器也未启用 split。因此崩溃任务只能整任务重跑，恢复语义由 ADR-024（保守终止 + 显式 retry）和 ADR-025（类别重试）定义。
+
+落地：每次执行把 `pipeline_meta` 写入 persisted JobState（backend、babeldoc_version、source_page_count、`part_resume_supported=False`、note），`babelcodex inspect <job-id>` 直接可见评估结论与数据。若未来仍需 part 级续跑，只能走 Phase 14 实验性 two-phase extract/translate/render 路径，并以 BabelDOC 提供稳定 IL/hook contract 为前提（见 `docs/development-plan.md` Phase 14 启用条件）。
+
+### ADR-027：失败工作目录保留期限与可配置 cleanup policy
+
+**状态：已接受**
+
+`[babeldoc] work_retention_days`（默认 7 天）控制终态（completed / failed / cancelled）job 工作目录的保留时间；0 表示终态目录可立即清理。`babelcodex cleanup [--dry-run]` 走 Application Service 共享逻辑，CLI/GUI/MCP 不重复实现。活动 job（`RUNNING` / `RETRY_PENDING`）永不清理；清理路径复用与 MCP per-job cleanup 相同的安全规则（解析后必须位于 `working_dir` 内、拒绝删除根目录、拒绝符号链接、Windows 瞬时文件锁有界重试），共享实现于 `core.workdir`，MCP `babelcodex_cleanup_job` 与保留清扫共用同一套助手。
+
+保留失败工作目录而不是失败即删，是为操作员留诊断证据（日志、分片中间文件、worker request）；清理是到期自动清扫或显式运维动作，不会在失败瞬间自动执行，避免掩盖证据。
+
 ## 6. 后续演进路径
 
 ### 短期
@@ -274,7 +298,7 @@ UNKNOWN
 - 完成 PDF QA
 - 完成 worker 恢复
 - 完成 thread 轮换
-- 评估 part-level resume
+- part-level resume：已评估为当前单遍高层流水线不可行（ADR-026），仅 Phase 14 two-phase 重新考察
 
 ### 长期
 

@@ -158,7 +158,10 @@ src/codex_babeldoc/
 │   ├── state.py
 │   ├── errors.py
 │   ├── events.py
-│   └── artifacts.py
+│   ├── artifacts.py
+│   ├── artifact_manifest.py
+│   ├── pipeline_meta.py
+│   └── workdir.py
 ├── translation/
 │   ├── models.py
 │   ├── gateway.py
@@ -186,7 +189,7 @@ src/codex_babeldoc/
 
 ### `application/`
 
-CLI、GUI 和 MCP 共用的应用服务层。提供任务启动、查询、取消、校验和清理等操作，屏蔽底层 Orchestrator、Worker 和状态存储。
+CLI、GUI 和 MCP 共用的应用服务层。提供任务启动、查询、取消、校验、重试和 cleanup（按 `work_retention_days` 清扫终态 job 工作目录）等操作，屏蔽底层 Orchestrator、Worker 和状态存储。
 
 ### `interfaces/`
 
@@ -214,10 +217,12 @@ GUI host 技术验证位于仓库根目录的 `gui/`：Tauri 2 只启动固定�
 
 不依赖 BabelDOC 或 Codex 具体实现。
 
-- `orchestrator.py`：discover / run one / run all / 任务状态迁移 / backend 选择 / retry 决策 / 产物保存；完成任务只在 artifact manifest 仍完整有效时安全跳过，缺失或被篡改的输出会重置为可执行恢复尝试。真实执行会写入 owning runner PID；初始化时仅将 dead/unknown PID 的遗留 active state 终止为 `WORKER_CRASHED`，不会自动重试。
-- `state.py`：原子状态写入 / schema version / job fingerprint / config fingerprint / 错误类别 / artifact 索引 / runner PID。PID 仍存活的 active state 不会被另一入口回收，避免 CLI、GUI 和 MCP 之间互相误判。
+- `orchestrator.py`：discover / run one / run all / 任务状态迁移 / backend 选择 / 按错误类别的 retry 决策（`retry_limit_for`，`max_retries` 为全局上限）/ 产物保存；完成任务只在 artifact manifest 仍完整有效时安全跳过，缺失或被篡改的输出会重置为可执行恢复尝试。真实执行会写入 owning runner PID 与 `pipeline_meta`；初始化时仅将 dead/unknown PID 的遗留 active state 终止为 `WORKER_CRASHED`，不会自动重试。
+- `state.py`：原子状态写入 / schema version / job fingerprint / config fingerprint / 错误类别 / artifact 索引 / runner PID / pipeline 元数据。PID 仍存活的 active state 不会被另一入口回收，避免 CLI、GUI 和 MCP 之间互相误判。
 - `artifact_manifest.py`：对持久化 job artifact 执行 output-root allowlist、存在性、大小、流式 SHA-256 和 PDF magic-header 校验；已记录 digest 不匹配时报告完整性失败，而不是更新旧 digest。
-- `errors.py`：稳定错误分类。
+- `pipeline_meta.py`：记录 backend、BabelDOC 版本、源 PDF 页数与 part-resume 评估（当前单遍高层流水线 `part_resume_supported=False`），供 `inspect` 展示。
+- `workdir.py`：终态 job 工作目录保留清扫与路径安全删除（拒绝根目录/符号链接/越界路径，Windows 瞬时锁有界重试）；CLI cleanup 与 MCP per-job cleanup 共用。
+- `errors.py`：稳定错误分类 + `DEFAULT_RETRY_LIMITS` / `retry_policy` 解析（认证/输入/验证类不自动循环）。
 - `events.py`：统一事件模型。
 
 ### `translation/`
