@@ -126,6 +126,13 @@ def main(argv=None) -> int:
         action="store_true",
         help="Report what would be removed without deleting anything.",
     )
+    qa = sub.add_parser("qa")
+    qa.add_argument("job_id", help="Run the output PDF QA battery for a terminal job.")
+    qa.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Include info-level findings in the summary.",
+    )
     mcp = sub.add_parser("mcp")
     mcp_sub = mcp.add_subparsers(dest="mcp_command", required=True)
     mcp_sub.add_parser("serve")
@@ -192,6 +199,14 @@ def main(argv=None) -> int:
         result = service.cleanup_work_dirs(dry_run=args.dry_run)
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
+    if args.command == "qa":
+        try:
+            result = service.run_qa(args.job_id, verbose=args.verbose)
+        except ValueError as exc:
+            print(json.dumps({"error": str(exc)}, ensure_ascii=False))
+            return 1
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0 if result["ok"] else 1
 
     orch = service.orchestrator
     if args.command == "run":

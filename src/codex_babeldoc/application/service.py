@@ -88,6 +88,84 @@ class BabelCodexService:
             "artifacts": artifacts,
         }
 
+    def run_qa(self, job_id: str, *, deep: bool = True, verbose: bool = False) -> dict[str, object]:
+        """Run the PDF QA battery over a terminal job's output artifacts.
+
+        QA reports are diagnostic summaries written to ``output_dir/qa/`` and
+        deliberately do not join ``job.artifacts``: regenerated reports must
+        not disturb artifact manifest integrity checks. Any ERROR-level
+        finding sets ``qa_status`` to ``failed`` so abnormal output is never
+        marked as fully successful.
+        """
+        from codex_babeldoc.core.artifacts import ArtifactType
+        from codex_babeldoc.qa.report import (
+            run_qa as run_report,
+        )
+        from codex_babeldoc.qa.report import (
+            save_report,
+            to_text,
+        )
+
+        job = self.get_job(job_id)
+        if job is None:
+            raise ValueError("job was not found")
+        if job.status in {JobStatus.RUNNING, JobStatus.RETRY_PENDING}:
+            raise ValueError("cannot run QA on an active job")
+
+        pdf_artifacts = [
+            artifact
+            for artifact in job.artifacts
+            if artifact.artifact_type in {ArtifactType.MONO_PDF, ArtifactType.DUAL_PDF}
+        ]
+        source_path = Path(job.source_path)
+        if not source_path.is_file():
+            source_path = None
+
+        qa_dir = self.config.project.output_dir / "qa"
+        results: list[dict[str, object]] = []
+        all_ok = True
+        for artifact in pdf_artifacts:
+            target = Path(artifact.path)
+            if not target.is_file():
+                all_ok = False
+                results.append(
+                    {
+                        "artifact": artifact.artifact_type.value,
+                        "ok": False,
+                        "path": str(target),
+                        "summary": "output file is missing",
+                    }
+                )
+                continue
+            stem = f"{Path(job.source_path).stem}.{artifact.artifact_type.value}"
+            report = run_report(
+                target,
+                lang_out=self.config.translation.lang_out,
+                source_path=source_path,
+                deep=deep,
+            )
+            report_path = save_report(report, qa_dir, stem)
+            results.append(
+                {
+                    "artifact": artifact.artifact_type.value,
+                    "ok": report.ok,
+                    "path": str(target),
+                    "report": str(report_path),
+                    "summary": to_text(report, verbosity=2 if verbose else 0),
+                }
+            )
+            if not report.ok:
+                all_ok = False
+
+        job.qa_status = "passed" if all_ok else "failed"
+        self.orchestrator.state.save(job)
+        return {
+            "job_id": job.job_id,
+            "qa_status": job.qa_status,
+            "ok": all_ok,
+            "reports": results,
+        }
+
     def cleanup_work_dirs(self, *, dry_run: bool = False) -> dict[str, object]:
         """Sweep terminal job working directories older than the retention window."""
         from codex_babeldoc.core.workdir import sweep_work_dirs

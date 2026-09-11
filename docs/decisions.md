@@ -284,6 +284,20 @@ BabelDOC 0.6.x 高层单遍 `async_translate` 是不透明调用；内部 `Split
 
 保留失败工作目录而不是失败即删，是为操作员留诊断证据（日志、分片中间文件、worker request）；清理是到期自动清扫或显式运维动作，不会在失败瞬间自动执行，避免掩盖证据。
 
+### ADR-028：PDF QA 报告是安全摘要，error 级 finding 阻断完全成功
+
+**状态：已接受**
+
+`babelcodex qa <job-id>`（service `run_qa`，MCP `babelcodex_run_qa`）对终态 job 的 mono/dual 输出执行 L0 文件、L1 结构、L2 文本、布局启发、渲染空白与磁盘检查，报告写入 `output_dir/qa/<stem>.<type>.qa.json`，并在 job 上写 `qa_status`。
+
+规则：
+
+- 任何 `error` 级 finding 使 `qa_status=failed`；输出异常（文件缺失、PDF 打不开、全页空白等）永不标记为完全成功。`warning` 级（如 `MAYBE_UNTRANSLATED` 未翻译比例启发）不阻断，但会出现在摘要里；
+- 报告是**摘要**：finding 只含代码、严重度、页码和短 detail，不带入或转写段落原文，遵守"失败报告不包含敏感全文"验收；
+- QA 报告**不加入** `job.artifacts` manifest：报告可反复重新生成，不能改变 artifact 内容完整性校验（哈希/大小），避免操作员运行 QA 导致后续 `validate` 误报篡改；
+- 视觉回归以渲染空白/非空白像素启发覆盖缺失字体导致的空墨，替代全量像素级黄金基线对比（后者留待 Phase 14/专门视觉 QA）；
+- 夹具两栏 PDF 的 mock 输出作为稳定基线测试：`test_mock_output_has_a_stable_qa_baseline` 锁定"必为 PASS、可复现"，防止启发式漂移破坏发布流程。
+
 ## 6. 后续演进路径
 
 ### 短期

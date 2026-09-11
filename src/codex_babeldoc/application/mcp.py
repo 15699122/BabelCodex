@@ -99,6 +99,12 @@ TOOLS = [
         ["job_id"],
     ),
     _tool(
+        "babelcodex_run_qa",
+        "Run the PDF QA battery over a terminal job's output artifacts and return a terse summary.",
+        {"job_id": {"type": "string"}},
+        ["job_id"],
+    ),
+    _tool(
         "babelcodex_cleanup_job",
         "Remove only the job-owned temporary working directory for a terminal job.",
         {"job_id": {"type": "string"}},
@@ -113,6 +119,7 @@ TOOL_ARGUMENTS = {
     "babelcodex_list_jobs": set(),
     "babelcodex_cancel_job": {"job_id"},
     "babelcodex_validate_output": {"job_id"},
+    "babelcodex_run_qa": {"job_id"},
     "babelcodex_cleanup_job": {"job_id"},
 }
 
@@ -213,6 +220,7 @@ class McpServer:
             "babelcodex_list_jobs": self._list_jobs,
             "babelcodex_cancel_job": self._cancel_job,
             "babelcodex_validate_output": self._validate_output,
+            "babelcodex_run_qa": self._run_qa,
             "babelcodex_cleanup_job": self._cleanup_job,
         }
         handler = handlers.get(name)
@@ -296,6 +304,13 @@ class McpServer:
         ):
             raise McpError(-32003, "artifact path is outside the configured output directory")
         return result
+
+    def _run_qa(self, arguments: dict[str, object]) -> dict[str, object]:
+        job = self._job(arguments)
+        try:
+            return self.context.service.run_qa(job.job_id)
+        except ValueError as exc:
+            raise McpError(-32004, str(exc)) from exc
 
     def _cleanup_job(self, arguments: dict[str, object]) -> dict[str, object]:
         job = self._job(arguments)

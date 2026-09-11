@@ -110,3 +110,29 @@ class TestMockEndToEnd:
         orch.backend = _ReplacementBackend()
         assert orch.run_one(source) == "completed"
         assert calls == 1
+
+    def test_mock_output_has_a_stable_qa_baseline(self, tmp_path: Path) -> None:
+        """The fixture PDF must produce a *passing* QA baseline every run.
+
+        The mock translator keeps the source (English) text, so the Chinese
+        density heuristic emits a ``MAYBE_UNTRANSLATED`` warning for long
+        outputs. Warnings are expected and must not flip the report to failed;
+        this test pins that stable baseline.
+        """
+        from codex_babeldoc.application.service import BabelCodexService
+
+        cfg = _make_config(tmp_path, "inprocess")
+        source = cfg.project.input_dir / FIXTURE.name
+        _assert_completed(cfg, source)
+
+        service = BabelCodexService(cfg)
+        job = service.orchestrator.state.load(source, config_fingerprint=cfg.fingerprint())
+        result = service.run_qa(job.job_id)
+        assert result["ok"] is True
+        assert result["qa_status"] == "passed"
+
+        report_dir = cfg.project.output_dir / "qa"
+        report_names = {path.name for path in report_dir.glob("*.qa.json")}
+        assert report_names, "no QA report was written"
+        for stem in ("mono_pdf", "dual_pdf"):
+            assert any(name.startswith(f"{source.stem}.{stem}.") for name in report_names)

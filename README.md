@@ -119,6 +119,9 @@ BabelCodex 主要面向个人、本地使用。用户需要自行确认待翻译
 - paragraph translation cache independent of BabelDOC cache
 - scoped local stdio MCP Server
 - `babelcodex inspect|validate|retry <job-id>` 任务运维入口
+- PDF QA battery：`babelcodex qa <job-id>`（L0/L1/L2、越界、渲染空白、未翻译比例、磁盘；JSON 报告 + 人类摘要）
+- 输出异常不标记为完全成功：任何 QA error 使 `qa_status=failed`
+- 发布操作文档：`docs/release.md`
 
 ### Experimental / needs validation on your machine
 
@@ -134,7 +137,7 @@ BabelCodex 主要面向个人、本地使用。用户需要自行确认待翻译
 ### Planned
 
 - batch translation requests to reduce Codex turn overhead
-- PDF QA pass（missing glyphs、overflow、untranslated text）
+- 全量像素级视觉回归与字体级缺字检测
 - experimental two-phase extract/translate/render mode
 - remaining Windows/Linux GUI release audit and target-machine validation
 - Codex client registration and packaged MCP smoke validation
@@ -150,6 +153,7 @@ babelcodex run
 babelcodex inspect <job-id>
 babelcodex validate <job-id>
 babelcodex retry <job-id>
+babelcodex qa <job-id>
 babelcodex cleanup [--dry-run]
 ```
 

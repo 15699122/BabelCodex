@@ -56,6 +56,7 @@ def test_initialize_lists_scoped_tools_and_notifications_are_silent(tmp_path):
         "babelcodex_list_jobs",
         "babelcodex_cancel_job",
         "babelcodex_validate_output",
+        "babelcodex_run_qa",
         "babelcodex_cleanup_job",
     }
     assert server.handle({"jsonrpc": "2.0", "method": "notifications/initialized"}) is None
@@ -127,6 +128,40 @@ def test_cleanup_retries_transient_permission_error(tmp_path, monkeypatch):
     remove_work_dir(work_dir)
     assert calls == 3
     assert not work_dir.exists()
+
+
+def test_run_qa_tool_is_scoped(tmp_path):
+    import fitz
+
+    from codex_babeldoc.core.artifacts import Artifact, ArtifactType
+
+    service = _service(tmp_path)
+    source = service.config.project.input_dir / "paper.pdf"
+    source.write_bytes(b"%PDF-test")
+    output = service.config.project.output_dir / "paper.mono.pdf"
+    document = fitz.open()
+    try:
+        page = document.new_page()
+        page.insert_text((72, 72), "Hello translated English output.")
+        document.save(output)
+    finally:
+        document.close()
+
+    server = McpServer(service)
+    job = service.orchestrator.state.load(
+        source,
+        config_fingerprint=service.config.fingerprint(),
+    )
+    job.status = JobStatus.COMPLETED
+    job.artifacts = [Artifact(ArtifactType.MONO_PDF, str(output))]
+    service.orchestrator.state.save(job)
+
+    result = _call(server, "qa", "babelcodex_run_qa", {"job_id": job.job_id})
+    assert result["ok"] is True
+    assert result["qa_status"] == "passed"
+    assert result["reports"][0]["artifact"] == "mono_pdf"
+    assert (service.config.project.output_dir / "qa" / "paper.mono_pdf.qa.json").is_file()
+    server.close()
 
 
 def test_cleanup_rejects_job_with_active_future(tmp_path):

@@ -115,3 +115,45 @@ def test_cleanup_cli_dry_run_reports_without_deleting(tmp_path, capsys):
     listed = json.loads(capsys.readouterr().out)
     assert listed["dry_run"] is True
     assert work_dir.is_dir()
+
+
+def test_qa_cli_reports_passing_output(tmp_path, capsys):
+    import fitz
+
+    from codex_babeldoc.cli import main
+    from codex_babeldoc.core.artifacts import Artifact, ArtifactType
+    from codex_babeldoc.core.state import JobStatus, StateStore
+
+    config = tmp_path / "config.toml"
+    config.write_text(
+        "[project]\n"
+        f"input_dir = {_toml_string(tmp_path / 'incoming')}\n"
+        f"output_dir = {_toml_string(tmp_path / 'translated')}\n"
+        f"state_dir = {_toml_string(tmp_path / 'state')}\n"
+        f"log_dir = {_toml_string(tmp_path / 'logs')}\n",
+        encoding="utf-8",
+    )
+    for name in ("incoming", "translated"):
+        (tmp_path / name).mkdir()
+    source = tmp_path / "incoming" / "doc.pdf"
+    source.write_bytes(b"%PDF-test")
+    output = tmp_path / "translated" / "doc.mono.pdf"
+    document = fitz.open()
+    try:
+        page = document.new_page()
+        page.insert_text((72, 72), "Hello translated output text.")
+        document.save(output)
+    finally:
+        document.close()
+
+    store = StateStore(tmp_path / "state")
+    job = store.load(source, config_fingerprint="f")
+    job.status = JobStatus.COMPLETED
+    job.artifacts = [Artifact(ArtifactType.MONO_PDF, str(output))]
+    store.save(job)
+
+    assert main(["--config", str(config), "qa", job.job_id]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["ok"] is True
+    assert result["qa_status"] == "passed"
+    assert result["reports"][0]["report"].endswith(".qa.json")

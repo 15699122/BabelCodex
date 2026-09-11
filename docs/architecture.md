@@ -182,6 +182,7 @@ src/codex_babeldoc/
     ├── pdf_sanity.py
     ├── text_checks.py
     ├── layout_checks.py
+    ├── resource_checks.py
     └── report.py
 ```
 
@@ -250,7 +251,16 @@ glossary、context 和 thread state 均属于用户本地数据，不得提交�
 
 ### `qa/`
 
-对输出 PDF 实施独立检查。
+对输出 PDF 实施独立检查，报告为摘要（不包含文档全文）。
+
+- `models.py`：`QaFinding`（code/severity/page/detail）与 `QaReport`（`ok` = 无 error 级 finding）。
+- `pdf_sanity.py`：L0 文件检查（存在/大小/PDF header）+ L1 结构检查（可打开/加密/页数/逐页文本）。
+- `text_checks.py`：L2 空白页、CJK 目标未翻译比例启发、源文本 verbatim 相似度。
+- `layout_checks.py`：文本 span 越界启发 + 采样页渲染空白（缺字）检查。
+- `resource_checks.py`：磁盘剩余空间与单文件大小上限警告。
+- `report.py`：组合全程检查、人类可读摘要（不渲染段落内容）、原子写 QA JSON。
+
+`babelcodex qa <job-id>`（Application Service `run_qa`）与 MCP `babelcodex_run_qa` 对终态 job 的 mono/dual 产物生成报告并更新 `qa_status`；报告存放在 `output_dir/qa/`，不进入 artifact manifest（避免污染完整性校验）。
 
 ## 6. GUI 设计
 

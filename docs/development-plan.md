@@ -689,7 +689,7 @@ MCP 与 GUI 共用 Python Application Service、JobState、事件和错误码；
 
 ### Phase 13：PDF QA 与发布硬化
 
-**优先级：P3 | 复杂度：L/XL | 预计：7–12 个开发日**
+**优先级：P3 | 复杂度：L/XL | 预计：7–12 个开发日；L0/L1/L2、缺字与空白启发、越界、未翻译比例、QA JSON/人类报告、资源检查与发布操作文档已完成 Linux 验证（2026 年 9 月 10 日）**
 
 任务：
 
@@ -712,6 +712,18 @@ MCP 与 GUI 共用 Python Application Service、JobState、事件和错误码；
 - fixture 有稳定 QA 基线
 - 发布前可自动生成质量报告
 - 失败报告不包含敏感全文
+
+当前 Linux/WSL 完成记录：
+
+- 新 `qa/` 模块：L0 文件（存在/大小/PDF header）与 L1 结构（可打开/加密/页数/逐页文本）在 `pdf_sanity.py`；L2 空白页、CJK 目标未翻译比例启发、源 PDF verbatim 相似度在 `text_checks.py`；文本 span 越界启发与采样页渲染空白（缺字）检查在 `layout_checks.py`；磁盘剩余空间/单文件大小上限在 `resource_checks.py`；报告组合、人类可读摘要（不渲染段落全文）与原子 QA JSON 写在 `report.py`；
+- `babelcodex qa <job-id>`（服务 `run_qa`、MCP `babelcodex_run_qa`）对终态 job 的 mono/dual 产物执行全程检查，报告写入 `output_dir/qa/<stem>.<type>.qa.json` 并更新 `qa_status`；任何 `error` 级 finding 使 `qa_status=failed`，输出异常永不标记为完全成功；
+- QA 报告不加入 `job.artifacts` manifest（避免污染内容完整性校验）；报告为摘要，finding 只含代码/严重度/页码/短 detail，不含段落原文（验收：失败报告不含敏感全文）；
+- fixture 稳定基线：`test_mock_output_has_a_stable_qa_baseline` 锁定两栏夹具的 mock 输出必为 PASS 且可复现（`MAYBE_UNTRANSLATED` 为预期 warning 不阻断）；
+- 发布操作文档：`docs/release.md`（门禁、doctor、QA 报告、sidecar/Tauri 构建、发布安全与收尾清单）；
+- 视觉回归以渲染空白/非空白像素启发代替全量像素级黄金基线对比（ADR-028），全量视觉对比与缺字字体级检测留待后续；
+- Linux 验证：`uv run pytest -q` 为 196 passed、4 deselected；`uv run pytest -q -m integration tests/test_e2e_mock.py` 为 5 passed；`uv run ruff check .`、`uv run ruff format --check .`、`python -m compileall -q src`、`git diff --check` 均通过。
+
+仍需后续完成：全量像素级视觉回归与字体级缺字检测、打包产物上的 `babelcodex qa` 冒烟、真实 Codex 长文档输出 QA 阈值校准。Windows 渲染/字体行为并入 `WVQ-008`，保持 `WINDOWS_VERIFICATION_PENDING`。
 
 ### Phase 14：实验性 Two-phase
 

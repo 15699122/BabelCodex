@@ -6,7 +6,7 @@ from codex_babeldoc.application.service import (
     StartTranslationCommand,
 )
 from codex_babeldoc.core.artifacts import Artifact, ArtifactType
-from codex_babeldoc.core.config import load_config
+from codex_babeldoc.core.config import AppConfig, load_config
 from codex_babeldoc.core.state import JobStage, JobStatus
 
 
@@ -115,3 +115,43 @@ def test_service_startup_recovers_legacy_active_job_without_runner_pid(tmp_path)
     assert recovered is not None
     assert recovered.status is JobStatus.FAILED
     assert recovered.error_code is ErrorCode.WORKER_CRASHED
+
+
+def test_run_qa_marks_failed_on_tampered_output(tmp_path):
+    from codex_babeldoc.core.state import StateStore
+
+    cfg = AppConfig(root=tmp_path)
+    cfg.project.output_dir = tmp_path / "translated"
+    cfg.project.input_dir = tmp_path / "incoming"
+    cfg.ensure_dirs()
+    store = StateStore(cfg.project.state_dir)
+    service = BabelCodexService.__new__(BabelCodexService)
+    service.config = cfg
+    service.orchestrator = type("O", (), {"state": store})()
+    source = cfg.project.input_dir / "a.pdf"
+    source.write_bytes(b"%PDF-source")
+
+    import fitz
+
+    output = cfg.project.output_dir / "a.mono.pdf"
+    document = fitz.open()
+    try:
+        page = document.new_page()
+        page.insert_text((72, 72), "Hello world output text.")
+        document.save(output)
+    finally:
+        document.close()
+    job = store.load(source, config_fingerprint=cfg.fingerprint())
+    job.status = JobStatus.COMPLETED
+    job.artifacts = [Artifact(ArtifactType.MONO_PDF, str(output))]
+    store.save(job)
+
+    result = service.run_qa(job.job_id)
+    assert result["ok"] is True
+    assert result["qa_status"] == "passed"
+
+    # Delete the artifact: run_qa now reports failure, never full success.
+    output.unlink()
+    result = service.run_qa(job.job_id)
+    assert result["ok"] is False
+    assert result["qa_status"] == "failed"
