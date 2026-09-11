@@ -84,3 +84,53 @@ def classify_exception(exc: Exception) -> BabelCodexError:
         safe_message="The translation job failed.",
         technical_message=str(exc),
     )
+
+
+# Per-category maximum total attempts. Connections, credentials and user input
+# are never retried automatically; transient translation/resource failures are.
+DEFAULT_RETRY_LIMITS: dict[ErrorCategory, int] = {
+    ErrorCategory.CONFIG: 1,
+    ErrorCategory.INPUT: 1,
+    ErrorCategory.AUTH: 1,
+    ErrorCategory.TRANSLATION: 3,
+    ErrorCategory.VALIDATION: 1,
+    ErrorCategory.BABELDOC: 2,
+    ErrorCategory.WORKER: 2,
+    ErrorCategory.OUTPUT: 1,
+    ErrorCategory.RESOURCE: 3,
+    ErrorCategory.CANCELLED: 1,
+    ErrorCategory.UNKNOWN: 1,
+}
+
+
+def resolve_retry_limits(
+    policy: dict[str, int] | None, default_max: int
+) -> dict[ErrorCategory, int]:
+    """Merge an operator retry policy over the per-category defaults.
+
+    ``default_max`` is the configured global ``max_retries`` and acts as the
+    ceiling for total attempts per job; a category policy can only lower it, it
+    can never raise it. Unknown category keys are ignored.
+    """
+    limits = dict(DEFAULT_RETRY_LIMITS)
+    for key, value in (policy or {}).items():
+        try:
+            category = ErrorCategory(str(key))
+        except ValueError:
+            continue
+        try:
+            limit = max(1, int(value))
+        except (TypeError, ValueError):
+            continue
+        limits[category] = limit
+    ceiling = max(1, int(default_max))
+    return {category: min(limit, ceiling) for category, limit in limits.items()}
+
+
+def retry_limit_for(
+    category: ErrorCategory,
+    policy: dict[str, int] | None,
+    default_max: int,
+) -> int:
+    """Return the effective total-attempt ceiling for a failure category."""
+    return resolve_retry_limits(policy, default_max).get(category, max(1, int(default_max)))

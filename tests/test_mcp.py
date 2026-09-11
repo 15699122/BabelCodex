@@ -107,6 +107,8 @@ def test_start_get_validate_and_cleanup_are_scoped(tmp_path):
 
 
 def test_cleanup_retries_transient_permission_error(tmp_path, monkeypatch):
+    from codex_babeldoc.core.workdir import remove_work_dir
+
     service = _service(tmp_path)
     work_dir = service.config.babeldoc.working_dir / "job-paper"
     work_dir.mkdir(parents=True)
@@ -121,8 +123,8 @@ def test_cleanup_retries_transient_permission_error(tmp_path, monkeypatch):
             raise PermissionError("transient Windows lock")
         return real_rmtree(path)
 
-    monkeypatch.setattr("codex_babeldoc.application.mcp.shutil.rmtree", flaky_rmtree)
-    McpServer._remove_work_dir(work_dir)
+    monkeypatch.setattr("codex_babeldoc.core.workdir.shutil.rmtree", flaky_rmtree)
+    remove_work_dir(work_dir)
     assert calls == 3
     assert not work_dir.exists()
 

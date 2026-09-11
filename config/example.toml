@@ -19,6 +19,11 @@ no_dual = false
 watermark_output_mode = "no_watermark"
 auto_extract_glossary = false
 max_retries = 3
+# Operator-visible retry policy keyed by error category. Values are the
+# maximum total attempts for that category; 1 disables automatic retries.
+# Categories not listed and unknown categories use `max_retries` as the
+# ceiling. A category policy can only lower the global `max_retries` value.
+retry_policy = { auth = 1, config = 1, input = 1, validation = 1, output = 1 }
 cache_enabled = true
 cache_store_plaintext = true
 # Optional expiration in seconds. Omit this line to keep entries indefinitely.
@@ -30,6 +35,10 @@ translate_table_text = false
 ocr_workaround = false
 auto_enable_ocr_workaround = true
 enhance_compatibility = true
+# Keep terminal job working directories (including failed-job diagnostics)
+# for this many days before `babelcodex cleanup` removes them. 0 removes
+# terminal directories immediately.
+work_retention_days = 7
 
 [codex]
 # Reuses the existing Codex / ChatGPT login state.

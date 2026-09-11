@@ -88,6 +88,17 @@ class BabelCodexService:
             "artifacts": artifacts,
         }
 
+    def cleanup_work_dirs(self, *, dry_run: bool = False) -> dict[str, object]:
+        """Sweep terminal job working directories older than the retention window."""
+        from codex_babeldoc.core.workdir import sweep_work_dirs
+
+        return sweep_work_dirs(
+            self.config.babeldoc.working_dir,
+            self.list_jobs(),
+            retention_days=self.config.babeldoc.work_retention_days,
+            dry_run=dry_run,
+        )
+
     def retry_job(
         self, job_id: str, *, invocation_source: InvocationSource = InvocationSource.CLI
     ) -> JobState:

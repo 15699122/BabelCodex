@@ -211,3 +211,21 @@ def test_recover_interrupted_job_keeps_live_runner_untouched(tmp_path):
     assert restored is not None
     assert restored.status is JobStatus.RETRY_PENDING
     assert restored.runner_pid == 1234
+
+
+def test_pipeline_meta_round_trips_through_state_store(tmp_path):
+    pdf = tmp_path / "meta.pdf"
+    pdf.write_bytes(b"%PDF")
+    store = StateStore(tmp_path / "state")
+    job = store.load(pdf, config_fingerprint="f")
+    job.pipeline_meta = {
+        "part_resume_supported": False,
+        "source_page_count": 3,
+        "note": "assessment",
+    }
+    store.save(job)
+
+    restored = store.load(pdf, config_fingerprint="f")
+    assert restored.pipeline_meta["part_resume_supported"] is False
+    assert restored.pipeline_meta["source_page_count"] == 3
+    assert restored.pipeline_meta["note"] == "assessment"

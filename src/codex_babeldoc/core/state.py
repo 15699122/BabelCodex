@@ -63,6 +63,7 @@ class JobState:
     updated_at: str = ""
     completed_at: str = ""
     artifacts: list[Artifact] = field(default_factory=list)
+    pipeline_meta: dict[str, object] = field(default_factory=dict)
     qa_status: str = "pending"
 
     @property
@@ -108,6 +109,7 @@ class JobState:
             "updated_at": self.updated_at,
             "completed_at": self.completed_at,
             "artifacts": [a.to_dict() for a in self.artifacts],
+            "pipeline_meta": self.pipeline_meta,
             "qa_status": self.qa_status,
         }
 
@@ -153,6 +155,7 @@ class JobState:
                 if isinstance(item, dict)
             ],
             qa_status=str(values.get("qa_status", "pending")),
+            pipeline_meta=dict(values.get("pipeline_meta", {})),
         )
 
     @classmethod

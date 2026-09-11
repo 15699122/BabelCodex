@@ -14,7 +14,8 @@ from codex_babeldoc.backends.worker_protocol import TranslatorSpec
 from codex_babeldoc.core.artifact_manifest import validate_artifacts
 from codex_babeldoc.core.artifacts import Artifact, ArtifactType
 from codex_babeldoc.core.config import AppConfig
-from codex_babeldoc.core.errors import classify_exception
+from codex_babeldoc.core.errors import classify_exception, retry_limit_for
+from codex_babeldoc.core.pipeline_meta import record_pipeline_meta
 from codex_babeldoc.core.state import JobStage, JobStatus, StateStore
 from codex_babeldoc.translation.context import ContextExtractor, DocumentContext
 from codex_babeldoc.translation.glossary import GlossaryStore
@@ -217,6 +218,7 @@ class Orchestrator:
         t = self.cfg.translation
         b = self.cfg.babeldoc
         last_error = None
+        job.pipeline_meta = record_pipeline_meta(source, backend_name=job.backend_name)
         for attempt in range(job.attempts + 1, t.max_retries + 1):
             job.attempts = attempt
             job.status = JobStatus.RUNNING
@@ -287,13 +289,23 @@ class Orchestrator:
                     return "cancelled"
                 error = classify_exception(exc)
                 last_error = error.safe_message
+                limit = retry_limit_for(error.category, t.retry_policy, t.max_retries)
                 job.status = JobStatus.FAILED
                 job.error_category = error.category
                 job.error_code = error.code
                 job.safe_error_message = error.safe_message
                 self.state.save(job)
-                log.exception("Translation attempt %s failed for %s", attempt, source)
-                if attempt < t.max_retries and error.retryable:
+                log.exception(
+                    "Translation attempt %s for %s failed (category=%s, code=%s, "
+                    "retry_limit=%s/%s)",
+                    attempt,
+                    source,
+                    error.category.value,
+                    error.code.value,
+                    limit,
+                    t.max_retries,
+                )
+                if attempt < limit and error.retryable:
                     job.status = JobStatus.RETRY_PENDING
                     self.state.save(job)
                     time.sleep(min(2 ** (attempt - 1), 8))

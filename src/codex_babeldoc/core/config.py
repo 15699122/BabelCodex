@@ -31,6 +31,11 @@ class TranslationConfig:
     watermark_output_mode: str = "no_watermark"
     auto_extract_glossary: bool = False
     max_retries: int = 3
+    # Operator-visible retry policy keyed by error category name. Values are the
+    # maximum total attempts for that category (1 disables automatic retries).
+    # Unknown categories and categories not listed use ``max_retries`` as the
+    # ceiling. See ``core.errors.DEFAULT_RETRY_LIMITS`` for the defaults.
+    retry_policy: dict[str, int] = field(default_factory=dict)
     cache_enabled: bool = True
     cache_store_plaintext: bool = True
     cache_ttl_seconds: int | None = None
@@ -45,6 +50,11 @@ class BabelDocConfig:
     ocr_workaround: bool = False
     auto_enable_ocr_workaround: bool = True
     enhance_compatibility: bool = True
+    # Keep terminal job working directories for this many days before the
+    # ``cleanup`` command removes them (failed-job diagnostics live there).
+    # 0 removes terminal directories immediately; a negative value is treated
+    # as 0.
+    work_retention_days: int = 7
 
 
 @dataclass(slots=True)
@@ -94,10 +104,14 @@ class AppConfig:
 
     def fingerprint(self) -> str:
         """Hash translation-affecting configuration without machine-specific paths."""
+        translation_values = asdict(self.translation)
+        translation_values.pop("retry_policy", None)
         values = {
-            "translation": asdict(self.translation),
+            "translation": translation_values,
             "babeldoc": {
-                key: value for key, value in asdict(self.babeldoc).items() if key != "working_dir"
+                key: value
+                for key, value in asdict(self.babeldoc).items()
+                if key not in ("working_dir", "work_retention_days")
             },
             "codex": asdict(self.codex),
         }

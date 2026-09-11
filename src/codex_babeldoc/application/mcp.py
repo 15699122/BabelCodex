@@ -8,8 +8,6 @@ translation, shell execution, arbitrary file reads, or unrestricted deletion.
 from __future__ import annotations
 
 import json
-import shutil
-import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,11 +22,10 @@ from codex_babeldoc.application.service import (
 from codex_babeldoc.cli import collect_doctor_checks
 from codex_babeldoc.core.errors import BabelCodexError
 from codex_babeldoc.core.state import JobState, JobStatus
+from codex_babeldoc.core.workdir import WorkdirError, remove_work_dir, resolve_work_dir
 
 MCP_PROTOCOL_VERSION = "2024-11-05"
 JSONRPC_VERSION = "2.0"
-_CLEANUP_RETRIES = 5
-_CLEANUP_BACKOFF_SECONDS = 0.05
 
 
 class McpError(ValueError):
@@ -309,33 +306,15 @@ class McpServer:
         if job.status in {JobStatus.RUNNING, JobStatus.RETRY_PENDING}:
             raise McpError(-32004, "cannot clean up an active job")
         work_root = self.context.service.config.babeldoc.working_dir.resolve()
-        work_dir = (work_root / f"job-{Path(job.source_path).stem}").resolve()
+        work_dir = work_root / f"job-{Path(job.source_path).stem}"
         try:
-            work_dir.relative_to(work_root)
-        except ValueError as exc:
-            raise McpError(
-                -32005, "job working directory is outside the configured worker directory"
-            ) from exc
-        if work_dir == work_root:
-            raise McpError(-32005, "refusing to remove the worker directory itself")
+            work_dir = resolve_work_dir(work_root, work_dir)
+        except WorkdirError as exc:
+            raise McpError(-32005, str(exc)) from exc
         if not work_dir.exists():
             return {"job_id": job.job_id, "removed": False, "path": str(work_dir)}
-        if work_dir.is_symlink():
-            raise McpError(-32005, "refusing to remove a symlinked job directory")
-        self._remove_work_dir(work_dir)
+        remove_work_dir(work_dir)
         return {"job_id": job.job_id, "removed": True, "path": str(work_dir)}
-
-    @staticmethod
-    def _remove_work_dir(work_dir: Path) -> None:
-        """Remove a job directory, tolerating transient Windows file locks."""
-        for attempt in range(_CLEANUP_RETRIES):
-            try:
-                shutil.rmtree(work_dir)
-                return
-            except PermissionError:
-                if attempt == _CLEANUP_RETRIES - 1:
-                    raise
-                time.sleep(_CLEANUP_BACKOFF_SECONDS * (attempt + 1))
 
     def _source_path(self, arguments: dict[str, object]) -> Path:
         raw = arguments.get("source_path")

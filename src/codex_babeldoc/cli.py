@@ -120,6 +120,12 @@ def main(argv=None) -> int:
     validate.add_argument("job_id")
     retry = sub.add_parser("retry")
     retry.add_argument("job_id")
+    cleanup = sub.add_parser("cleanup")
+    cleanup.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Report what would be removed without deleting anything.",
+    )
     mcp = sub.add_parser("mcp")
     mcp_sub = mcp.add_subparsers(dest="mcp_command", required=True)
     mcp_sub.add_parser("serve")
@@ -181,6 +187,10 @@ def main(argv=None) -> int:
             print(json.dumps({"error": str(exc)}, ensure_ascii=False))
             return 1
         print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "cleanup":
+        result = service.cleanup_work_dirs(dry_run=args.dry_run)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
 
     orch = service.orchestrator
