@@ -80,10 +80,12 @@ BabelDOC warns that direct Python APIs are internal. Treat every direct import a
 
 ## Planning documents
 
+- Documentation index: `docs/README.md` (read this first to place information in the right document)
 - Overall architecture: `docs/architecture.md`
 - Detailed development plan: `docs/development-plan.md`
 - Architecture decisions and reference-project comparison: `docs/decisions.md`
 - Verified runtime compatibility: `docs/compatibility.md`
+- Per-file responsibility and maintenance map: `docs/development/codebase-map.md`
 
 Phase 0A public GitHub bootstrap is complete. Phase 0B dependency, CI and BabelDOC warmup work is complete, but live Codex authentication is still required. The current implementation order is Phase 1 domain/error model → Phase 2 placeholder/output validation → Phase 3 BabelDOC compatibility layer → Phase 4 worker process → Phase 5 mock/live vertical slice → Phase 6 batching/cache → Phase 8 GUI sidecar spike → Phase 9 GUI Alpha/packaging → Phase 10 Codex MCP Server → Phase 11 glossary/context → Phase 12 recovery → Phase 13 PDF QA. Phase 14 Two-phase remains experimental.
 
@@ -115,6 +117,35 @@ uv run --extra runtime --with pyinstaller pyinstaller \
 - Never log auth tokens or full sensitive document text by default.
 - Prefer small compatibility adapters over widespread version checks.
 - Every bug fix gets a regression test when practical.
+
+## Documentation ownership
+
+Every document has a single responsibility. Do not duplicate the same state across documents; link instead. The authoritative placement table lives in `docs/README.md`.
+
+1. README is user-facing only. It must not record developer machines, branches, commit SHAs, test pass counts, Windows validation rounds, or recommended internal development order.
+2. Current progress and future roadmap go only in `docs/development-plan.md`.
+3. Architecture documents describe the stable structure and runtime logic only — never transient validation status or per-round results.
+4. Windows validation run records go only under `docs/validation/`; current active queue and latest summary in `docs/validation/windows.md`, full historical runs archived in `docs/validation/history/`.
+5. `docs/compatibility.md` records current compatibility conclusions derived from validation, not the validation logs themselves.
+6. ADRs in `docs/decisions.md` record decisions, not work logs. Reference-project research lives in `docs/research/reference-projects.md`.
+7. When you add, delete, rename, or change the responsibility of a module, update `docs/development/codebase-map.md` (and `docs/architecture.md` if the change is structural).
+8. Never copy a status text into multiple docs; link to the single source document.
+9. Historical validation records may only be archived, never silently deleted or rewritten. A historical `FAIL` must never be rewritten as `PASS`.
+10. Commands written in any document must match the registered CLI parser, package scripts, or build script. `scripts/check_docs_inventory.py` enforces this for README CLI commands and codebase-map entries.
+11. The documentation CI check must pass before a merge: `uv run pytest tests/test_docs_inventory.py`.
+
+## Module design
+
+Keep responsibility separable, but never split files mechanically by line count. A module may be refactored into a package or submodules only when the split improves cohesion and keeps public entry points stable.
+
+1. One module has one primary responsibility: protocol definition, transport, task execution, persistence, and UI presentation are distinct concerns.
+2. Public façades stay stable (`BabelCodexService`, `JsonlSidecar`, `McpServer`, `state.StateStore`, `worker_client.run_worker`). Internal implementations may delegate to submodules.
+3. External callers must not reach through the public façade into internals. In particular, MCP/sidecar code must not directly touch `service.orchestrator.state`; route all mutation through `BabelCodexService` methods.
+4. Do not duplicate orchestration logic between CLI, GUI, and MCP.
+5. New modules need a module docstring, type hints on public functions, and matching tests.
+6. Refactors must preserve behavior, wire protocol, and public import paths. Run the full Linux suite plus GUI tests after each refactor batch.
+7. Split tests by the responsibility they cover instead of accumulating one aggregate test file.
+8. Every module entry, its runtime location (which process), its main dependencies, and its tests must be documented in `docs/development/codebase-map.md`.
 
 ## Cross-platform development and Windows validation workflow
 
