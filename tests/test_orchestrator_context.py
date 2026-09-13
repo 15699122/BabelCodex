@@ -32,7 +32,7 @@ def test_orchestrator_builds_document_scoped_guidance(tmp_path: Path):
 
 
 def test_orchestrator_uses_pdf_context_when_no_sidecar_exists(tmp_path: Path):
-    import fitz
+    import pymupdf as fitz
 
     cfg = AppConfig(root=tmp_path)
     cfg.translation.translator = "mock"

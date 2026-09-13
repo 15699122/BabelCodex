@@ -131,7 +131,7 @@ def test_cleanup_retries_transient_permission_error(tmp_path, monkeypatch):
 
 
 def test_run_qa_tool_is_scoped(tmp_path):
-    import fitz
+    import pymupdf as fitz
 
     from codex_babeldoc.core.artifacts import Artifact, ArtifactType
 

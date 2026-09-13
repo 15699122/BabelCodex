@@ -12,7 +12,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-import fitz
+import pymupdf as fitz  # official package name; the fitz shim prints deprecation to stdout
 import pytest
 
 from codex_babeldoc.core.config import AppConfig
@@ -46,22 +46,24 @@ def _assert_completed(cfg: AppConfig, source: Path) -> None:
     assert job.backend_name == "python-internal"
     assert job.translator_name == "mock"
 
-    source_pages = fitz.open(source).page_count
+    with fitz.open(source) as source_document:
+        source_pages = source_document.page_count
     for name in (
         f"{source.stem}.mono.pdf",
         f"{source.stem}.dual.pdf",
     ):
         output = cfg.project.output_dir / name
         if output.exists():
-            doc = fitz.open(output)
-            assert doc.page_count >= 1
-            text = "".join(page.get_text() for page in doc)
-            assert text.strip(), f"{name} contains no extractable text"
+            with fitz.open(output) as document:
+                assert document.page_count >= 1
+                text = "".join(page.get_text() for page in document)
+                assert text.strip(), f"{name} contains no extractable text"
 
     # The dual PDF should have roughly twice the pages (or alternating pairs).
     dual = cfg.project.output_dir / f"{source.stem}.dual.pdf"
     if dual.exists():
-        assert fitz.open(dual).page_count >= source_pages
+        with fitz.open(dual) as dual_document:
+            assert dual_document.page_count >= source_pages
 
 
 class TestMockEndToEnd:

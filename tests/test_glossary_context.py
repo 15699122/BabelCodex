@@ -46,7 +46,7 @@ def test_context_extractor_is_bounded_and_stable():
 
 
 def test_context_extractor_reads_pdf_metadata_and_opening_pages(tmp_path):
-    import fitz
+    import pymupdf as fitz
 
     path = tmp_path / "paper.pdf"
     document = fitz.open()

@@ -1,6 +1,8 @@
 """Regression tests for scripts/check_gui_bundle.py."""
 
 import importlib.util
+import os
+import time
 from pathlib import Path
 
 import pytest
@@ -87,3 +89,41 @@ def test_forbidden_file_is_flagged(audit_module, tmp_path):
     bundle = _make_bundle(tmp_path)
     (bundle / ".env").write_text("SECRET=1", encoding="utf-8")
     assert audit_module.audit(bundle, _WINDOW_TARGET, None) == 1
+
+
+def _make_source_tree(tmp_path: Path) -> Path:
+    tree = tmp_path / "srctree"
+    (tree / "src" / "codex_babeldoc").mkdir(parents=True)
+    (tree / "scripts").mkdir()
+    (tree / "src" / "codex_babeldoc" / "sidecar.py").write_text("# source\n", encoding="utf-8")
+    (tree / "pyproject.toml").write_text("[project]\nname='babelcodex'\n", encoding="utf-8")
+    (tree / "scripts" / "babelcodex-service.spec").write_text("# spec\n", encoding="utf-8")
+    return tree
+
+
+def test_stale_sidecar_is_flagged_against_source_tree(audit_module, tmp_path):
+    """A sidecar older than an embedded source must fail the freshness audit."""
+    tree = _make_source_tree(tmp_path)
+    bundle = _make_bundle(tmp_path / "stale")
+    newer = tree / "src" / "codex_babeldoc" / "sidecar.py"
+    future = time.time() + 60
+    os.utime(newer, (future, future))
+    sidecar = bundle / "babelcodex-service-x86_64-pc-windows-msvc.exe"
+    assert sidecar.stat().st_mtime < newer.stat().st_mtime
+    assert audit_module.audit(bundle, _WINDOW_TARGET, None, tree) == 1
+
+
+def test_fresh_sidecar_passes_source_tree_audit(audit_module, tmp_path):
+    tree = _make_source_tree(tmp_path)
+    bundle = _make_bundle(tmp_path / "fresh")
+    sidecar = bundle / "babelcodex-service-x86_64-pc-windows-msvc.exe"
+    newest_source = max(path.stat().st_mtime for path in sorted(tree.rglob("*")) if path.is_file())
+    os.utime(sidecar, (newest_source + 10, newest_source + 10))
+    assert audit_module.audit(bundle, _WINDOW_TARGET, None, tree) == 0
+
+
+def test_source_tree_without_src_is_rejected(audit_module, tmp_path):
+    tree = tmp_path / "bad-tree"
+    tree.mkdir()
+    bundle = _make_bundle(tmp_path)
+    assert audit_module.audit(bundle, _WINDOW_TARGET, None, tree) == 2

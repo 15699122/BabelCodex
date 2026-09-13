@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import fitz
+import pymupdf as fitz  # official package name; the fitz shim prints deprecation to stdout
 
 from codex_babeldoc.qa.layout_checks import check_overflow, check_visual_blank
 from codex_babeldoc.qa.models import QaFinding, QaReport, QaSeverity, report_for

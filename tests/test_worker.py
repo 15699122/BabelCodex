@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -18,6 +19,7 @@ from codex_babeldoc.backends.worker_client import (
     build_worker_request,
     run_worker,
     worker_command,
+    worker_environment,
 )
 from codex_babeldoc.backends.worker_protocol import (
     EXIT_REQUEST_INVALID,
@@ -148,7 +150,9 @@ class TestProtocolRoundTrip:
                 pass
 
         fake_module = types.SimpleNamespace(
-            Codex=FakeCodex, Sandbox=types.SimpleNamespace(read_only="read_only")
+            Codex=FakeCodex,
+            Sandbox=types.SimpleNamespace(read_only="read_only"),
+            ApprovalMode=types.SimpleNamespace(deny_all="deny_all"),
         )
         monkeypatch.setitem(sys.modules, "openai_codex", fake_module)
 
@@ -211,6 +215,7 @@ class TestProtocolRoundTrip:
             types.SimpleNamespace(
                 Codex=FakeCodex,
                 Sandbox=types.SimpleNamespace(read_only="read_only"),
+                ApprovalMode=types.SimpleNamespace(deny_all="deny_all"),
             ),
         )
 
@@ -263,6 +268,7 @@ class TestProtocolRoundTrip:
             types.SimpleNamespace(
                 Codex=FakeCodex,
                 Sandbox=types.SimpleNamespace(read_only="read_only"),
+                ApprovalMode=types.SimpleNamespace(deny_all="deny_all"),
             ),
         )
 
@@ -399,6 +405,103 @@ class TestRunWorker:
         assert process.killed is False
         assert excinfo.value.error.category == "cancelled"
         assert excinfo.value.error.code == "CANCELLED"
+
+
+class TestWorkerEnvironment:
+    def _request(self, tmp_path: Path) -> WorkerRequest:
+        return build_worker_request(
+            {
+                "job_id": "job-env",
+                "source_path": str(tmp_path / "in.pdf"),
+                "output_dir": str(tmp_path / "out"),
+                "working_dir": str(tmp_path / "work"),
+                "lang_in": "en",
+                "lang_out": "zh",
+            },
+            {"name": "mock", "lang_in": "en", "lang_out": "zh"},
+        )
+
+    def test_keeps_windows_runtime_keys_when_present(self, monkeypatch) -> None:
+        windows_keys = {
+            "PATH": "C:\\bin",
+            "SYSTEMROOT": "C:\\Windows",
+            "USERPROFILE": "C:\\Users\\tester",
+            "TEMP": "C:\\Users\\tester\\AppData\\Local\\Temp",
+            "TMP": "C:\\Users\\tester\\AppData\\Local\\Temp",
+            "APPDATA": "C:\\Users\\tester\\AppData\\Roaming",
+            "LOCALAPPDATA": "C:\\Users\\tester\\AppData\\Local",
+            "PROGRAMDATA": "C:\\ProgramData",
+        }
+        for key, value in windows_keys.items():
+            monkeypatch.setitem(os.environ, key, value)
+        # Prove unrelated parent variables are not inherited by the worker.
+        monkeypatch.setitem(os.environ, "BABELCODEX_TEST_SECRET", "must-not-leak")
+
+        env = worker_environment()
+
+        for key, value in windows_keys.items():
+            assert env[key] == value
+        assert "BABELCODEX_TEST_SECRET" not in env
+
+    def test_keeps_posix_keys_when_present(self, monkeypatch) -> None:
+        posix_keys = {
+            "PATH": "/usr/bin",
+            "HOME": "/home/tester",
+            "USER": "tester",
+            "TMPDIR": "/tmp",
+        }
+        for key, value in posix_keys.items():
+            monkeypatch.setitem(os.environ, key, value)
+
+        env = worker_environment()
+
+        for key, value in posix_keys.items():
+            assert env[key] == value
+
+    def test_env_extra_overrides_allowlist(self, monkeypatch) -> None:
+        monkeypatch.setitem(os.environ, "PATH", "/base/bin")
+
+        env = worker_environment(env_extra={"PATH": "/override/bin", "EXTRA": "1"})
+
+        assert env["PATH"] == "/override/bin"
+        assert env["EXTRA"] == "1"
+
+    def test_run_worker_passes_restricted_env_to_subprocess(self, tmp_path, monkeypatch) -> None:
+        captured: dict[str, object] = {}
+
+        class FakeProcess:
+            returncode = 1
+
+            def __init__(self, *args, **kwargs):
+                captured["env"] = kwargs["env"]
+
+            def communicate(self, timeout=None):
+                return "", "worker failed"
+
+            def poll(self):
+                return 1
+
+            def kill(self):
+                pass
+
+            def wait(self, timeout=None):
+                return 1
+
+        monkeypatch.setattr("codex_babeldoc.backends.worker_client.subprocess.Popen", FakeProcess)
+        # Whatever the parent environment contains, the worker receives only the
+        # allowlisted keys and any explicit overrides.
+        monkeypatch.setitem(os.environ, "BABELCODEX_TEST_SECRET", "must-not-leak")
+
+        with pytest.raises(WorkerClientError):
+            run_worker(
+                self._request(tmp_path),
+                working_dir=tmp_path / "work",
+                job_id="job-x",
+                timeout_seconds=10.0,
+            )
+        env = captured["env"]
+        assert env is not None
+        assert "BABELCODEX_TEST_SECRET" not in env
 
 
 class TestWorkerCommand:

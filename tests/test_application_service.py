@@ -60,7 +60,7 @@ def test_get_and_list_jobs(tmp_path):
 
     assert service.list_jobs()[0].job_id == job.job_id
     assert service.get_job(job.job_id) is not None
-    assert service.get_job("missing") is None
+    assert service.get_job("0" * 64) is None
 
 
 def test_validate_output_refreshes_manifest_and_detects_tampering(tmp_path):
@@ -131,7 +131,7 @@ def test_run_qa_marks_failed_on_tampered_output(tmp_path):
     source = cfg.project.input_dir / "a.pdf"
     source.write_bytes(b"%PDF-source")
 
-    import fitz
+    import pymupdf as fitz
 
     output = cfg.project.output_dir / "a.mono.pdf"
     document = fitz.open()

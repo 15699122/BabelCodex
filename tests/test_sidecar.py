@@ -64,6 +64,26 @@ def test_sidecar_lists_jobs_without_exposing_shell(tmp_path):
     sidecar.close()
 
 
+def test_get_server_info_reports_protocol_version_and_capabilities(tmp_path):
+    service = _service(tmp_path)
+    sidecar = JsonlSidecar(service)
+    response = sidecar.handle(
+        {
+            "protocol_version": PROTOCOL_VERSION,
+            "request_id": "info",
+            "method": "get_server_info",
+        }
+    )[0]
+    assert response["ok"] is True
+    info = response["result"]
+    assert isinstance(info, dict)
+    assert info["protocol_version"] == PROTOCOL_VERSION
+    assert isinstance(info["package_version"], str) and info["package_version"]
+    assert "start_translation" in info["capabilities"]
+    assert "shutdown" in info["capabilities"]
+    sidecar.close()
+
+
 def test_sidecar_reads_and_writes_scoped_glossary_and_context(tmp_path):
     service = _service(tmp_path)
     sidecar = JsonlSidecar(service)
@@ -265,6 +285,23 @@ class _FakeService:
 
     def list_jobs(self):
         return self.state.list_jobs()
+
+    @staticmethod
+    def job_view(job):
+        if job is None:
+            return None
+        return {
+            "job_id": job.job_id,
+            "source_name": Path(job.source_path).name,
+            "status": job.status.value,
+            "stage": job.stage.value,
+            "attempts": job.attempts,
+            "safe_error_message": job.safe_error_message,
+            "updated_at": job.updated_at,
+            "completed_at": job.completed_at,
+            "artifacts": [],
+            "qa_status": job.qa_status,
+        }
 
 
 class _FailingService(_FakeService):
