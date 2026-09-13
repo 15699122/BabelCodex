@@ -456,11 +456,34 @@ Tauri 2 Host
 
 Tauri shell capability 只允许启动固定 sidecar 和预定义参数，不允许任意 shell、任意 executable、任意 `-c` 参数或任意命令拼接。sidecar 使用平台 target triple 命名并随 Windows/Linux portable bundle 发布。
 
+配置参数进一步收紧为固定的 `config/example.toml`，renderer 不得通过
+sidecar 参数选择任意 TOML 文件或重定义输入、输出和状态目录。
+
 ### ADR-020：GUI、CLI、MCP 共用任务状态和事件协议
 
 **状态：已接受**
 
 GUI、CLI 和 MCP 使用同一个 Application Service、JobState、ProgressEvent、ErrorCode 和 Artifact 模型。GUI 断线重连后通过查询任务状态校准，而不只依赖瞬时事件。
+
+协议层使用最小 job view DTO；内部 StateStore 只由 Application Service 访问，
+MCP/sidecar 不直接拼接或暴露完整持久化状态。
+
+### ADR-030：Codex 翻译 thread 采用 deny-all 工具边界
+
+**状态：已接受**
+
+PDF 翻译输入是不可信文档内容，不能把 Codex 当作普通无工具文本 API。每个
+thread 使用 `Sandbox.read_only`、`ApprovalMode.deny_all`、隔离工作目录和
+developer-level text-only instructions；worker 子进程使用最小环境变量集合。
+任何无法提供该安全边界的 SDK 版本都不得作为默认生产翻译路径。
+
+### ADR-031：本地用户数据使用私有权限和最小化缓存
+
+**状态：已接受**
+
+state、cache、glossary、context、thread state、日志和 worker 目录在 POSIX
+系统使用私有目录/文件权限。缓存默认不保留源文本；缓存仍会保存译文以支持
+命中，因此敏感文档可通过 `cache_enabled = false` 或 TTL 完全规避长期缓存。
 
 ### ADR-021：MCP 与 GUI 都采用异步 Job 交互
 
@@ -481,3 +504,14 @@ PDF 翻译属于长任务。GUI 启动任务后显示 `job_id` 和事件流；MC
 **状态：已接受**
 
 Windows 首期发布 portable ZIP，Linux 首期发布 portable tarball，后续评估 AppImage。发布包必须包括固定 sidecar、资源清单、许可证和 SHA-256 校验，不包括用户数据、登录状态或开发环境。
+
+### ADR-029：陈旧 sidecar 双层防线（构建新鲜度审计 + 运行时握手）
+
+**状态：已接受**
+
+GUI portable bundle 内嵌的 sidecar 二进制可能落后于仓库源码，此前只会在运行期以难以定位的协议错误暴露。采用两层互补防线：
+
+1. **构建新鲜度审计**：`scripts/check_gui_bundle.py --source-tree <repo>` 校验打包内 sidecar 的 mtime 不早于其嵌入的 Python 源码、`pyproject.toml` 与 PyInstaller spec；不新鲜即失败。CI 与发布流程必须执行该审计。
+2. **运行时能力握手**：sidecar 新增 `get_server_info`（协议版本、包版本、能力列表），GUI 建立连接后立即调用并校验协议兼容性；不兼容时连接进入 `failed` 并呈现明确的可操作错误，而不是静默的功能异常。
+
+两层防线各自独立生效：审计拦截构建期污染，握手拦截人工替换二进制等绕过审计的情况。

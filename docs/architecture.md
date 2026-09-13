@@ -241,6 +241,9 @@ GUI host 技术验证位于仓库根目录的 `gui/`：Tauri 2 只启动固定�
 - `context.py`：从 `context/<pdf-stem>.txt` 提取标题/摘要，归一化并限制上下文长度，生成稳定版本 hash。
 
 glossary、context 和 thread state 均属于用户本地数据，不得提交到公开仓库。Orchestrator 按 PDF stem 构造合并 guidance，将 glossary/context 版本写入 `TranslationRequest` 和 cache key，并通过统一 `TranslatorSpec` 传给 in-process 与 subprocess translator。Codex thread prime 只接收已经截断的合并 prompt；thread state 只保存 provider、document ID、thread ID 和 generation，成功 prime 后才落盘。`max_turns_before_compact` 默认为 0；启用后在下一次翻译 turn 前优先调用官方 `Thread.compact()`，若 SDK 不支持或调用失败，则新建 thread、重新 prime 并在成功后原子轮换 state。
+- Codex 翻译 thread 固定使用 `Sandbox.read_only` 与 `ApprovalMode.deny_all`，并运行在每文档专用的隔离 `cwd`。PDF、术语表、元数据和上下文都被视为不可信数据；developer instructions 明确禁止工具、文件、网络、MCP 和 workspace 访问。worker 子进程只继承运行所需的最小环境变量集合。
+- `BabelCodexService.job_view()` 是 CLI/GUI/MCP 的外部 job DTO 边界。外部协议不得直接返回完整 `JobState`，不得暴露绝对路径、runner PID、Codex thread ID 或内部 fingerprint。`job_id` 在 StateStore 和协议边界均验证为 64 位小写十六进制标识。
+- sidecar 事件队列是有界的，poll 响应带 `oldest_sequence`；客户端发现游标落后时通过 `list_jobs` 重同步，而不是无限保留或无限返回历史事件。
 - GUI 的 Glossary 页面不直接读写用户文件，而是通过 sidecar 的 `list_glossary`、`save_glossary`、`get_context` 和 `save_context` scoped methods 调用同一个 Application Service。服务端只接受 global/document scope 和单个 document stem，并负责 CSV、UTF-8 sidecar、版本 hash、布尔值解析和原子保存。
 
 ### `translators/`
@@ -649,6 +652,23 @@ Windows 发布包必须将 Python service 预构建为 Windows sidecar executabl
 - GUI 断线重连后通过 `get_job` 校准状态；
 - 请求和响应使用稳定 `requestId`；
 - 错误只返回安全错误码和可行动提示。
+
+### 12.7.1 启动握手与陈旧 sidecar 防线
+
+GUI 与 sidecar 建立连接后必须先执行 `get_server_info` 握手，再调用任何任务方法：
+
+```json
+{
+  "protocolVersion": 1,
+  "requestId": "req-...",
+  "method": "get_server_info",
+  "params": {}
+}
+```
+
+响应携带 sidecar 的协议版本、包版本和能力列表。GUI 侧校验协议版本与能力兼容性；不兼容时连接进入 `failed` 状态并给出明确错误，而不是让陈旧 sidecar 在运行中以未定义行为失败。该握手把"打包中嵌入了旧版 sidecar"从隐式运行时错误转为显式启动错误。
+
+配套的静态防线是打包审计：`scripts/check_gui_bundle.py --source-tree` 校验打包内 sidecar 的修改时间不早于其嵌入的 Python 源文件、`pyproject.toml` 和 PyInstaller spec，防止把陈旧 sidecar 打进发布包。两层防线结合 ADR-029 的决策共同覆盖发布输入新鲜度。
 
 ### 12.8 GUI 状态模型
 

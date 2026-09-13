@@ -28,6 +28,100 @@ Linux development accumulates Windows-only work here and normally validates it i
 - `WINDOWS_VERIFICATION_PENDING`: default; the item is accumulated and does not block further Linux development.
 - `WINDOWS_VERIFICATION_BLOCKING`: use only when a Windows-specific result is a hard prerequisite for reliable further Linux development.
 
+## Computer Use Failure Handling
+
+Computer Use, screen interaction and GUI automation are optional capabilities of
+the Windows validation environment. Their unavailability must reduce GUI
+automation coverage, not terminate the Windows validation phase or reduce the
+amount of independent validation performed.
+
+### Classification rule
+
+If a test cannot continue because of any of the following:
+
+- Computer Use is unavailable;
+- GUI automation is unavailable;
+- screen interaction is unavailable;
+- the application window cannot be controlled;
+- the automation session was lost;
+- a temporary UI-control failure persists;
+
+record the test as:
+
+```text
+Status: BLOCKED
+Blocker: COMPUTER_USE_UNAVAILABLE
+```
+
+`BLOCKED` means that the test has no conclusion. It is not evidence that the
+product failed, and it is not evidence that the product passed. Do not record
+such a test as `FAIL`, `PASS` or `NOT_APPLICABLE`.
+
+The validation record must also state:
+
+- the original validation target;
+- the exact Computer Use or GUI automation error;
+- whether one reasonable retry was attempted;
+- whether the retry produced the same blocker;
+- whether a non-GUI alternative exists;
+- whether that alternative verifies the same behavior or only a narrower
+  contract;
+- the manual test queue entry that remains open.
+
+### Retry and continuation policy
+
+For a suspected transient Computer Use failure, allow at most one reasonable
+retry unless this project documents a stricter policy. Do not spend the
+validation phase repeatedly trying to restore the same UI-control capability.
+After the retry fails:
+
+1. mark the affected test `BLOCKED`;
+2. record `Blocker: COMPUTER_USE_UNAVAILABLE` and the evidence;
+3. skip that test for the current run;
+4. continue every independent build, CLI, unit, integration, filesystem,
+   configuration, log, service and process check;
+5. mark a dependent test `BLOCKED` only when it genuinely requires the blocked
+   result or the unavailable capability;
+6. collect all blocked and manual-only items into the manual queue at the end
+   of the Windows phase.
+
+For example, a blocked GUI startup observation must not stop Cargo checks,
+CLI integration, filesystem checks, installer construction, sidecar protocol
+smoke or log inspection. A later test that requires clicking through that same
+GUI must be `BLOCKED` with the dependency stated explicitly.
+
+### Prefer equivalent non-GUI evidence
+
+When an existing CLI, project script, test API, log, filesystem inspection,
+process check, configuration check, generated-artifact inspection or endpoint
+can verify the **same behavior**, use that evidence and record `PASS` only for
+the behavior it actually proves. Do not change the test's meaning merely to
+avoid Computer Use. If the alternative proves only a narrower contract, keep
+the original GUI test `BLOCKED` and record the narrower automated result
+separately.
+
+### Required end-of-phase result groups
+
+Every Windows validation summary must separate at least:
+
+1. **Automated PASS** — executed automatically and met the expected result;
+2. **Automated FAIL** — executed and exposed a product or validation defect;
+3. **BLOCKED** — no conclusion because of Computer Use or another documented
+   environment blocker;
+4. **Manual validation required** — a GUI-only, manual or otherwise unavailable
+   capability remains to be executed.
+
+Computer Use failure is not a product failure:
+
+```text
+Computer Use unavailable  -> BLOCKED
+Function executed incorrectly -> FAIL
+Function executed correctly -> PASS
+```
+
+The Windows phase must continue all independent validation after a `BLOCKED`
+result and must summarize the incomplete work only after those checks finish.
+
 ### Active queue template
 
 Add new items while Linux development continues. Do not mark an item `PASS` until Windows directly executes it.
@@ -48,6 +142,14 @@ Add new items while Linux development continues. Do not mark an item `PASS` unti
 | `WVQ-006` | Live Codex/PDF integration | Usage-bearing end-to-end translation acceptance | Codex authentication, BabelDOC worker, fixture PDF | Requires authorized real account usage and desktop/PDF environment | Translate the authorized fixture and inspect output/QA behavior | Explicit authorization, active Codex session and safe fixture | End-to-end translation completes without placeholder or output-QA regressions | `P2` | `WINDOWS_VERIFICATION_PENDING` | No; ordinary tests must not consume paid or plan usage |
 | `WVQ-007` | Work-dir retention, cleanup and category retry policy on Windows | Phase 12 cleanup/retention and error-category retry policy | `src/codex_babeldoc/core/workdir.py`, `src/codex_babeldoc/core/errors.py`, `src/codex_babeldoc/core/config.py`, `src/codex_babeldoc/cli.py`, `src/codex_babeldoc/application/mcp.py` | Directory removal semantics (locked files, long paths, junctions) and per-process PID semantics differ on Windows and cannot be validated from Linux | Run a terminal mock job, keep its `job-<stem>` work dir within `work_retention_days` and verify `babelcodex cleanup --dry-run` reports it without deleting; age it (temporarily lower the setting) and verify `cleanup` removes it while an active `RUNNING`/`RETRY_PENDING` job dir survives; confirm an open file handle during removal is tolerated by the bounded retry; verify an injected AUTH failure does not auto-loop (`attempts == 1`) and that `retry_policy` caps total attempts | Disposable fixture PDF and config; a live mock job; controlled file-lock procedure | Terminal dirs removed only after retention and never while active; locked-file removal retries then reports; auth/input failures never auto-retry on Windows | `P1` | `WINDOWS_VERIFICATION_PENDING` | No; Linux unit/integration checks pass |
 | `WVQ-008` | PDF QA rendering/glyph behavior on Windows | Phase 13 QA battery (`babelcodex qa`) and render-blank/glyph heuristics | `src/codex_babeldoc/qa/`, `src/codex_babeldoc/application/service.py`, `src/codex_babeldoc/cli.py`, `tests/test_e2e_mock.py` | Glyph rasterization, font subsetting and media-box behavior can differ across platforms and cannot be proven from Linux | Run the fixture mock job on Windows and `babelcodex qa <job-id>`; confirm the report is PASS and the same for mono/dual artifacts, that a deliberately removed output marks `qa_status=failed`, and that `RENDER_BLANK_PAGE`/`TEXT_OVERFLOW` heuristics behave deterministically on the fixture | Fixture PDF, mock config, packaged or dev-sidecar CLI on Windows | QA emits identical stable findings/status for the fixture; missing outputs never pass; no spurious blank/overflow on known-good output | `P2` | `WINDOWS_VERIFICATION_PENDING` | No; Linux QA unit/integration baseline passes |
+| `WVQ-009` | Stale-sidecar handshake and bundle freshness audit on packaged GUI | Stale-sidecar defense (ADR-029): sidecar `get_server_info` runtime handshake and `check_gui_bundle --source-tree` freshness audit | `src/codex_babeldoc/application/sidecar.py`, `scripts/check_gui_bundle.py`, `gui/src/sidecar.ts`, `gui/src/protocol.ts`, `scripts/babelcodex-service.spec` | Windows packaging is the only path that can embed a stale sidecar binary (the 2026-09-11 validation caught exactly this drift); filesystem mtime semantics and packaged GUI startup must be observed on Windows | Build a fresh package and confirm the GUI handshake succeeds on launch; then rebuild a package with a deliberately stale sidecar (or revert one sidecar-affecting source after packaging) and confirm the audit script flags it and the GUI surfaces a clear handshake/connection error instead of a protocol failure mid-job; confirm `check_gui_bundle --source-tree` passes on a correct package | Packaged GUI (fresh + stale-sidecar variant); Windows desktop | Fresh package passes audit and handshake; stale sidecar is rejected with an actionable startup error, never a mid-translation protocol mismatch | `P0` | `WINDOWS_VERIFICATION_PENDING` | No; Linux guards and tests pass |
+| `WVQ-010` | Windows ACLs for local private data | POSIX private-data hardening and worker-request restrictions | `src/codex_babeldoc/core/private_data.py`, `core/config.py`, `core/state.py`, `translation/cache.py`, `translation/thread_state.py`, `backends/worker_client.py` | Linux mode bits do not prove Windows ACL isolation | In a clean Windows user profile, inspect state/cache/glossary/context/thread/worker/log directories and files; confirm another standard user cannot read them; confirm worker request files are not left world-readable and are removed/retained only according to the documented lifecycle | Fresh package or dev-sidecar run under two disposable standard users; no real PDFs or credentials | User data is private to the owning Windows user and worker request files do not expose document configuration to other users | `P0` | `WINDOWS_VERIFICATION_PENDING` | No; Linux permission checks and tests can continue |
+| `WVQ-011` | Fixed Tauri config capability and path rejection | Tauri shell capability now accepts only `config/example.toml` | `gui/src-tauri/capabilities/default.json`, `gui/src/sidecar.ts` | Tauri capability regex and Windows packaging/runtime enforcement require native target validation | Inspect generated capability schema and launch packaged GUI; verify absolute paths, `..` traversal and alternate TOML paths are rejected while the bundled fixed config starts successfully | Current Windows target build and packaged GUI | Renderer cannot select an arbitrary config that changes input/output/state roots | `P0` | `WINDOWS_VERIFICATION_PENDING` | No; Linux configuration checks can continue |
+| `WVQ-012` | Bounded sidecar event recovery and DTO privacy | Bounded event deque, `oldest_sequence` resync and reduced job views | `src/codex_babeldoc/application/sidecar.py`, `application/service.py`, `gui/src/jobStore.ts`, `gui/src/protocol.ts` | Native packaged process lifetime and reconnect behavior need Windows evidence | Generate more than the event retention window, disconnect/reconnect the GUI, verify it detects a stale cursor, refreshes jobs, and does not expose absolute paths/PIDs/thread IDs in GUI/sidecar responses | Packaged sidecar; mock job; controlled sidecar restart | Memory/event history remains bounded, reconnect converges to persisted state, and external DTOs stay minimized | `P1` | `WINDOWS_VERIFICATION_PENDING` | No; Linux contract tests can continue |
+| `WVQ-013` | Codex deny-all boundary and isolated working directory | Explicit `ApprovalMode.deny_all`, read-only sandbox, isolated cwd and minimal worker environment | `src/codex_babeldoc/translators/codex_sdk.py`, `backends/worker_client.py` | Windows packaged Codex runtime and environment/working-directory behavior require native execution | With a synthetic prompt-injection PDF and authorized mock/live policy, confirm no approval/tool/MCP/file access occurs, the Codex cwd is the per-document isolated directory, and unrelated environment variables are not inherited by the worker | Authorized Codex integration only; synthetic fixture; no production documents | Translation remains text-only and cannot use the repository/workspace as a tool surface | `P0` | `WINDOWS_VERIFICATION_PENDING` | No; live usage requires explicit authorization |
+| `WVQ-014` | Windows worker environment allowlist revalidation | `worker_environment()` allowlist now retains the Windows runtime/profile keys (`SystemRoot`, `USERPROFILE`, `TEMP`, `TMP`, `APPDATA`, `LOCALAPPDATA`, `PROGRAMDATA`) beside the POSIX keys; Linux unit regression `TestWorkerEnvironment` pins the allowlist and non-inheritance of unrelated variables | `src/codex_babeldoc/backends/worker_client.py`, `tests/test_worker.py` | The 2026-09-12 incremental run reproduced `WinError 10106` with the smaller allowlist; the fix is designed on Linux and needs the native subprocess path confirmed | Run the subprocess mock integration and a worker-based mock job with a Windows-size allowlist; verify the worker starts, translates, completes, supports cancellation/reconnection and does not inherit unrelated parent variables (`SECRET`-style keys) | Current Windows source; fresh PyInstaller sidecar or dev worker; mock translator | Subprocess mock integration passes and no `WinError 10106`-class runtime failure appears | `P0` | `WINDOWS_VERIFICATION_PENDING` | No; Linux unit and integration checks pass |
+| `WVQ-015` | QA CLI stdout JSON contract revalidation | Production QA/pipeline imports now use the official `pymupdf` package name; regression `test_qa_cli_stdout_is_machine_readable_in_clean_subprocess` launches the CLI in a clean interpreter and asserts stdout is one JSON document | `src/codex_babeldoc/qa/*.py`, `src/codex_babeldoc/core/pipeline_meta.py`, `src/codex_babeldoc/translation/context.py`, `tests/test_cli.py` | The PyMuPDF `fitz` shim printed its deprecation notice to stdout (reproduced as `JSONDecodeError` on Windows); only a clean native run proves a machine consumer can parse the QA JSON | Run `cbpdf qa` positive/tamper cases and `cbpdf doctor`/`validate` in a clean Windows interpreter subprocess and assert every stdout payload parses as JSON with dependency notices absent | Current Windows source; frozen sidecar or dev CLI; mock job | QA/doctor/validate stdout remains machine-readable with no PyMuPDF deprecation noise | `P0` | `WINDOWS_VERIFICATION_PENDING` | No; Linux clean-subprocess regression passes |
+
 
 ### Windows Validation Preparation and final handoff
 
@@ -235,6 +337,16 @@ Every omitted item must have a reason, such as:
 
 “Not tested” alone is not a sufficient reason.
 
+For Computer Use-related omissions, use the following explicit form:
+
+```text
+Status: BLOCKED
+Blocker: COMPUTER_USE_UNAVAILABLE
+Retry: one reasonable retry attempted / not attempted because the failure was persistent
+Alternative: CLI/script/log/process/filesystem evidence available or unavailable
+Manual queue: WIN-MANUAL-<id>
+```
+
 ### Final review
 
 Before closing a run, confirm:
@@ -262,6 +374,327 @@ The final report must state:
 8. follow-up development tasks, if any.
 
 Never report only “validation completed” when failures, blockers, or unexecuted items remain.
+
+## Manual Windows Validation Queue
+
+At the end of each Windows validation phase, generate or update this queue for
+every item that remains incomplete because Computer Use is unavailable, the
+workflow is GUI-only, manual interaction is required, or the automation
+capability was unavailable. The queue is not a substitute for execution and
+must not be converted to `PASS` until a human or working automation session
+performs the steps and records the result.
+
+Each entry must contain all of these fields:
+
+- **Test ID** — unique ID such as `WIN-MANUAL-001`;
+- **Test name**;
+- **Current status** — normally `BLOCKED`;
+- **Blocker** — use `COMPUTER_USE_UNAVAILABLE` when applicable;
+- **Purpose**;
+- **Related change**;
+- **Preconditions**;
+- **Manual test steps**;
+- **Expected result**;
+- **Failure evidence to collect**;
+- **Result** — `PASS`, `FAIL` or `BLOCKED`;
+- **Notes**, **Error** and **Evidence** fields for completion.
+
+### Current Manual Windows Validation Queue
+
+The following entries correspond to the current validation record. They remain
+`BLOCKED` until executed in a usable native Windows desktop session. The
+static stale-bundle audit, sidecar handshake, MSI payload parity, process
+smoke, CLI tests and other non-GUI checks are separate automated evidence and
+must not be repeated as a substitute for these manual observations.
+
+#### WIN-MANUAL-001 — Packaged stale-sidecar GUI error presentation
+
+- **Test ID:** `WIN-MANUAL-001`
+- **Test name:** Stale sidecar is rejected with an actionable GUI connection error
+- **Current status:** `BLOCKED`
+- **Blocker:** `COMPUTER_USE_UNAVAILABLE`
+- **Purpose:** Prove that a packaged GUI detects a stale/incompatible sidecar at
+  startup and presents a clear connection or compatibility error before a job
+  can start, rather than failing later with a protocol mismatch.
+- **Related change:** `src/codex_babeldoc/application/sidecar.py`,
+  `gui/src/sidecar.ts`, `gui/src/protocol.ts`,
+  `scripts/check_gui_bundle.py`, `scripts/babelcodex-service.spec` and
+  `WVQ-009`.
+- **Preconditions:**
+  1. A current Windows package has been built from the intended WSL source
+     revision.
+  2. The current package's fresh GUI and sidecar startup smoke checks pass.
+  3. A stale-sidecar package variant is available, created by replacing the
+     packaged sidecar with the preserved older binary without changing the GUI.
+  4. A Windows desktop session with Computer Use or a human operator is
+     available; no live Codex request is required.
+- **Manual test steps:**
+  1. Copy the stale-sidecar package variant to a disposable directory outside
+     the source checkout.
+  2. Start the packaged `babelcodex-gui.exe`.
+  3. Wait for the main window and startup connection check to finish.
+  4. Observe the first visible status, banner or dialog related to sidecar
+     connectivity.
+  5. If the GUI remains usable, open the New Translation flow and attempt to
+     reach the first job-start action without selecting a real user document.
+  6. Capture the exact displayed error and close the GUI.
+  7. Inspect the sidecar/GUI log for the protocol version, connection error or
+     compatibility category; do not include credentials or full document text.
+- **Expected result:**
+  - The GUI does not silently report a healthy connection.
+  - It displays an actionable connection/compatibility error before translation
+    starts, or disables the affected action with an equivalent clear message.
+  - No crash, hang or mid-job protocol mismatch occurs.
+  - The log identifies the handshake/sidecar incompatibility without secrets.
+- **Failure evidence to collect:** Screenshot or screen recording; exact error
+  text; GUI and sidecar logs; Windows Event Viewer entry if the process crashes;
+  package and stale-sidecar SHA-256 values; exact reproduction steps.
+- **Result:** `PASS` / `FAIL` / `BLOCKED`
+- **Notes:**
+- **Error:**
+- **Evidence:**
+
+#### WIN-MANUAL-002 — Packaged GUI interaction, Chinese rendering and keyboard flow
+
+- **Test ID:** `WIN-MANUAL-002`
+- **Test name:** Packaged GUI renders Simplified Chinese and supports keyboard navigation
+- **Current status:** `BLOCKED`
+- **Blocker:** `COMPUTER_USE_UNAVAILABLE`
+- **Purpose:** Prove native WebView rendering, readable Chinese labels, logical
+  focus order, disabled-language-selector behavior and basic task navigation.
+- **Related change:** `gui/src/App.tsx`, `gui/src/styles.css`,
+  `gui/src/jobStore.ts`, `gui/src/sidecar.ts`, `gui/src/protocol.ts` and
+  `WVQ-001`.
+- **Preconditions:**
+  1. Fresh current-source portable or installed GUI package is available.
+  2. The package's sidecar handshake has passed automated smoke.
+  3. A disposable Windows user/profile and mock fixture directory are
+     available; no live Codex request is required.
+  4. The operator can capture screenshots and keyboard focus behavior.
+- **Manual test steps:**
+  1. Start the packaged GUI and wait for the main window to appear.
+  2. Confirm the main navigation, New Translation, Jobs, Job Details,
+     Glossary, Diagnostics and Settings labels are visible.
+  3. Check that Chinese text is not clipped, overlapped, replaced by tofu or
+     truncated at the default window size.
+  4. Use `Tab` and `Shift+Tab` from the first focusable control through the
+     primary controls; record the focus order.
+  5. Open Settings and inspect the disabled `界面语言` control. Confirm that
+     its disabled state is understandable and does not block unrelated controls.
+  6. Return to New Translation, use keyboard-only navigation to focus the file
+     selection/action controls, and cancel without selecting a real document.
+  7. Open Jobs and Job Details, then return to the main view and close the
+     window normally.
+- **Expected result:**
+  - The window opens without crash or visible layout corruption.
+  - Required Chinese labels and status text are readable with no critical
+    clipping or overlap.
+  - Focus order is logical, visible and reversible with `Shift+Tab`.
+  - Disabled language selection is clearly disabled but does not disable
+    unrelated navigation.
+  - Cancellation and normal close complete without a stuck process.
+- **Failure evidence to collect:** Screenshots at default size; screen recording
+  of keyboard traversal; exact window size and Windows display scale; GUI log;
+  process exit status; reproduction steps.
+- **Result:** `PASS` / `FAIL` / `BLOCKED`
+- **Notes:**
+- **Error:**
+- **Evidence:**
+
+#### WIN-MANUAL-003 — DPI, NVDA and window lifecycle
+
+- **Test ID:** `WIN-MANUAL-003`
+- **Test name:** DPI scaling, screen-reader focus and window lifecycle
+- **Current status:** `BLOCKED`
+- **Blocker:** `COMPUTER_USE_UNAVAILABLE`
+- **Purpose:** Prove that the packaged GUI remains usable at Windows display
+  scaling 125%, 150% and 200%, exposes a sensible focus/read order to NVDA,
+  and handles resize and close behavior safely.
+- **Related change:** `gui/src/App.tsx`, `gui/src/styles.css`, Tauri window
+  configuration and `WVQ-002`.
+- **Preconditions:**
+  1. Current packaged GUI is available.
+  2. A Windows display profile or test machine allows changing scale to 125%,
+     150% and 200% and restarting the app between changes.
+  3. NVDA is installed and can be started for the test user.
+  4. Screenshots and accessibility notes can be collected.
+- **Manual test steps:**
+  1. Set Windows display scaling to 125% and restart the GUI.
+  2. Inspect each primary screen and resize the window from normal size to a
+     narrow but usable width.
+  3. Repeat the inspection at 150% and 200%, restarting the GUI after each
+     scale change.
+  4. At one supported scale, start NVDA and move through navigation, status,
+     buttons, inputs and disabled controls using `Tab`, `Shift+Tab` and NVDA
+     reading commands.
+  5. Resize the window, navigate to Jobs/Job Details, and close the window.
+  6. Reopen the GUI and confirm the sidecar connection/status is not left in a
+     stale or misleading state.
+- **Expected result:**
+  - No critical control or error/status text is clipped at 125%, 150% or 200%.
+  - Resize does not overlap controls or make the primary flow unreachable.
+  - NVDA announces meaningful names, roles and state for interactive controls;
+    focus remains visible and logical.
+  - Close/reopen does not crash or leave a stuck GUI/sidecar process.
+- **Failure evidence to collect:** Screenshots for all scales; display settings
+  values; NVDA speech viewer or notes; GUI/sidecar logs; process list before and
+  after close; exact reproduction steps.
+- **Result:** `PASS` / `FAIL` / `BLOCKED`
+- **Notes:**
+- **Error:**
+- **Evidence:**
+
+#### WIN-MANUAL-004 — Picker, allowlist, paths, cancellation and reconnection
+
+- **Test ID:** `WIN-MANUAL-004`
+- **Test name:** File picker, path safety and sidecar reconnection flow
+- **Current status:** `BLOCKED`
+- **Blocker:** `COMPUTER_USE_UNAVAILABLE`
+- **Purpose:** Prove the packaged GUI's user-facing file intake and recovery
+  behavior for allowed/denied paths, Unicode and space-containing paths,
+  cancellation, reconnection and permissions.
+- **Related change:** `gui/src/filePicker.ts`, `gui/src/App.tsx`, Tauri dialog
+  permissions, sidecar path checks, artifact manifest/state handling and
+  `WVQ-003`/`WVQ-004`.
+- **Preconditions:**
+  1. Current packaged GUI and sidecar are available.
+  2. Prepare disposable directories named with spaces and non-ASCII
+     characters, an allowed input directory, a denied directory, a missing
+     file and a read-only or permission-restricted test location.
+  3. Prepare the documented mock PDF fixture and a disposable output/state
+     directory.
+  4. Ensure no user PDFs, credentials or private glossary data are used.
+- **Manual test steps:**
+  1. Start the GUI and open New Translation.
+  2. Use the native picker to select the allowed fixture from a path containing
+     spaces; confirm the selected path is shown safely.
+  3. Repeat with a non-ASCII directory/file name.
+  4. Attempt to select a file outside the configured allowlist and a missing
+     file; record the displayed validation result.
+  5. Cancel the picker and confirm the form remains usable without creating a
+     job.
+  6. Start a disposable mock job, observe progress, and cancel it through the
+     GUI.
+  7. Stop and restart only the disposable sidecar/service, reconnect the GUI,
+     and inspect the job state.
+  8. Alter or delete one generated artifact, reopen the job details/validation
+     view, and inspect whether the UI reports the artifact problem rather than
+     silently treating the job as complete.
+  9. Repeat one operation from a permission-restricted directory and record the
+     user-facing error.
+- **Expected result:**
+  - Allowed paths are accepted; denied, missing and restricted paths are
+    rejected with actionable errors.
+  - Spaces and Unicode names survive selection and job inspection unchanged.
+  - Picker cancellation creates no unintended job.
+  - Cancellation reaches a terminal state and does not leave an orphaned GUI
+    process.
+  - Reconnection shows the persisted job state and does not falsely reclaim an
+    active job.
+  - Missing or tampered artifacts are reported as invalid/failed and are never
+    silently skipped.
+- **Failure evidence to collect:** Screenshots; exact paths with sensitive
+  portions redacted; job ID and state JSON; GUI/sidecar logs; process list;
+  generated artifact and checksum; exact reproduction steps.
+- **Result:** `PASS` / `FAIL` / `BLOCKED`
+- **Notes:**
+- **Error:**
+- **Evidence:**
+
+#### WIN-MANUAL-005 — Clean-user installation, restart and recovery
+
+- **Test ID:** `WIN-MANUAL-005`
+- **Test name:** Clean-user first launch, sidecar restart and persisted-job recovery
+- **Current status:** `NOT_RUN` pending a clean-user session; if the session or
+  GUI control is unavailable, change the run result to `BLOCKED` with
+  `Blocker: COMPUTER_USE_UNAVAILABLE` or the precise environment blocker.
+- **Blocker:** `COMPUTER_USE_UNAVAILABLE` when the required desktop session
+  cannot be controlled; otherwise record the exact clean-user environment
+  blocker.
+- **Purpose:** Prove that installation/first launch does not depend on the
+  developer workspace and that a restarted service recovers persisted state
+  safely without automatic unsafe reruns.
+- **Related change:** Tauri packaging, `scripts/babelcodex-service.spec`,
+  `src/codex_babeldoc/application/service.py`, orchestrator/state/CLI recovery
+  and `WVQ-004`.
+- **Preconditions:**
+  1. Current unsigned NSIS/MSI or portable package and verified MSI payload are
+     available.
+  2. A disposable Windows user/profile with no repository checkout, Python
+     environment, cached state or prior BabelCodex configuration is available.
+  3. A disposable mock fixture and permitted working directories are prepared.
+  4. The operator can terminate and restart only the disposable app/service
+     processes.
+- **Manual test steps:**
+  1. Install or extract the package under the clean user/profile.
+  2. Launch the GUI before opening the repository or installing development
+     dependencies.
+  3. Confirm the first-run window and sidecar status appear without a crash.
+  4. Start a disposable mock job and record its job ID and state.
+  5. Terminate the disposable runner/service before completion, without
+     deleting its state directory.
+  6. Restart the packaged service or GUI and inspect the persisted job.
+  7. Confirm a dead runner is represented as a safe terminal worker-crash state
+     and is not automatically rerun.
+  8. Use the explicit retry action and confirm a new attempt begins only after
+     that action.
+  9. Close and relaunch the GUI, then inspect the same job once more.
+- **Expected result:**
+  - First launch works without repository or development-environment
+    dependencies.
+  - Persisted state is readable after restart.
+  - A dead runner is terminalized safely, with actionable recovery guidance;
+    no automatic translation or Codex usage starts.
+  - Explicit retry starts a new attempt and normal close leaves no orphaned
+    process.
+- **Failure evidence to collect:** Installer/extraction command and checksum;
+  screenshots; job/state JSON; sidecar and GUI logs; Windows Event Viewer;
+  process list; exact profile and reproduction steps.
+- **Result:** `PASS` / `FAIL` / `BLOCKED`
+- **Notes:**
+- **Error:**
+- **Evidence:**
+
+#### WIN-MANUAL-006 — Release security and live integration authorization
+
+- **Test ID:** `WIN-MANUAL-006`
+- **Test name:** Release security audit and authorized live Codex/PDF acceptance
+- **Current status:** `NOT_RUN`
+- **Blocker:** None until explicitly scheduled; if required GUI interaction is
+  unavailable, record `BLOCKED` with `COMPUTER_USE_UNAVAILABLE` rather than
+  claiming a result.
+- **Purpose:** Separately verify release security controls and, only with
+  explicit authorization, run a usage-bearing live Codex/PDF acceptance.
+- **Related change:** Release artifacts, signing/Defender/SmartScreen/SBOM
+  workflow (`WVQ-005`) and live integration (`WVQ-006`).
+- **Preconditions:** Written authorization for any live model request; approved
+  representative PDF with no private data; unsigned/signed artifact inventory;
+  Defender/SmartScreen and certificate tooling; a controlled Windows desktop
+  session.
+- **Manual test steps:**
+  1. Record package filenames, versions, SHA-256 values, signing status and
+     build revision.
+  2. Run the documented certificate/signature, Defender/SmartScreen and SBOM
+     checks without suppressing warnings.
+  3. Record each warning, verdict and any Windows Event Viewer evidence.
+  4. Only after written authorization, authenticate the approved Codex session.
+  5. Translate the approved fixture once through the documented live path.
+  6. Inspect placeholder preservation, output PDF validity, QA result, logs and
+     persisted job state; do not expose credentials or full document text.
+  7. Record usage, model/session identity as permitted, output checksum and
+     cleanup result.
+- **Expected result:**
+  - Release security results are explicit and reproducible; unsigned development
+    artifacts are not described as release-signed.
+  - Authorized live translation completes without placeholder, output-QA or
+    state regressions; no unauthorized fallback or extra live request occurs.
+- **Failure evidence to collect:** Signature/certificate output; Defender or
+  SmartScreen message; SBOM; Event Viewer entry; exact command output; job
+  state; output checksum; QA report; authorization record; reproduction steps.
+- **Result:** `PASS` / `FAIL` / `BLOCKED`
+- **Notes:**
+- **Error:**
+- **Evidence:**
 
 ## Validation run: 2026-09-09
 
@@ -1138,6 +1571,404 @@ The first frozen JSONL probe omitted the required `protocol_version` field and c
 - No business code, architecture, dependency lockfile or configuration was modified during validation. Windows outputs remain disposable artifacts on E:.
 - Overall status remains `WINDOWS_VERIFICATION_PENDING` because real desktop interaction, clean-user and release-security checks are still outstanding.
 
+## Validation run: 2026-09-12 (latest Linux state, MSI revalidation)
+
+### Validation environment and source state
+
+- Linux source of truth: WSL Ubuntu `/home/shiraishi/VSCode Workspace/Codex_Translator`, branch `dev`, HEAD `4e709d922849516c8162f5b17d387b32b5f42ceb` (`feat: add PDF QA battery, qa command and release operations guide`). The current dirty tree contains five documentation files and eleven code/test files, including the CLI log-handler release change and its regression test. This was a working-tree validation, not a clean-commit validation; no business code was modified during this run.
+- Windows disposable workspace: `E:\Shiraishi\VSCode Workspace\Codex_Translator`. Existing `.venv`, `gui\node_modules`, Rust target, build/dist, state/logs and user-content directories were inspected and preserved. Filtered WSL → E: `robocopy` dry-run and actual sync each reported 68 copied files, 0 failed files, and 17 E: extras preserved; `.git`, environments, dependencies, caches, generated GUI assets, build/dist, logs, state and user-content directories were excluded.
+- SHA-256 parity was confirmed for all eleven changed/untracked code/test files. Generated sidecars, GUI assets, staging directories and installer outputs remained only in E:. No Windows source changes were synchronized back to Linux.
+- Toolchain: `uv 0.12.10`, project Python 3.12.13, Node.js 24.19.0, npm 11.17.0, Rust/cargo 1.98.0, PyInstaller 6.22.2, BabelDOC 0.6.4 and openai-codex 0.147.0. `doctor` confirmed configured Windows paths and authenticated Codex state; no usage-bearing live request was made.
+
+### Validation checklist
+
+| Item | Classification | Exact command or procedure | Status | Result |
+|---|---|---|---|---|
+| Controlled WSL-to-E synchronization and source parity | Required | Filtered `robocopy` with `/FFT /COPY:DAT /DCOPY:DAT /IS /IT /XJ` and documented exclusions, then SHA-256 comparison | PASS | 68 files copied, 0 failed; 11 changed/untracked code/test hashes matched; E: extras preserved. |
+| Dependency synchronization and lock | Required | `uv --directory E:\Shiraishi\VSCode Workspace\Codex_Translator sync --locked --extra runtime --extra dev`; `uv --directory ... lock --check` | PASS | 95 resolved, 91 checked; lock valid. The first restricted-context uv cache initialization was retried in the approved Windows validation context and did not affect the project result. |
+| Python format/lint/compile | Required | `uv --directory ... run ruff format --check .`; `ruff check .`; `python -m compileall -q src tests scripts` | PASS | 91 files formatted; Ruff and compileall passed. |
+| Python test suite | Required | `uv --directory ... run pytest -q --tb=short` | PASS | `201 passed, 5 deselected` in 73.09s; CLI handler-release regression included. |
+| Runtime doctor | Required | `uv --directory ... run cbpdf --config config/example.toml doctor` | PASS | Python 3.12.13, BabelDOC 0.6.4, openai-codex 0.147.0, configured paths and ChatGPT login reported. |
+| GUI dependency install | Required | `npm.cmd --prefix E:\Shiraishi\VSCode Workspace\Codex_Translator\gui ci` | PASS | 158 packages installed; npm reported 2 moderate advisories and esbuild postinstall pending approval; no remediation was attempted. |
+| GUI full tests | Required | `npm.cmd --prefix ... test -- --run` | PASS | 4 files, 22 tests passed. |
+| GUI production build | Required | `npm.cmd --prefix ... run build` | PASS | TypeScript/Vite passed; 1,590 modules transformed. |
+| Tauri Rust host and config/icons | Required | `cargo check --manifest-path ...\gui\src-tauri\Cargo.toml`; parse config; check `icon.ico` and `icon.png` | PASS | Cargo passed; `productName=BabelCodex`; both required icons exist. |
+| Mock PDF integration | Required | `uv --directory ... run pytest -q -m integration tests/test_e2e_mock.py` | PASS | `5 passed` in 233.28s; mock path only. |
+| QA CLI and artifact tamper detection | Required | Temporary PDF/job; `cbpdf --config <temp-config> qa <job-id>`; delete artifact and rerun | PASS | Initial `exit 0 / qa_status=passed`; tampered run `exit 1 / qa_status=failed`. The helper emitted only the known fitz deprecation warning. |
+| QA fixture temporary cleanup | Applicable | Automatic cleanup of the same temporary QA directory | PASS | Cleanup completed without the previous `WinError 32`; CLI root file handlers were released by the current source. |
+| Current-source PyInstaller sidecar | Required | `uv --directory ... run --extra runtime --with pyinstaller pyinstaller --clean --noconfirm scripts/babelcodex-service.spec` | PASS | `dist\babelcodex-service.exe` built; SHA-256 `B892AD806BD7E579BBA153C373BFFC4F1A03CFCF04D184E576B00D06827D4EB5`; 194,439,503 bytes. |
+| Frozen sidecar protocol v1 | Required | JSONL `get_server_info`, `list_jobs`, `shutdown` with `protocol_version=1` | PASS | Protocol 1, package 0.1.0, expected capabilities, preserved E: state visible, exit 0. |
+| Frozen invalid-worker request | Applicable | `dist\babelcodex-service.exe --worker-request build\missing-worker-request-validation-current-rerun.json` | PASS | Structured `WORKER_REQUEST_INVALID`, exit 2. |
+| Windows target-triple sidecar | Required | Copy fresh sidecar to `gui\src-tauri\binaries\babelcodex-service-x86_64-pc-windows-msvc.exe`; repeat v1 handshake | PASS | SHA-256 matched; handshake and shutdown exit 0. |
+| WVQ-009 fresh bundle audit | Required | `check_gui_bundle.py <fresh-stage> --target x86_64-pc-windows-msvc --source-tree <root> --manifest <stage>\sha256.txt` | PASS | Current HTML/JS/CSS and both fresh sidecars passed the audit; exit 0. |
+| WVQ-009 stale bundle negative audit | Required | Same audit with the 2026-09-10 sidecar | PASS | Expected exit 1: `sidecar predates newer Python sources`; stale input rejected. |
+| Current-source NSIS/MSI build | Required | `npm.cmd --prefix ... run tauri -- build --bundles nsis,msi` | PASS | Release GUI SHA-256 `8B1450D6872EBC57133AA88C4BB8C62A30F78A49D8D6B074740A8A66252FA934`; NSIS `EFE0FF2D3E93FA5BF93428E62BF22DDD9FD79A699FBF7007550506AD671A448A` (195,791,175 bytes); MSI `28F5206CD54C559623863285BA6A1B2E576D0F10AA0FB225BA969DC78C4F3576` (195,751,936 bytes). |
+| Release GUI process smoke | Applicable | Start `gui\src-tauri\target\release\babelcodex-gui.exe`, wait 8s, stop only the validation process | PASS | Process remained alive for 8s. |
+| MSI administrative extraction, package parity and extracted smoke | Applicable | `msiexec /a <MSI> TARGETDIR=<temp> /qn /norestart /L*v <log>`; inspect payloads; run extracted sidecar v1 handshake and GUI process smoke | PASS | Exit 0; verbose log and 2 payloads produced. Extracted sidecar SHA-256 `B892AD806BD7E579BBA153C373BFFC4F1A03CFCF04D184E576B00D06827D4EB5` matched fresh sidecar; extracted sidecar handshake/shutdown exit 0; extracted GUI remained alive for 8s. |
+| Packaged stale-GUI error observation | Required | Launch stale-sidecar GUI variant and observe native connection error | BLOCKED | `sky.list_apps()` failed with `Trusted RPC service is not configured: sky`; no native UI action was performed. |
+| Packaged GUI interaction/path/DPI/NVDA matrix | Required | Installed/portable picker, Chinese rendering, keyboard, DPI 125%/150%/200%, NVDA, allowlist, cancellation, reconnection and permissions | BLOCKED | Same unavailable native Windows GUI automation prerequisite. |
+| Clean-user install/restart/recovery | Applicable | Fresh user profile, install/portable launch, sidecar restart and recovery | NOT RUN | Requires a real clean-user desktop session; not inferred from process smoke. |
+| WVQ-007 full workdir/lock/retry/cancel/reconnect semantics | Applicable | Native Windows lifecycle and file-handle matrix | NOT RUN | The QA cleanup path now passes, but the broader lifecycle matrix remains unexecuted. |
+| WVQ-005 release security audit | Applicable | Defender/SmartScreen, signing/certificate, SBOM and release checksum audit | NOT RUN | No security-setting or release-signing workflow was authorized in this validation. |
+| Live Codex/PDF integration | Applicable | Authorized live translation against representative PDF | NOT RUN | No usage-bearing live request was authorized; mock integration remains scoped evidence only. |
+| Dependency advisory remediation | Not required for this validation | `npm audit fix` or major-version upgrade | NOT RUN | Advisories were recorded; no dependency or architecture change was made to force a clean report. |
+| Linux-only platform target | Not applicable | Linux AppImage/native Linux acceptance | NOT APPLICABLE | This round verifies the Windows E: workspace. |
+
+### Failure, blocking and follow-up analysis
+
+- No current project `FAIL` remains. The previous QA temporary-cleanup `WinError 32` was directly re-tested against the current CLI handler-release path and the temporary directory cleaned successfully. This clears only the QA harness cleanup path; it does not prove the full WVQ-007 lifecycle matrix.
+- The first restricted-context uv invocation could not initialize the user cache (`os error 183`); the same documented commands passed in the approved Windows validation context. This is an execution-environment observation, not a project failure. The fresh PyInstaller build also emitted known optional hidden-import warnings but produced a working artifact and all defined smoke checks passed.
+- The MSI administrative extraction blocker is resolved for the current package when invoked with the documented quoted `/a`, `TARGETDIR` and `/L*v` arguments. Current extraction produced a log and payload; extracted sidecar parity and extracted GUI process smoke passed.
+- Native GUI checks remain `BLOCKED` because the Computer Use trusted `sky` RPC service is unavailable. Process-liveness smoke is not evidence for rendering, accessibility, stale-GUI error presentation or interactive path acceptance.
+- Current status counts: `PASS 21`, `FAIL 0`, `BLOCKED 2`, `NOT RUN 5`, `NOT APPLICABLE 1`.
+
+### Linux follow-up required
+
+1. Provision a usable native Windows UI automation environment and run `WVQ-001` through `WVQ-004` plus the stale-GUI portion of `WVQ-009`: Chinese rendering, keyboard, DPI, NVDA, picker/allowlist, Unicode and space-containing paths, permissions, cancellation, reconnection, window close, clean user and sidecar restart.
+2. Run the broader native Windows `WVQ-007` workdir/lock/retry/cancel/reconnect matrix; retain strict cleanup assertions even though the CLI QA cleanup path now passes.
+3. Schedule Defender/SmartScreen, signing/SBOM/release audit and any live Codex/PDF test with explicit authorization; review npm advisories separately without changing dependencies during validation.
+
+### Linux reconciliation after the MSI revalidation
+
+- The MSI administrative-extraction blocker is closed with native evidence: extraction with the documented quoted `/a`, `TARGETDIR` and `/L*v` arguments returned exit 0 with a verbose log and payloads, the extracted sidecar SHA-256 exactly matched the fresh build (`B892AD80...`), the extracted sidecar v1 handshake/shutdown exited 0, and the extracted GUI process stayed alive for 8 seconds. Linux accepts this as package-parity evidence for the current MSI only; the WVQ queue items that still require native desktop work remain untouched.
+- The QA fixture temporary cleanup passed for a second consecutive round with the CLI handler-release hardening, and the stale bundle negative audit again rejected the older sidecar. Status counts: `PASS 21`, `FAIL 0`, `BLOCKED 2`, `NOT RUN 5`, `NOT APPLICABLE 1`.
+- Linux makes no code change this round: every remaining gap (native UI automation prerequisite, clean-user session, full `WVQ-007` lifecycle matrix, `WVQ-005` release security, live Codex/PDF) requires the Windows-native environment and cannot be advanced by Linux-only edits. All `WVQ-*` items stay `WINDOWS_VERIFICATION_PENDING`; overall status remains `WINDOWS_VERIFICATION_PENDING`.
+
+Overall status remains `WINDOWS_VERIFICATION_PENDING`, not `WINDOWS_VERIFICATION_BLOCKING`.
+
+## Validation run: 2026-09-12 (latest Linux CLI/QA change revalidation)
+
+### Validation environment and source state
+
+- Linux source of truth: WSL Ubuntu `/home/shiraishi/VSCode Workspace/Codex_Translator`, branch `dev`, HEAD `4e709d922849516c8162f5b17d387b32b5f42ceb` (`feat: add PDF QA battery, qa command and release operations guide`). The dirty tree now includes five documentation files and eleven code/test files, including the new CLI log-handler release change in `src/codex_babeldoc/cli.py`, its regression coverage in `tests/test_cli.py`, and untracked `gui/src/protocol.test.ts`. This was not a clean-commit validation; this run did not modify business code, configuration or dependencies.
+- Windows disposable workspace: `E:\Shiraishi\VSCode Workspace\Codex_Translator`. Existing `.venv`, `gui\node_modules`, Rust target, build/dist, state/logs and user-content directories were inspected and preserved. A filtered one-way `robocopy` sync from `\\wsl.localhost\Ubuntu\home\shiraishi\VSCode Workspace\Codex_Translator` to E: used `/FFT /COPY:DAT /DCOPY:DAT /IS /IT /XJ`; `.git`, virtual environments, dependencies, caches, generated GUI assets, build/dist, logs, state and user-content directories were excluded. Dry-run and actual sync each reported 68 copied files, 0 failed files, and 17 E: extras preserved.
+- Eleven changed/untracked code/test files were compared by SHA-256 after sync; all matched. Generated GUI assets, frozen sidecar, target-triple sidecar, staging directories and installer outputs were created only in E: and were not reverse-synced.
+- Toolchain: `uv 0.12.10`; project Python 3.12.13; Node.js 24.19.0; npm 11.17.0; Rust/cargo 1.98.0; PyInstaller 6.22.2; BabelDOC 0.6.4; openai-codex 0.147.0. `doctor` reported authenticated ChatGPT state; no usage-bearing live Codex request was made.
+
+### Validation checklist
+
+| Item | Classification | Exact command or procedure | Status | Result |
+|---|---|---|---|---|
+| Controlled WSL-to-E synchronization and source parity | Required | Filtered `robocopy` from the WSL source path to E: with documented exclusions, then SHA-256 comparison | PASS | 68 files copied, 0 failed; 11 changed/untracked code/test hashes matched; E: extras preserved. |
+| Dependency synchronization and lock | Required | `uv --directory E:\Shiraishi\VSCode Workspace\Codex_Translator sync --locked --extra runtime --extra dev`; `uv --directory ... lock --check` | PASS | 95 resolved, 91 checked; lock valid. |
+| Python format/lint/compile | Required | `uv --directory ... run ruff format --check .`; `ruff check .`; `python -m compileall -q src tests scripts` | PASS | 91 files formatted; Ruff and compileall passed. |
+| Python test suite | Required | `uv --directory ... run pytest -q --tb=short` | PASS | `201 passed, 5 deselected` in 38.12s; CLI handler-release regression included. |
+| Runtime doctor | Required | `uv --directory ... run cbpdf --config config/example.toml doctor` | PASS | Python 3.12.13, BabelDOC 0.6.4, openai-codex 0.147.0, configured Windows paths and ChatGPT login reported. |
+| GUI dependency install | Required | `npm.cmd --prefix E:\Shiraishi\VSCode Workspace\Codex_Translator\gui ci` | PASS | 158 packages installed; npm reported 2 moderate advisories and esbuild postinstall pending approval; no remediation was attempted. |
+| GUI full tests | Required | `npm.cmd --prefix ... test -- --run` | PASS | 4 files, 22 tests passed. |
+| GUI production build | Required | `npm.cmd --prefix ... run build` | PASS | TypeScript/Vite passed; 1,590 modules transformed. |
+| Tauri Rust host and config/icons | Required | `cargo check --manifest-path ...\gui\src-tauri\Cargo.toml`; parse config; check `icon.ico` and `icon.png` | PASS | Cargo passed; `productName=BabelCodex`; both required icons exist. |
+| Mock PDF integration | Required | `uv --directory ... run pytest -q -m integration tests/test_e2e_mock.py` | PASS | `5 passed` in 247.01s. |
+| QA CLI and artifact tamper detection | Required | Temporary PDF/job; `qa <job-id>`; delete artifact and rerun | PASS | Initial `exit 0 / qa_status=passed`; tampered run `exit 1 / qa_status=failed`; one report generated. |
+| QA harness temporary cleanup | Applicable | Automatic cleanup of the temporary QA directory after both CLI calls | PASS | Cleanup completed without the previous `WinError 32`; the new CLI `finally` path detached and closed root file handlers. |
+| Current-source PyInstaller sidecar | Required | `uv --directory ... run --extra runtime --with pyinstaller pyinstaller --clean --noconfirm scripts/babelcodex-service.spec` | PASS | Complete `dist\babelcodex-service.exe` produced; SHA-256 `617E3B38440B3BAAF884844480AD3825B79C645CC35B9B261E0BEB38DE08FB53`; 194,438,420 bytes. |
+| Frozen sidecar protocol v1 | Required | JSONL `get_server_info`, `list_jobs`, `shutdown` with `protocol_version=1` | PASS | Protocol 1, package 0.1.0, expected capabilities, preserved E: state visible, exit 0. |
+| Frozen invalid-worker request | Applicable | `dist\babelcodex-service.exe --worker-request build\missing-worker-request-validation-current-cli.json` | PASS | Structured `WORKER_REQUEST_INVALID`, exit 2. |
+| Windows target-triple sidecar | Required | Copy fresh sidecar to `gui\src-tauri\binaries\babelcodex-service-x86_64-pc-windows-msvc.exe`; repeat v1 handshake | PASS | SHA-256 matched; handshake and shutdown exit 0. |
+| WVQ-009 fresh bundle audit | Required | Real `gui\dist\assets` staging; `check_gui_bundle.py --target x86_64-pc-windows-msvc --source-tree ... --manifest ...` | PASS | Fresh audit passed with current sidecar and manifest; JS/CSS/HTML and both sidecar names present. |
+| WVQ-009 stale bundle negative audit | Required | Same audit with the preserved older sidecar | PASS | Expected exit 1: `sidecar predates newer Python sources`; stale input rejected. |
+| Current-source NSIS/MSI build | Required | `npm.cmd --prefix ... run tauri -- build --bundles nsis,msi` | PASS | NSIS SHA-256 `645CB227A80CD9A65656F3D68D761D4CE8DEAC37DC1720441F9E53BEC9358744` (195,781,816 bytes); MSI SHA-256 `FEDCF16AE47F0F1599E8F12075F7FD6C7642C6363C23844B105548E99D9B31CB` (195,751,936 bytes). |
+| Release GUI process smoke | Applicable | Start `gui\src-tauri\target\release\babelcodex-gui.exe`, wait 8s, stop only the validation process | PASS | Process remained alive for 8s. GUI SHA-256 `4801F1565974DA99368271EE5A298C89A40AD00695B7FADBF052004BE55A615F`; 4,597,248 bytes. |
+| MSI administrative extraction and package parity | Applicable | `msiexec /a <MSI> TARGETDIR=<temp> /qn /norestart /L*v <log>`; inspect payloads | BLOCKED | Current MSI invocation timed out after 90s with no log, no extracted executable and no payload; the validation process was stopped. No current-package extraction evidence exists. |
+| Packaged stale-GUI error observation | Required | Launch stale-sidecar GUI variant and observe native connection error | BLOCKED | `sky.list_apps()` failed with `Trusted RPC service is not configured: sky`; no native UI action was performed. |
+| Packaged GUI interaction/path/DPI/NVDA matrix | Required | Installed/portable picker, Chinese rendering, keyboard, DPI 125%/150%/200%, NVDA, allowlist, cancellation, reconnection and permissions | BLOCKED | Same unavailable native Windows GUI automation prerequisite. |
+| Clean-user install/restart/recovery | Applicable | Fresh user profile, install/portable launch, sidecar restart and recovery | NOT RUN | Requires a real clean-user desktop session; not inferred from process smoke. |
+| WVQ-007 full workdir/lock/retry/cancel/reconnect semantics | Applicable | Native Windows lifecycle and file-handle matrix | NOT RUN | The CLI QA cleanup path now passes, but the broader lifecycle matrix remains unexecuted. |
+| WVQ-005 release security audit | Applicable | Defender/SmartScreen, signing/certificate, SBOM and release checksum audit | NOT RUN | No security-setting or release-signing workflow was authorized in this validation. |
+| Live Codex/PDF integration | Applicable | Authorized live translation against representative PDF | NOT RUN | No usage-bearing live request was authorized; mock integration remains scoped evidence only. |
+| Dependency advisory remediation | Not required for this validation | `npm audit fix` or major-version upgrade | NOT RUN | Advisories were recorded; no dependency or architecture change was made to force a clean report. |
+| Linux-only platform target | Not applicable | Linux AppImage/native Linux acceptance | NOT APPLICABLE | This round verifies the Windows E: workspace. |
+
+### Failure, blocking and follow-up analysis
+
+- No `FAIL` remains in this revalidation. The previous Windows `WinError 32` on `logs\cbpdf.log` was directly retested against the new CLI handler-release path and the temporary QA directory cleaned successfully. This clears only that QA harness path; it does not prove the full WVQ-007 lifecycle matrix.
+- The PyInstaller and Tauri outer sessions lost their final wrapper output while child build work was still finishing; filesystem inspection then confirmed complete artifacts, no residual build processes, and independently verified hashes. This is a command-observation nuisance, not a product failure.
+- The MSI extraction blocker is unchanged: the current package build exists, but administrative extraction produces no log or payload within 90 seconds. Native GUI checks remain blocked because the trusted `sky` service is unavailable.
+- Current status counts: `PASS 21`, `FAIL 0`, `BLOCKED 3`, `NOT RUN 5`, `NOT APPLICABLE 1`.
+
+### Linux follow-up required
+
+1. Run the broader native Windows `WVQ-007` workdir/lock/retry/cancel/reconnect matrix; retain the strict cleanup assertions even though the CLI QA path now passes.
+2. Provision a usable Windows Installer administrative-extraction path and obtain current-MSI payload/sidecar parity evidence.
+3. Run native Windows desktop validation for `WVQ-001` through `WVQ-004` and the stale-GUI portion of `WVQ-009`: Chinese rendering, keyboard, DPI, NVDA, picker/allowlist, Unicode and space-containing paths, permissions, cancellation, reconnection, window close, clean user and sidecar restart.
+4. Keep `WVQ-009` freshness plus runtime handshake as release gates; separately schedule the Defender/SmartScreen/signing/SBOM audit and any live Codex/PDF test with explicit authorization.
+
+Overall status remains `WINDOWS_VERIFICATION_PENDING`, not `WINDOWS_VERIFICATION_BLOCKING`.
+
+## Validation run: 2026-09-12 (latest Linux state revalidation, current dirty tree)
+
+### Validation environment and source state
+
+- Linux source of truth: WSL Ubuntu `/home/shiraishi/VSCode Workspace/Codex_Translator`, branch `dev`, HEAD `4e709d922849516c8162f5b17d387b32b5f42ceb` (`feat: add PDF QA battery, qa command and release operations guide`). The tree was already dirty before this run: five documentation files plus nine code/test files (including the untracked `gui/src/protocol.test.ts`) were present. This was not a clean-commit validation, and this run did not modify business code, configuration, or dependencies.
+- Windows disposable workspace: `E:\Shiraishi\VSCode Workspace\Codex_Translator`. Existing `.venv`, `gui\node_modules`, Rust target, build/dist, state/logs and user-content directories were inspected and preserved. A filtered one-way `robocopy` sync from `\\wsl.localhost\Ubuntu\home\shiraishi\VSCode Workspace\Codex_Translator` to E: used `/FFT /COPY:DAT /DCOPY:DAT /IS /IT /XJ`; `.git`, virtual environments, dependencies, caches, generated GUI assets, build/dist, logs, state and user-content directories were excluded. Dry-run and actual sync each reported 68 copied files, 0 failed files, and 17 E: extras preserved.
+- The nine changed/untracked code/test files were compared by SHA-256 after sync; all matched. Generated GUI assets, frozen sidecar, target-triple sidecar, staging directories and installer outputs were created only in E: and were not reverse-synced.
+- Toolchain: `uv 0.12.10`; project Python 3.12.13; Node.js 24.19.0; npm 11.17.0; Rust/cargo 1.98.0; PyInstaller 6.22.2; BabelDOC 0.6.4; openai-codex 0.147.0. `doctor` reported authenticated ChatGPT state; no usage-bearing live Codex request was made.
+
+### Validation checklist
+
+| Item | Classification | Exact command or procedure | Status | Result |
+|---|---|---|---|---|
+| Controlled WSL-to-E synchronization and source parity | Required | Filtered `robocopy` from the WSL source path to E: with the documented exclusions, then SHA-256 comparison | PASS | 68 files copied, 0 failed; 9 changed/untracked code/test hashes matched; E: extras preserved. |
+| Dependency synchronization and lock | Required | `uv --directory E:\Shiraishi\VSCode Workspace\Codex_Translator sync --locked --extra runtime --extra dev`; `uv --directory ... lock --check` | PASS | 95 resolved, 91 checked; lock valid. |
+| Python format/lint/compile | Required | `uv --directory ... run ruff format --check .`; `ruff check .`; `python -m compileall -q src tests scripts` | PASS | 91 files formatted; Ruff and compileall passed. |
+| Python test suite | Required | `uv --directory ... run pytest -q --tb=short` | PASS | `200 passed, 5 deselected` in 75.64s. |
+| Runtime doctor | Required | `uv --directory ... run cbpdf --config config/example.toml doctor` | PASS | Python 3.12.13, BabelDOC 0.6.4, openai-codex 0.147.0, configured Windows paths and ChatGPT login reported. |
+| GUI dependency install | Required | `npm.cmd --prefix E:\Shiraishi\VSCode Workspace\Codex_Translator\gui ci` | PASS | 158 packages installed; npm reported 2 moderate advisories and esbuild postinstall pending approval; no remediation was attempted. |
+| GUI full tests | Required | `npm.cmd --prefix ... test -- --run` | PASS | 4 files, 22 tests passed. |
+| GUI production build | Required | `npm.cmd --prefix ... run build` | PASS | TypeScript/Vite passed; 1,590 modules transformed. |
+| Tauri Rust host and config/icons | Required | `cargo check --manifest-path ...\gui\src-tauri\Cargo.toml`; parse config; check `icon.ico` and `icon.png` | PASS | Cargo passed; `productName=BabelCodex`; both required icons exist. |
+| Mock PDF integration | Required | `uv --directory ... run pytest -q -m integration tests/test_e2e_mock.py` | PASS | `5 passed` in 221.16s. |
+| QA CLI and artifact tamper detection | Required | Temporary PDF/job; `qa <job-id>`; delete artifact and rerun | PASS | Initial `exit 0 / qa_status=passed`; tampered run `exit 1 / qa_status=failed`; one report generated. |
+| QA harness temporary cleanup | Applicable | Automatic cleanup of the temporary QA directory | FAIL | Assertions completed, but cleanup reproduced `PermissionError: [WinError 32]` on `logs\cbpdf.log`; exact temporary directory was later removed with elevated cleanup. |
+| Current-source PyInstaller sidecar | Required | `uv --directory ... run --extra runtime --with pyinstaller pyinstaller --clean --noconfirm scripts/babelcodex-service.spec` | PASS | SHA-256 `CBAD9089F3E952A62CE5E1A666340A8B0CBF1FD40354A789A5C56A1FBEEA7841`; 194,439,871 bytes. |
+| Frozen sidecar protocol v1 | Required | JSONL `get_server_info`, `list_jobs`, `shutdown` with `protocol_version=1` | PASS | Protocol 1, package 0.1.0, expected capabilities, preserved E: state visible, exit 0. |
+| Frozen invalid-worker request | Applicable | `dist\babelcodex-service.exe --worker-request build\missing-worker-request-validation-20260912-rerun.json` | PASS | Structured `WORKER_REQUEST_INVALID`, exit 2. |
+| Windows target-triple sidecar | Required | Copy fresh sidecar to `gui\src-tauri\binaries\babelcodex-service-x86_64-pc-windows-msvc.exe`; repeat v1 handshake | PASS | SHA-256 matched; handshake and shutdown exit 0. |
+| WVQ-009 fresh bundle audit | Required | Real `gui\dist\assets` staging; `check_gui_bundle.py --target x86_64-pc-windows-msvc --source-tree ... --manifest ...` | PASS | Fresh audit passed with current sidecar and manifest; JS/CSS/HTML and both sidecar names present. |
+| WVQ-009 stale bundle negative audit | Required | Same audit with the preserved older sidecar | PASS | Expected exit 1: `sidecar predates newer Python sources`; stale input rejected. |
+| Current-source NSIS/MSI build | Required | `npm.cmd --prefix ... run tauri -- build --bundles nsis,msi` | PASS | NSIS SHA-256 `AE89EB2F737D755C9634AA182C1CBDBB2B488CF967E56EB30325F6B6E85477E1` (195,786,695 bytes); MSI SHA-256 `DA6380426405FF7F07E22EB22BE8C1C689CC41FB1A7D5EF320B23A8C1D442AD3` (195,751,936 bytes). |
+| Release GUI process smoke | Applicable | Start `gui\src-tauri\target\release\babelcodex-gui.exe`, wait 8s, stop only the validation process | PASS | Process remained alive for 8s. GUI SHA-256 `452E86E9EC1EC7CB0F384854C03ABDDFE32899AEFCF29FF4A934E972B8B0274F`; 4,597,248 bytes. |
+| MSI administrative extraction and package parity | Applicable | `msiexec /a <MSI> TARGETDIR=<temp> /qn /norestart /L*v <log>`; inspect payloads | BLOCKED | The current MSI invocation timed out after 90s with no log, no extracted executable and no payload; the validation process was stopped. No current-package extraction evidence exists. |
+| Packaged stale-GUI error observation | Required | Launch stale-sidecar GUI variant and observe native connection error | BLOCKED | `sky.list_apps()` failed with `Trusted RPC service is not configured: sky`; no native UI action was performed. |
+| Packaged GUI interaction/path/DPI/NVDA matrix | Required | Installed/portable picker, Chinese rendering, keyboard, DPI 125%/150%/200%, NVDA, allowlist, cancellation, reconnection and permissions | BLOCKED | Same unavailable native Windows GUI automation prerequisite. |
+| Clean-user install/restart/recovery | Applicable | Fresh user profile, install/portable launch, sidecar restart and recovery | NOT RUN | Requires a real clean-user desktop session; not inferred from process smoke. |
+| WVQ-007 full workdir/lock/retry/cancel/reconnect semantics | Applicable | Native Windows lifecycle and file-handle matrix | NOT RUN | Only the QA cleanup failure was observed; the full semantic matrix remains a separate follow-up. |
+| WVQ-005 release security audit | Applicable | Defender/SmartScreen, signing/certificate, SBOM and release checksum audit | NOT RUN | No security-setting or release-signing workflow was authorized in this validation. |
+| Live Codex/PDF integration | Applicable | Authorized live translation against representative PDF | NOT RUN | No usage-bearing live request was authorized; mock integration remains scoped evidence only. |
+| Dependency advisory remediation | Not required for this validation | `npm audit fix` or major-version upgrade | NOT RUN | Advisories were recorded; no dependency or architecture change was made to force a clean report. |
+| Linux-only platform target | Not applicable | Linux AppImage/native Linux acceptance | NOT APPLICABLE | This round verifies the Windows E: workspace. |
+
+### Failure, blocking and validation-input analysis
+
+- The unresolved `FAIL` is a Windows file-handle lifecycle issue in the temporary validation harness: the QA CLI assertions passed, but the Python logging file `logs\cbpdf.log` was still locked during `TemporaryDirectory` cleanup. This does not identify a production-code failure and remains tracked under `WVQ-007`; cleanup assertions were not weakened.
+- The first unprivileged `uv` attempt was blocked by this machine's user-level uv cache/trampoline access boundary (`os error 183` / `os error 5`). The same commands passed under the approved validation command context; this is an execution-environment incident, not a project result.
+- The first fresh staging attempt used an invalid directory-creation parameter and flattened assets. It was discarded; a second staging with the real `assets\` layout passed. The first audit must not be counted as package evidence.
+- The stale audit failure was expected negative evidence and is recorded as a `PASS` for the rejection requirement. No business code, configuration or dependency was modified.
+- Current status counts: `PASS 20`, `FAIL 1`, `BLOCKED 3`, `NOT RUN 5`, `NOT APPLICABLE 1`.
+
+### Linux reconciliation after the CLI/QA-change revalidation
+
+- The revalidation input already contained the CLI log-handler release hardening (`src/codex_babeldoc/cli.py` + `tests/test_cli.py`), and the previously failing QA harness temporary cleanup **passed without the previous `WinError 32`**. Linux confirms the Windows-side scoping: this clears only the QA-harness cleanup path; it is not proof of the full `WVQ-007` work-dir/lock/retry/cancel/reconnect matrix, which remains `WINDOWS_VERIFICATION_PENDING`.
+- The `WVQ-009` stale bundle **negative audit** obtained direct native evidence this round (the preserved older sidecar was rejected with `sidecar predates newer Python sources`, expected exit 1). The `WVQ-009` queue item stays `WINDOWS_VERIFICATION_PENDING` overall because the packaged stale-GUI error observation and native desktop interaction are still `BLOCKED`.
+- The MSI administrative-extraction `BLOCKED` (90-second timeout without log/payload) and the native GUI `BLOCKED` groups are unchanged; clean-user, `WVQ-005` release security and live Codex/PDF remain `NOT RUN`. Overall status remains `WINDOWS_VERIFICATION_PENDING`.
+- No further Linux code change is made this round: the remaining failure owners are Windows-environment observations (Installer extraction path, native automation prerequisite), and speculative Linux-only changes would not be evidence for them.
+
+
+### Linux follow-up required
+
+1. Investigate and rerun the Windows fixture/log handle lifecycle under `WVQ-007`; preserve strict cleanup assertions and identify whether the holder is logging shutdown, a child process, the uv wrapper or Defender/antivirus.
+2. Provision a usable Windows Installer administrative-extraction path and obtain current-MSI payload/sidecar parity evidence; the current package build alone is insufficient.
+3. Run native Windows desktop validation for `WVQ-001` through `WVQ-004` and the stale-GUI portion of `WVQ-009`: Chinese rendering, keyboard, DPI, NVDA, picker/allowlist, Unicode and space-containing paths, permissions, cancellation, reconnection, window close, clean user and sidecar restart.
+4. Keep `WVQ-009` freshness plus runtime handshake as release gates; separately schedule the Defender/SmartScreen/signing/SBOM audit and any live Codex/PDF test with explicit authorization.
+
+Overall status remains `WINDOWS_VERIFICATION_PENDING`, not `WINDOWS_VERIFICATION_BLOCKING`.
+
+## Validation run: 2026-09-12 (current dirty tree revalidation)
+
+### Validation environment and source state
+
+- WSL source of truth: `W:\home\shiraishi\VSCode Workspace\Codex_Translator`, branch `dev`, HEAD `4e709d922849516c8162f5b17d387b32b5f42ceb` (`feat: add PDF QA battery, qa command and release operations guide`). The working tree remains dirty and includes the pre-existing sidecar/GUI/freshness/test/documentation changes; this is not a clean-commit validation.
+- Windows disposable workspace: `E:\Shiraishi\VSCode Workspace\Codex_Translator`. After inspecting and preserving E: local state, a filtered one-way WSL → E: sync on 2026-09-12 used `/FFT /COPY:DAT /DCOPY:DAT /IS /IT /XJ`; `.git`, virtual environments, `gui/node_modules`, Rust target, `build`, `dist`, `gui/dist`, caches, logs, state and user-content directories were excluded. Dry run and actual sync each reported 68 files, 0 failed files, and 17 E: extras preserved.
+- Ten changed/untracked code/test files were checked by SHA-256 after sync; `HASH_MISMATCHES=0`. Generated GUI assets were rebuilt locally in E: and were not reverse-synced.
+- Toolchain: `uv 0.12.10`; project `uv run` Python 3.12.13; system Python 3.14.7 was not used for project checks; Node.js 24.19.0; npm 11.17.0; Rust/cargo 1.98.0; PyInstaller 6.22.2; BabelDOC 0.6.4; openai-codex 0.147.0. `doctor` confirmed the configured Windows paths and authenticated Codex state; no usage-bearing live request was made.
+
+### Validation checklist
+
+| Item | Classification | Exact command or procedure | Status | Result |
+|---|---|---|---|---|
+| Controlled WSL-to-E synchronization and source parity | Required | Filtered `robocopy WSL E: /FFT /COPY:DAT /DCOPY:DAT /IS /IT /XJ` with documented exclusions, then SHA-256 comparison | PASS | 68 files copied, failed 0; 10 code/test hashes matched; E: extras preserved. |
+| Dependency synchronization and lock | Required | `uv sync --locked --extra runtime --extra dev`; `uv lock --check` | PASS | 95 resolved, 91 checked; lock valid. |
+| Python format/lint/compile | Required | `uv run ruff format --check .`; `uv run ruff check .`; `uv run python -m compileall -q src tests scripts` | PASS | 91 files formatted; Ruff and compileall passed. |
+| Python test suite | Required | `uv run pytest -q --tb=short` | PASS | `200 passed, 5 deselected` in 29.15s. |
+| Runtime doctor | Required | `uv run cbpdf --config config/example.toml doctor` | PASS | Python 3.12.13, BabelDOC 0.6.4, openai-codex 0.147.0, configured paths and ChatGPT login reported. |
+| GUI dependency install | Required | `npm.cmd --prefix gui ci` | PASS | 158 packages installed; esbuild postinstall remains pending approval; no dependency remediation was attempted. |
+| GUI full tests | Required | `npm.cmd --prefix gui test -- --run` | PASS | 4 files, 22 tests passed. |
+| GUI production build | Required | `npm.cmd --prefix gui run build` | PASS | TypeScript/Vite passed; 1,590 modules transformed. |
+| Tauri Rust host and config/icons | Required | `cargo check --manifest-path gui/src-tauri/Cargo.toml`; parse `tauri.conf.json`; check `icon.ico`/`icon.png` | PASS | Cargo passed; `productName=BabelCodex`; both required icons exist. |
+| Mock PDF integration | Required | `uv run pytest -q -m integration tests/test_e2e_mock.py` | PASS | `5 passed` in 231.37s; local mock path only. |
+| WVQ-008 QA CLI and artifact tamper detection | Required | Temporary mock job; `uv run cbpdf --config <temp-config> qa <job-id>`; delete one artifact and rerun | PASS | Initial `exit 0 / qa_status=passed / 2 artifacts`; tampered run `exit 1 / qa_status=failed`. |
+| QA fixture temporary cleanup | Applicable | Automatic cleanup of the same temporary fixture directory | FAIL | Reproduced `PermissionError: [WinError 32]` deleting `incoming\\fixture_two_column.pdf` after QA assertions. |
+| Current-source PyInstaller sidecar | Required | `uv run --extra runtime --with pyinstaller pyinstaller --clean --noconfirm scripts/babelcodex-service.spec` | PASS | SHA-256 `232198B0EF1A65C0D633F7423D6CE0C66DE7794C65389767EF6E6C4D441983F4`; 194,438,039 bytes. |
+| Frozen sidecar protocol v1 | Required | JSONL `get_server_info`, `list_jobs`, `shutdown` with `protocol_version=1` | PASS | Protocol 1, package 0.1.0, expected capabilities, preserved E: state visible, exit 0. |
+| Frozen invalid-worker request | Applicable | `dist\\babelcodex-service.exe --worker-request build\\missing-worker-request-validation-20260912-current.json` | PASS | Structured `WORKER_REQUEST_INVALID`, exit 2. |
+| Windows target-triple sidecar | Required | Copy fresh sidecar to `gui/src-tauri/binaries/babelcodex-service-x86_64-pc-windows-msvc.exe`; repeat v1 handshake | PASS | SHA-256 matched; handshake and shutdown exit 0. |
+| WVQ-009 fresh bundle audit | Required | `uv run python scripts/check_gui_bundle.py build\\windows-validation-staging-20260912 --target x86_64-pc-windows-msvc --source-tree . --manifest ...\\sha256.txt` | PASS | Corrected staging contained HTML/JS/CSS and both sidecars; audit passed. |
+| WVQ-009 stale bundle negative audit | Required | Same audit with preserved older sidecar | PASS | Expected exit 1: `sidecar predates newer Python sources`; stale input rejected. |
+| Current-source NSIS/MSI build | Required | `npm.cmd --prefix gui run tauri -- build --bundles nsis,msi` | PASS | NSIS SHA-256 `8662431EF3FB8FD73876EF3AE3461C17909BDE2044C4F7406965FC135A40FB5A` (195,784,569 bytes); MSI SHA-256 `56B0100F2A515B4CB4E55343FB8B224917F6587C3EB3C7D55BA2761B33677C19` (195,751,936 bytes). |
+| Release GUI process smoke | Applicable | Start `gui/src-tauri/target/release/babelcodex-gui.exe`, wait 8s, stop validation process | PASS | Process remained alive for 8s. GUI SHA-256 `78DA33D072FC911CE86946E021B563BC8AF02481696477F4ADF2CC992D644B8E`; 4,597,248 bytes. |
+| MSI administrative extraction and package parity | Applicable | `msiexec /a <MSI> TARGETDIR=<temp> /qn /norestart /L*v <log>`; inspect payloads | BLOCKED | First invocation hung over 3 minutes with no target/log output and was stopped; direct retry returned 0 but left a matching MSI process running and still produced no log or extracted exe. That validation process was stopped; no valid current-package extraction evidence. |
+| Packaged stale-GUI error observation | Required | Launch stale-sidecar GUI variant and observe native connection error | BLOCKED | `sky.list_apps()` failed: `Trusted RPC service is not configured: sky`; no native UI action was performed. |
+| Packaged GUI interaction/path/DPI/NVDA matrix | Required | Installed/portable picker, Chinese rendering, keyboard, DPI 125%/150%/200%, NVDA, allowlist, cancellation, reconnection, permissions | BLOCKED | Same unavailable native Windows GUI automation prerequisite. |
+| Clean-user installation and first launch | Required | Isolated Windows user/profile installation and first launch | NOT RUN | No disposable clean-user profile was entered. |
+| WVQ-007 work-dir cleanup/lock/retry semantics | Required | Cleanup, retention, locked-file retry, cancellation and reconnection matrix | NOT RUN | Separate semantic matrix remains outstanding; fixture cleanup FAIL is recorded independently. |
+| Defender/SmartScreen/signing/SBOM/release audit | Required | Formal release-security workflow | NOT RUN | Unsigned development packages; workflow not entered. |
+| Live Codex/PDF integration | Applicable | Real Codex-authenticated translation fixture | NOT RUN | Usage-bearing integration not authorized. |
+| Dependency advisory remediation | Applicable | `npm audit fix` | NOT RUN | Would mutate dependency state and is outside validation. |
+| Target Linux machine smoke | Not applicable to Windows execution | Target Linux runtime command | NOT APPLICABLE | Requires a target Linux machine. |
+
+### Failure and blocking analysis
+
+- The unresolved product-adjacent execution failure is the Windows `WinError 32` during temporary fixture cleanup. QA generation and artifact tamper rejection passed before cleanup; the failure is categorized as Windows file-handle/resource lifecycle and blocks claiming a clean fixture/work-directory lifecycle. No cleanup assertion was weakened.
+- Two validation-wrapper inputs were corrected and are not product failures: the first frozen-sidecar probe omitted `protocol_version=1` and received the expected structured unsupported-version error; the first fresh-audit staging copy used a literal wildcard and omitted GUI assets. The corrected v1 probe and corrected full-asset audit passed.
+- MSI admin extraction is `BLOCKED`, not `PASS`: the first explicit `msiexec` process had no target/log progress and was stopped; a direct retry returning exit 0 without payload is insufficient evidence. The native GUI rows are likewise `BLOCKED`, not passed; process-liveness smoke does not establish rendering, accessibility or interaction acceptance.
+- npm’s known moderate development-tool advisories and esbuild pending-script warning remain warnings; no automatic remediation was run. No business code, architecture, dependency lockfile or project configuration was modified during validation.
+
+### Linux reconciliation and hardening after the 2026-09-12 log-handle result
+
+- The failed artifact changed across rounds while the failure class stayed identical: earlier rounds locked `incoming\fixture_two_column.pdf` during temporary fixture cleanup, and this round locked the QA CLI's own freshly written `logs\cbpdf.log`. Two different artifacts failing the same way points at the short-lived CLI command's handle lifecycle rather than any single test artifact.
+- Linux-side hardening driven by this observation: `babelcodex` CLI `main()` now closes and detaches every root-logger `FileHandler` in a `finally` block (`_release_log_file_handlers`) at command completion, shortening the window in which the log file handle stays open instead of relying only on the `logging.shutdown()` atexit hook. A regression test (`test_cli_releases_log_file_handlers_at_exit`) pins handler detachment and stream closure. Linux gates after the change: `200 -> 201 passed, 5 deselected`, Ruff/format clean, GUI Vitest and `tsc --noEmit` clean.
+- This is a handle-exposure mitigation, not a claimed fix for the Windows cleanup failure. The `WinError 32` row above stays a historical `FAIL`, remains tracked under `WVQ-007`, and must be confirmed by a native Windows re-run with the current source; it must not be converted to `PASS` by this Linux-only change, and no cleanup assertion was weakened.
+
+### Linux follow-up required
+
+1. Investigate the Windows fixture file-handle cleanup failure and rerun the full WVQ-007 retention/cleanup/lock/retry/cancel/reconnect matrix; do not mask the issue with ignored cleanup errors.
+2. Resolve or provision the Windows Installer environment so current MSI administrative extraction can be performed with verifiable payloads and sidecar parity.
+3. Arrange native Windows desktop automation for WVQ-001/002/003/004 and WVQ-009 stale-GUI presentation: Chinese rendering, keyboard, DPI, NVDA, picker/allowlist, Unicode/path-space/permissions, cancellation, reconnection, window close, clean-user and sidecar restart/recovery.
+4. Retain WVQ-009 freshness audit and runtime handshake as regression gates after sidecar, protocol, PyInstaller or packaging changes.
+5. Complete Defender/SmartScreen, signing, SBOM and formal release audit; assess npm advisories separately; authorize live Codex/PDF integration only as a distinct usage-bearing task.
+
+### Final review
+
+- The current dirty WSL tree was synchronized one-way to E: with generated artifacts excluded; source parity was verified and every scoped item has an explicit status.
+- Current run summary: `PASS 19`, `FAIL 1`, `BLOCKED 3`, `NOT RUN 5`, `NOT APPLICABLE 1`. Overall status remains `WINDOWS_VERIFICATION_PENDING`; it is not `WINDOWS_VERIFICATION_BLOCKING`.
+- Validation produced no business-code, dependency, architecture or configuration changes. Only validation documentation is eligible for WSL write-back.
+
+## Validation run: 2026-09-11 (current dirty tree, WVQ-008/WVQ-009)
+
+### Validation environment and source state
+
+- WSL source of truth: `W:\home\shiraishi\VSCode Workspace\Codex_Translator`, branch `dev`, HEAD `4e709d922849516c8162f5b17d387b32b5f42ceb` (`feat: add PDF QA battery, qa command and release operations guide`). This is a dirty working-tree validation: the tree contains the pre-existing documentation changes, sidecar handshake and GUI protocol changes, `scripts/check_gui_bundle.py` freshness changes, their regression tests, `tests/test_e2e_mock.py` resource-scope changes, `scripts/build_linux_gui_bundle.sh` mode-only change, and untracked `gui/src/protocol.test.ts`; it is not a clean-commit validation.
+- Existing E: `.venv`, `gui/node_modules`, Rust target, build/dist, state/logs and user-data directories were inspected and preserved. The dry-run identified 71 source files to update and 20 E: extras; actual filtered WSL-to-E sync copied 71 files with zero failures (robocopy exit `3`). Fourteen changed/untracked source files were checked after sync and had `HASH_MISMATCHES=0`.
+- Windows 11 Professional Workstation Insider Preview `10.0.29661`, x64; `uv 0.12.10`; Python `3.12.13`; Node.js `24.19.0`; npm `11.17.0`; Rust/cargo `1.98.0`; PyInstaller `6.22.2`; BabelDOC `0.6.4`; openai-codex `0.147.0`.
+
+### Validation checklist
+
+| Item | Classification | Exact command or procedure | Status | Result |
+|---|---|---|---|---|
+| Controlled WSL-to-E synchronization and source parity | Required | Filtered `robocopy WSL E: /E /COPY:DAT /DCOPY:DAT /IS /IT /XJ` with dependency/cache/state/user-data exclusions, then SHA-256 comparison | PASS | 71 files copied, failed 0; 14 changed/untracked source files matched. E: extras were preserved. |
+| Dependency synchronization and lock | Required | `uv sync --locked --extra runtime --extra dev`; `uv lock --check` | PASS | 95 resolved, 91 checked; lock check passed. |
+| Python format/lint/compile | Required | `uv run ruff format --check .`; `uv run ruff check .`; `uv run python -m compileall -q src tests scripts` | PASS | 91 files formatted; Ruff and compileall passed. |
+| Python test suite | Required | `uv run pytest -q --tb=short` | PASS | `200 passed, 5 deselected` in 58.58s, including new handshake/freshness tests. |
+| Runtime doctor | Required | `uv run cbpdf --config config/example.toml doctor` | PASS | Python/BabelDOC/Codex detected; ChatGPT login active. |
+| GUI dependency install | Required | `npm.cmd --prefix gui ci` | PASS | 158 packages installed; 2 moderate advisories and an esbuild pending-script warning were reported. |
+| GUI full tests | Required | `npm.cmd --prefix gui test -- --run` | PASS | 4 files, 22 tests passed, including `protocol.test.ts` and stale-handshake coverage. |
+| GUI production build | Required | `npm.cmd --prefix gui run build` | PASS | TypeScript/Vite passed; 1,590 modules transformed; current JS asset `index-BEtFhpWU.js`. |
+| Tauri Rust host and config/icons | Required | `cargo check --manifest-path gui/src-tauri/Cargo.toml`; JSON/icon existence check | PASS | Cargo passed; `productName=BabelCodex`; `icon.ico` and `icon.png` exist. |
+| Current-source PDF QA mock integration | Required | `uv run pytest -q -m integration tests/test_e2e_mock.py` | PASS | `5 passed` in 194.44s; local mock fixture only, no paid Codex usage. |
+| WVQ-008 fixture QA CLI and tamper detection | Required | Windows temporary `fixture_two_column.pdf` mock job; subprocess `uv run cbpdf --config <temp-config> qa <job-id>`; delete one artifact and rerun | PASS | Initial QA returned `qa_status=passed` with 2 artifacts; after deletion CLI returned exit 1 and `qa_status=failed` as required. |
+| QA fixture temporary cleanup | Applicable | Cleanup of the same temporary mock-job directory after the CLI smoke | FAIL | `PermissionError: [WinError 32]` while unlinking `incoming\\fixture_two_column.pdf`; category: Windows-specific file-handle/resource cleanup. QA assertions completed before cleanup; cleanup behavior itself remains unresolved. |
+| Current-source PyInstaller sidecar | Required | `uv run --extra runtime --with pyinstaller pyinstaller --clean --noconfirm scripts/babelcodex-service.spec` | PASS | Fresh sidecar built; SHA-256 `701D83EF04689C87BFAFE93FB6A22D44A15903CA46843C5E9C431E40384BD97C`, 194,438,558 bytes. |
+| Frozen sidecar handshake and JSONL | Required | Frozen exe with protocol v1 `get_server_info`/`list_jobs`/`shutdown` | PASS | `protocol_version=1`, `package_version=0.1.0`, capability list includes `get_server_info`; exit 0. Preserved E: state was visible, so this was not an empty-state test. |
+| Frozen worker invalid request | Required | `dist/babelcodex-service.exe --worker-request build\\missing-worker-request-validation-20260911-handshake.json` | PASS | Structured `WORKER_REQUEST_INVALID`, exit 2. |
+| Windows target-triple sidecar | Required | `gui/src-tauri/binaries/babelcodex-service-x86_64-pc-windows-msvc.exe` with `get_server_info`/`shutdown` | PASS | Exit 0; input SHA-256 matched fresh sidecar. |
+| WVQ-009 fresh bundle source-tree audit | Required | `uv run python scripts/check_gui_bundle.py build\\windows-validation-staging-20260911-handshake --target x86_64-pc-windows-msvc --source-tree . --manifest ...\\sha256.txt` | PASS | Fresh Vite assets and sidecar passed source freshness and forbidden-content audit. |
+| WVQ-009 stale bundle negative audit | Required | Same audit with a preserved older sidecar fixture | PASS | Audit returned the expected exit 1 and reported `sidecar predates newer Python sources`; stale input was rejected. |
+| Current-source NSIS/MSI build | Required | `npm.cmd --prefix gui run tauri -- build --bundles nsis,msi` | PASS | Both bundles rebuilt using the fresh target-triple sidecar. |
+| Packaged GUI process smoke | Applicable | Start current `gui/src-tauri/target/release/babelcodex-gui.exe`, wait 8s, stop it | PASS | Process remained running for 8s. |
+| MSI administrative extraction and package parity | Applicable | `msiexec /a ... TARGETDIR=... /qn /L*v ...`; inspect extracted payloads and hashes | PASS | Admin extraction exit 0; extracted sidecar SHA-256 matched `701D...97C`; GUI and sidecar present. |
+| MSI-extracted sidecar handshake | Required | Extracted `PFiles\\BabelCodex\\babelcodex-service.exe` with `get_server_info`/`shutdown` | PASS | `protocol_version=1`, `package_version=0.1.0`, exit 0. |
+| MSI-extracted GUI process smoke | Applicable | Start extracted `babelcodex-gui.exe`, wait 8s, stop it | PASS | Process remained running for 8s. |
+| WVQ-009 packaged stale-GUI error observation | Required | Build/launch stale-sidecar GUI variant and observe native connection error | BLOCKED | Native GUI automation helper reported `Trusted RPC service is not configured: sky`; no desktop clicks or typing were performed. Static stale audit and GUI mock handshake tests passed, but packaged stale-GUI rendering/error presentation was not observed. |
+| Packaged GUI interaction/path/DPI/NVDA matrix | Required | Installed/portable picker, Chinese rendering, keyboard, DPI 125%/150%/200%, NVDA, allowlist, cancellation, reconnection, permissions | BLOCKED | Same unavailable native GUI automation/desktop observation prerequisite. |
+| Clean-user installation and first launch | Required | Isolated Windows user/profile install and first launch | NOT RUN | No disposable clean-user profile was entered. |
+| WVQ-007 work-dir cleanup/lock/retry semantics | Required | `cleanup --dry-run`, retained terminal dir, active-job survival, locked-file retry and category retry checks | NOT RUN | The separate semantic matrix was not run; the fixture cleanup `WinError 32` is recorded independently. |
+| Defender/SmartScreen/signing/SBOM/release audit | Required | Formal release-security workflow | NOT RUN | Development artifacts are unsigned; release-security workflow was not entered. |
+| Live Codex/PDF integration | Applicable | Real Codex-authenticated translation fixture | NOT RUN | Usage-bearing integration was not authorized; mock integration is not live acceptance. |
+| Dependency advisory remediation | Applicable | `npm audit fix` | NOT RUN | Not part of validation and would mutate dependency state. |
+| Target Linux machine smoke | Not applicable to Windows execution | Target Linux runtime command | NOT APPLICABLE | Must run on a target Linux machine. |
+
+### Failure and blocking analysis
+
+- The `WinError 32` cleanup failure is the only unresolved execution failure in this round. The QA command itself and its tamper-detection assertion passed before cleanup; the failure indicates a Windows file-handle/lifecycle issue in the temporary fixture workflow and should not be converted to a pass by ignoring cleanup errors. It does not block the independent static, unit, integration, sidecar, GUI-build or installer checks, but it blocks claiming the complete Windows cleanup path is clean.
+- The native GUI checks are `BLOCKED`, not passed: the available computer-use runtime has no configured trusted RPC service (`sky`). Process survival is insufficient evidence for native Chinese rendering, accessibility, stale-GUI error presentation or path interaction.
+- npm advisories and the pending esbuild script are warnings; no automatic remediation was attempted. No validation-scope business code, dependency lockfile or project configuration was modified.
+
+### Linux reconciliation and corrected attribution
+
+- The 2026-09-11 dirty-tree validation input already contained the `tests/test_e2e_mock.py` resource-scope change (PyMuPDF documents opened with context managers; recorded in the run header above). The QA assertions and tamper detection passed, but the harness-level temporary fixture cleanup still reported `PermissionError: [WinError 32]` while unlinking `incoming\fixture_two_column.pdf`. The test-scope change is therefore retained as test hygiene only and is not the cause of or a fix for this Windows cleanup failure.
+- Linux static review of the QA boundary found no handle leak in production code: `pdf_sanity.py`, `text_checks.py` and `layout_checks.py` close every PyMuPDF document with `try/finally` (or `with`). The remaining candidates for the `WinError 32` are in the Windows validation harness lifecycle (a not-yet-exited subprocess, an antivirus/Defender scan, or a `uv run` wrapper process still holding the fixture handle at deletion time).
+- Because the failure is a Windows-observed file-handle lifecycle issue with no reproducible Linux counterpart and no identified production-code owner, it stays recorded here as a historical `FAIL` and is tracked under `WVQ-007` (work-dir cleanup/retention/lock/retry semantics) for a native Windows re-run. It must not be converted to `PASS` by a Linux-only change, and no cleanup assertion was weakened.
+
+### Linux follow-up required
+
+1. Re-run the Windows QA fixture cleanup and the documented `WVQ-007` work-dir retention, cleanup, locked-file retry and category-retry matrix with the current source, and observe the harness-level fixture deletion directly. Do not weaken cleanup assertions merely to obtain a pass.
+2. Arrange a native Windows desktop/automation environment for `WVQ-001`/`WVQ-002`/`WVQ-003`/`WVQ-004` and the packaged stale-GUI error path: Chinese rendering, keyboard navigation, DPI 125%/150%/200%, NVDA, picker/allowlist, Unicode/path-space/permission cases, cancellation, reconnection, window close, clean-user install and sidecar restart/recovery.
+3. Retain the `WVQ-009` source-tree freshness audit and runtime handshake as regression gates; rerun them after future sidecar, protocol, PyInstaller or packaging changes.
+4. Complete Defender/SmartScreen, code-signing, SBOM and formal release-artifact audit (`WVQ-005`) before release claims.
+5. Assess the two npm moderate advisories and esbuild pending-script warning separately; do not auto-fix during validation.
+6. Run real Codex/PDF integration only as an explicitly authorized usage-bearing task.
+
+### Final review
+
+- The current WSL dirty tree was synchronized to E: and all current-source automated, mock-PDF, QA CLI, handshake, freshness-audit, GUI-build and NSIS/MSI checks were executed. Fresh sidecar SHA-256 is `701D83EF04689C87BFAFE93FB6A22D44A15903CA46843C5E9C431E40384BD97C`; GUI is `FBBDE4A9461FB6ADE3F4BDF9F515E8D0B0D91F6D5A3B3F3B80B0044EFB9FF8FA` (4,597,248 bytes); NSIS is `6BBBDAE445BB514A1A2DBE244B26F96F9F0D5936A7BA4B53AFAE1C242AF4A77F` (195,785,152 bytes); MSI is `6EBEC6E108667A3D8EC7D43DC1F0C4B17E5EB2F74BDC8966B5E315B054E436F1` (195,751,936 bytes).
+- The current run has one unresolved `FAIL` (Windows fixture cleanup) and two `BLOCKED` native GUI groups; all other executed checks are `PASS`. Remaining unexecuted items are explicitly `NOT RUN`, and target Linux smoke is `NOT APPLICABLE`.
+- No business code, architecture, dependency lockfile or project configuration was modified. Only generated validation artifacts changed in E:, and only validation documentation is eligible for WSL write-back.
+- Overall status remains `WINDOWS_VERIFICATION_PENDING`; the new failure and blockers do not make Linux development blocking, but they must be resolved or explicitly accepted before Windows release/desktop acceptance claims.
+
+## Validation run: 2026-09-11 (current Linux HEAD, PDF QA and release path)
+
+### Validation environment and source state
+
+- WSL source of truth: `W:\home\shiraishi\VSCode Workspace\Codex_Translator`, branch `dev`, HEAD `4e709d922849516c8162f5b17d387b32b5f42ceb` (`feat: add PDF QA battery, qa command and release operations guide`, 2026-09-11 09:56:34 +08:00). The working tree is dirty only by the pre-existing mode-only change to `scripts/build_linux_gui_bundle.sh`; this is a working-tree validation, not a clean-commit validation.
+- Existing E: `.venv`, `gui/node_modules`, Rust target, build/dist, state/logs and user-data directories were inspected and preserved. The first filtered sync did not copy the newly committed PDF-QA/release files; validation was not run on that incomplete copy. A corrective WSL-to-E sync with `/IS /IT /XJ` copied 68 files with zero failures, and all newly required file hashes matched (`NEW_FILE_HASH_MISMATCHES=0`).
+- Windows 11 Professional Workstation Insider Preview `10.0.29661`, x64; `uv 0.12.10`; Python `3.12.13`; Node.js `24.19.0`; npm `11.17.0`; Rust/cargo `1.98.0`; PyInstaller `6.22.2`; BabelDOC `0.6.4`; openai-codex `0.147.0`.
+
+### Validation checklist
+
+| Item | Classification | Exact command or procedure | Status | Result |
+|---|---|---|---|---|
+| Controlled WSL-to-E synchronization and source parity | Required | Filtered `robocopy WSL E: /E /COPY:DAT /DCOPY:DAT /IS /IT /XJ` with dependency/cache/state/user-data exclusions, then SHA-256 comparison | PASS | Corrective sync copied 68 files, failed 0; current QA/release files matched. |
+| Dependency synchronization and lock | Required | `uv sync --locked --extra runtime --extra dev`; `uv lock --check` | PASS | 95 resolved, 91 checked; lock check passed. |
+| Python format/lint | Required | `uv run ruff format --check .`; `uv run ruff check .` | PASS | 91 files already formatted; Ruff passed. |
+| Python compileall | Applicable | `uv run python -m compileall -q src tests scripts` | PASS | Exit 0. |
+| Python test suite | Required | `uv run pytest -q --tb=short` | PASS | `196 passed, 5 deselected` in 53.28s. |
+| Runtime doctor | Required | `uv run cbpdf --config config/example.toml doctor` | PASS | Python/BabelDOC/Codex detected; ChatGPT login active. |
+| GUI dependency install | Required | `npm.cmd --prefix gui ci` | PASS | 158 packages installed; npm reported 2 moderate advisories and an esbuild pending-script warning. |
+| GUI full tests | Required | `npm.cmd --prefix gui test -- --run` | PASS | 3 files, 19 tests passed. |
+| GUI focused store tests | Applicable | `npm.cmd --prefix gui test -- --run src/jobStore.test.ts` | PASS | 8 tests passed. |
+| GUI production build | Required | `npm.cmd --prefix gui run build` | PASS | TypeScript/Vite passed; 1,590 modules transformed. |
+| Tauri Rust host and config/icons | Required | `cargo check --manifest-path gui/src-tauri/Cargo.toml`; JSON/icon existence check for `gui/src-tauri/tauri.conf.json` | PASS | Cargo passed; `productName=BabelCodex`; `icon.ico` and `icon.png` exist. |
+| Current-source PDF QA mock integration | Required | `uv run pytest -q -m integration tests/test_e2e_mock.py` | PASS | `5 passed` in 411.37s; local mock fixture only, no paid Codex usage. |
+| QA CLI/service/MCP coverage | Required | Full Python suite including `test_qa_cli_reports_passing_output`, `test_run_qa_tool_is_scoped` and QA end-to-end tests | PASS | Covered by the 196-test suite; generated QA reports and passing QA status were asserted. |
+| Current-source PyInstaller sidecar | Required | `uv run --extra runtime --with pyinstaller pyinstaller --clean --noconfirm scripts/babelcodex-service.spec` | PASS | Fresh sidecar built; SHA-256 `DD99EFC90C3960A27025CC5913BE0835CAA521D8DF332678D7A57D2DEE1496E6`, 194,430,767 bytes. |
+| Frozen sidecar JSONL | Required | Frozen exe with protocol v1 `list_jobs`/`shutdown` | PASS | `ok=true`, structured responses, exit 0; preserved E: state was visible, so the list was not an empty-state test. |
+| Frozen worker invalid request | Required | `dist/babelcodex-service.exe --worker-request build\\missing-worker-request-validation-20260911-current.json` | PASS | Structured `WORKER_REQUEST_INVALID`, exit 2. |
+| Windows target-triple sidecar | Required | `gui/src-tauri/binaries/babelcodex-service-x86_64-pc-windows-msvc.exe` with protocol v1 `list_jobs`/`shutdown` | PASS | Exit 0; target input hash matched fresh sidecar `DD99...496E6`. |
+| First GUI bundle audit attempt | Applicable | `uv run python scripts/check_gui_bundle.py build\\windows-validation-staging-20260911-current --target x86_64-pc-windows-msvc --manifest ...\\sha256.txt` | FAIL | Temporary staging used only `babelcodex-service.exe`; audit required the target-triple filename. Validation wrapper/staging error, not product code. |
+| Corrected GUI/sidecar bundle audit | Required | Same audit after adding `babelcodex-service-x86_64-pc-windows-msvc.exe` | PASS | Current Vite assets and fresh sidecar passed; manifest written. |
+| Current-source NSIS/MSI build | Required | `npm.cmd --prefix gui run tauri -- build --bundles nsis,msi` | PASS | Both bundles rebuilt from current GUI and refreshed sidecar input. |
+| Packaged GUI process smoke | Applicable | Start `gui/src-tauri/target/release/babelcodex-gui.exe`, wait 8s, stop validation process | PASS | Process remained running for 8s. |
+| First MSI-extracted sidecar smoke | Required | First rebuilt MSI, `msiexec /a ... TARGETDIR=... /qn`, then extracted sidecar with current example config | FAIL | MSI embedded stale target-triple sidecar hash `4577E0D4...`; config load failed with `TranslationConfig.__init__() got an unexpected keyword argument 'retry_policy'`. Packaging input was stale. |
+| Corrected MSI administrative extraction | Applicable | Replaced only the E: target-triple sidecar input with fresh `DD99...496E6`, rebuilt MSI, then `msiexec /a ... /qn /L*v ...` | PASS | Admin extraction exit 0; extracted GUI and sidecar found. |
+| Corrected MSI-extracted sidecar smoke | Required | Extracted `PFiles\\BabelCodex\\babelcodex-service.exe` with protocol v1 `list_jobs`/`shutdown` and `config/example.toml` | PASS | Exit 0; extracted sidecar hash `DD99...496E6` matched fresh sidecar. |
+| Corrected MSI-extracted GUI process smoke | Applicable | Start extracted `babelcodex-gui.exe`, wait 8s, stop validation process | PASS | Process remained running for 8s. |
+| Packaged GUI interaction/path matrix | Required | Installed/portable picker, Chinese rendering, keyboard/DPI/NVDA, allowlist, cancellation, reconnection, clean-user and permission matrix | NOT RUN | No suitable disposable native desktop/isolated-user acceptance environment was entered. |
+| Defender/SmartScreen/signing/SBOM/release audit | Required | Formal release-security workflow | NOT RUN | Development artifacts are unsigned; release-security workflow was not entered. |
+| Live Codex/PDF integration | Applicable | Real Codex-authenticated translation fixture | NOT RUN | Usage-bearing integration was not authorized; mock PDF integration is not a live-acceptance substitute. |
+| Dependency advisory remediation | Applicable | `npm audit fix` | NOT RUN | Not part of validation and would mutate dependency state. |
+| Target Linux machine smoke | Not applicable to Windows execution | Target Linux runtime command | NOT APPLICABLE | Must run on a target Linux machine. |
+
+### Failure and blocking analysis
+
+- The two `FAIL` results were resolved validation-input issues, not unresolved current-source product failures. The first bundle audit staging missed the required target-triple filename. The first Tauri/MSI build consumed the stale E: target-triple sidecar (`4577E0D4...`) instead of the freshly rebuilt current-source sidecar; its `retry_policy` config incompatibility was therefore a packaging-input drift finding. After refreshing that generated E: input and rebuilding, direct target-triple, NSIS/MSI extraction, extracted sidecar and extracted GUI checks passed.
+- No check was `BLOCKED`. npm advisories and the pending esbuild script are warnings, not automatic remediation targets for this validation.
+
+### Linux follow-up required
+
+1. Treat the current PDF QA battery and local mock-PDF gate as retained regression coverage; rerun it on Linux and Windows after future QA, BabelDOC, worker or artifact-manifest changes.
+2. Arrange native Windows installed/portable GUI acceptance for Chinese rendering, keyboard navigation, DPI 125%/150%/200%, NVDA, picker/allowlist, non-ASCII and space-containing paths, cancellation, reconnection, window close and permissions.
+3. Run clean-user first-launch validation separately.
+4. Complete Defender/SmartScreen, code-signing, SBOM and formal release-artifact audit (`WVQ-005`) before release claims.
+5. Assess the two npm moderate advisories and esbuild pending-script warning as a separate dependency decision; do not auto-fix them during validation.
+6. Run real Codex/PDF integration only as an explicitly authorized usage-bearing task.
+
+### Final review
+
+- All current-source automated, mock-PDF, frozen-sidecar, GUI-build, bundle-audit and NSIS/MSI package checks completed after corrective synchronization. The run contains two recorded `FAIL` attempts caused by validation staging/package-input drift; their corrected reruns are `PASS`.
+- Remaining gaps are explicitly `NOT RUN`; target Linux smoke is `NOT APPLICABLE`; there are no `BLOCKED` checks.
+- No business code, architecture, dependency lockfile or project configuration was modified. Only generated validation artifacts changed in E:, and only the three validation documents are eligible for Linux write-back.
+- Overall status remains `WINDOWS_VERIFICATION_PENDING` because real desktop interaction, clean-user, accessibility, security/release and live Codex/PDF checks remain outstanding.
+
 ## Validation run: 2026-09-10 (latest Linux working tree, current UI revalidation)
 
 ### Validation environment and source state
@@ -1327,3 +2158,270 @@ The first frozen JSONL probe omitted the required `protocol_version` field and c
 - Every applicable item has an explicit status. This round has no `FAIL` or `BLOCKED`; remaining gaps are explicitly `NOT RUN`, and target Linux smoke is `NOT APPLICABLE`.
 - No business code, architecture, dependency lockfile or configuration was modified during validation. Windows outputs remain disposable E: artifacts.
 - Overall status remains `WINDOWS_VERIFICATION_PENDING` because real desktop interaction, clean-user and release-security checks are still outstanding.
+
+## Validation run: 2026-09-12 (current Linux dirty tree, fresh sidecar/package rerun)
+
+### Validation environment and source state
+
+- WSL source of truth: `W:\home\shiraishi\VSCode Workspace\Codex_Translator`, branch `dev`, HEAD `4e709d922849516c8162f5b17d387b32b5f42ceb` (`feat: add PDF QA battery, qa command and release operations guide`). The working tree was dirty and included 12 code/test files (including untracked `gui\src\protocol.test.ts`), five documentation files, and a mode-only script change; this was a working-tree validation, not a clean-commit validation.
+- Windows disposable workspace: `E:\Shiraishi\VSCode Workspace\Codex_Translator`. The target was inspected before sync. Filtered one-way `robocopy` WSL → E: used `/E /FFT /COPY:DAT /DCOPY:DAT /IS /IT /XJ /R:0 /W:0`, excluding `.git`, `.venv`, `.pytest_cache`, `.ruff_cache`, `gui\node_modules`, Rust target, `build`, `dist`, `gui\dist`, `logs`, `state`, `incoming`, `translated`, `glossary`, `context`, and `*.pdf/*.log/*.pyc/*.db/*.sqlite`. Dry-run and actual sync each copied 67 files, failed 0 files, and preserved 17 E: extras; Robocopy exit 3 is expected for this non-purge mirror.
+- SHA-256 matched for 24 selected changed/control files, including all 12 changed or untracked code/test files and the validation/Plan/configuration documents (`HASH_MISMATCHES=0`). E: local `.venv`, `gui\node_modules`, Rust target, existing generated artifacts, state and logs remained outside the sync scope. No Windows source or generated output was synchronized back to WSL.
+- Windows 11 Professional Workstation Insider Preview `10.0.29661`, x64; `uv 0.12.10`; project Python `3.12.13`; Node.js `24.19.0`; npm `11.17.0`; Rust/cargo `1.98.0`; PyInstaller `6.22.2`; BabelDOC `0.6.4`; openai-codex `0.147.0`; Visual Studio Build Tools `17.14.39`; WebView2 `152.0.4191.66`. `doctor` reported authenticated ChatGPT state; no usage-bearing live request was made.
+
+### Validation checklist
+
+| Item | Classification | Exact command or procedure | Status | Result |
+|---|---|---|---|---|
+| Controlled WSL-to-E synchronization and source parity | Required | Filtered `robocopy` and SHA-256 comparison | PASS | 67 files copied, 0 failed, 17 E: extras preserved; selected source/control hashes matched. |
+| Dependency synchronization and lock | Required | `uv sync --locked --extra runtime --extra dev`; `uv lock --check` | PASS | 95 resolved, 91 checked; lock valid. |
+| Python format/lint/compile | Required | `uv run ruff format --check .`; `uv run ruff check .`; `uv run python -m compileall -q src tests scripts` | PASS | 91 files formatted; Ruff and compileall passed. |
+| Python test suite | Required | `uv run pytest -q --tb=short` | PASS | `201 passed, 5 deselected` in 50.42s. |
+| Runtime doctor | Required | `uv run cbpdf --config config/example.toml doctor` | PASS | Python/BabelDOC/Codex runtime, configured paths and ChatGPT login reported. |
+| GUI dependency install | Required | `npm.cmd --prefix gui ci` | PASS | 158 packages installed; 2 moderate advisories and esbuild pending-script warning recorded, no remediation run. |
+| GUI full tests | Required | `npm.cmd --prefix gui test -- --run` | PASS | 4 files, 22 tests passed. |
+| GUI production build | Required | `npm.cmd --prefix gui run build` | PASS | TypeScript/Vite passed; 1,590 modules transformed. |
+| Tauri Rust host and config/icons | Required | `cargo check --manifest-path gui/src-tauri/Cargo.toml`; parse `tauri.conf.json`; check `icon.ico`/`icon.png` | PASS | Cargo passed; `productName=BabelCodex`; both icons exist. |
+| Mock PDF integration | Required | `uv run pytest -q -m integration tests/test_e2e_mock.py` | PASS | `5 passed` in 180.16s; local mock path only. |
+| WVQ-008 QA CLI and artifact tamper detection | Required | Temporary mock job; `uv run cbpdf --config <temp-config> qa <job-id>`; delete one artifact and rerun | PASS | Initial QA `exit 0 / qa_status=passed` for mono/dual outputs; tampered run `exit 1 / qa_status=failed`; 2 reports generated. |
+| QA fixture temporary cleanup | Applicable | Automatic cleanup of the same temporary QA directory | PASS | Cleanup completed; previous `WinError 32` was not reproduced on the current CLI handler-release path. |
+| Current-source PyInstaller sidecar | Required | `uv run --extra runtime --with pyinstaller pyinstaller --clean --noconfirm scripts/babelcodex-service.spec` | PASS | `dist\babelcodex-service.exe`, SHA-256 `29D0A257C35835440831EAF13AD4A4F788C490A52CBB8521FD3FC76B0BD02AC4`, 194,439,805 bytes. |
+| Frozen sidecar protocol v1 | Required | Frozen exe JSONL `get_server_info`, `list_jobs`, `shutdown` with `protocol_version=1` | PASS | Protocol 1, package 0.1.0, expected capabilities, preserved E: state visible, exit 0. |
+| Frozen invalid worker request | Applicable | `dist\babelcodex-service.exe --worker-request build\missing-worker-request-validation-20260912-current-run.json` | PASS | Structured `WORKER_REQUEST_INVALID`, exit 2. |
+| Windows target-triple sidecar | Required | Copy fresh sidecar to `gui\src-tauri\binaries\babelcodex-service-x86_64-pc-windows-msvc.exe`; repeat v1 handshake | PASS | SHA-256 matched fresh sidecar; handshake and shutdown exit 0. |
+| WVQ-009 fresh bundle audit | Required | `uv run python scripts/check_gui_bundle.py <fresh-stage> --target x86_64-pc-windows-msvc --source-tree . --manifest <stage>\sha256.txt` with real `gui\dist` assets | PASS | Fresh HTML/JS/CSS and target sidecar passed; exit 0. |
+| WVQ-009 stale bundle negative audit | Required | Same audit with preserved 2026-09-10 sidecar (`4577E0D4...`) | PASS | Expected exit 1 with `sidecar predates newer Python sources`; stale input rejected. |
+| Current-source NSIS/MSI build | Required | `npm.cmd --prefix gui run tauri -- build --bundles nsis,msi` | PASS | NSIS SHA-256 `D7AD204A78D299942BDAD69D864F8ED15447AA5E512E46898D757D4C024BD2B2`, 195,785,769 bytes; MSI SHA-256 `114EE0EC1878C0E836CADF6884BA537286A4BBB78F20E3D55EEDF09B551F30BB`, 195,751,936 bytes. |
+| Release GUI process smoke | Applicable | Start `gui\src-tauri\target\release\babelcodex-gui.exe`, wait 8s, stop only validation process | PASS | Process remained alive for 8s; GUI SHA-256 `DAEEBE7F5555DFB7AA61FD68D6DF24177FE3C188FF2F672A44845226BA8F7597`, 4,597,248 bytes. |
+| MSI administrative extraction and package parity | Applicable | `msiexec /a <MSI> TARGETDIR=<temp> /qn /norestart /L*v <log>`; inspect payloads and hashes | PASS | Exit 0; 84,772-byte log and two payloads produced; extracted sidecar SHA-256 matched fresh sidecar. |
+| MSI-extracted sidecar handshake | Required | Extracted `PFiles\BabelCodex\babelcodex-service.exe` with v1 `get_server_info`/`list_jobs`/`shutdown` | PASS | Protocol 1, package 0.1.0, expected capabilities, exit 0. |
+| MSI-extracted GUI process smoke | Applicable | Start extracted `PFiles\BabelCodex\babelcodex-gui.exe`, wait 8s, stop validation process | PASS | Process remained alive for 8s. |
+| Packaged stale-GUI error observation | Required | Launch stale-sidecar GUI variant and observe native connection error | BLOCKED | `Blocker: COMPUTER_USE_UNAVAILABLE`. One reasonable retry was attempted after the trusted Node process exited; the retry returned `helper_unknown_error: setup refresh had errors`. No native UI action/evidence was obtained. See `WIN-MANUAL-001`. |
+| Packaged GUI interaction/path/DPI/NVDA matrix | Required | Installed/portable picker, Chinese rendering, keyboard, DPI 125%/150%/200%, NVDA, allowlist, cancellation, reconnection and permissions | BLOCKED | `Blocker: COMPUTER_USE_UNAVAILABLE`. The same unavailable desktop-control capability prevented interaction; one retry was not useful after the shared automation prerequisite had failed. Process smoke, GUI tests, bundle audit and sidecar checks are narrower non-GUI evidence and do not replace this item. See `WIN-MANUAL-002` through `WIN-MANUAL-005`. |
+| Clean-user installation and first launch | Required | Isolated Windows user/profile installation and first launch | NOT RUN | No disposable clean-user profile was entered. |
+| WVQ-007 work-dir cleanup/lock/retry/cancel/reconnect semantics | Applicable | Native Windows lifecycle and file-handle matrix | NOT RUN | Broader semantic matrix remains outstanding; QA harness cleanup pass does not prove it. |
+| WVQ-005 Defender/SmartScreen/signing/SBOM/release audit | Applicable | Formal release-security workflow | NOT RUN | Development artifacts are unsigned; formal workflow was not entered. Read-only signatures were `NotSigned`. |
+| Live Codex/PDF integration | Applicable | Authorized live translation fixture | NOT RUN | No usage-bearing request was authorized; mock integration is not live acceptance. |
+| Dependency advisory remediation | Applicable | `npm audit fix` or upgrade | NOT RUN | Outside validation and would mutate dependency state. |
+| Target Linux machine smoke | Not applicable | Linux-native runtime command | NOT APPLICABLE | Requires a target Linux machine. |
+
+### Failure, blocking and follow-up analysis
+
+- No current product `FAIL` occurred. The earlier Windows `WinError 32` temporary QA cleanup failure was re-tested against the current CLI handler-release path and cleanup passed. This clears only the QA harness cleanup path; the full WVQ-007 work-dir/lock/retry/cancel/reconnect matrix remains unexecuted.
+- The native GUI and packaged stale-GUI presentation checks are `BLOCKED`, not failed: `Blocker: COMPUTER_USE_UNAVAILABLE`. The stale-GUI probe received one reasonable retry (trusted Node process exit, then `helper_unknown_error: setup refresh had errors`); the shared GUI interaction probe was not repeatedly retried after the same capability failure. No native UI action or evidence was obtained.
+- Independent validation continued after these blockers: builds, CLI tests, unit/integration tests, filesystem/package checks, configuration checks, log-independent sidecar/process checks and installer verification were executed. Existing non-GUI evidence proves only narrower contracts and does not reclassify the GUI-only observations as `PASS`.
+- Manual queue mapping: stale-GUI presentation → `WIN-MANUAL-001`; packaged GUI rendering/keyboard → `WIN-MANUAL-002`; DPI/NVDA/window lifecycle → `WIN-MANUAL-003`; picker/path/cancellation/reconnection → `WIN-MANUAL-004`; clean-user/restart/recovery → `WIN-MANUAL-005`. The manual entries remain incomplete until a human operator or working automation session records `PASS`, `FAIL` or `BLOCKED` with evidence.
+- MSI administrative extraction is current native PASS evidence: the documented quoted `/a`, `TARGETDIR` and `/L*v` invocation produced a log and payloads; the extracted sidecar matched the fresh build and both extracted smoke checks passed.
+- The two moderate npm advisories, esbuild pending-script warning, and unsigned development artifacts are recorded observations. No automatic dependency remediation, signing workflow, business-code change, configuration change or lockfile change was performed.
+
+### End-of-validation result summary
+
+#### Automated PASS
+
+- WSL-to-E synchronization and selected source/control hash parity;
+- dependency synchronization and lock validation;
+- Python formatting, linting, compilation and full tests (`201 passed, 5 deselected`);
+- runtime doctor, GUI tests (`22`), TypeScript/Vite build, Tauri checks and mock PDF integration;
+- QA positive/tamper detection and temporary cleanup;
+- current-source PyInstaller sidecar, protocol-v1/target-triple handshake, invalid-worker negative path, fresh/stale bundle audit, NSIS/MSI build, MSI extraction/parity and extracted sidecar/GUI process smoke.
+
+#### Automated FAIL
+
+- None in the current run. Historical failures remain in their original validation records and are not erased by this run.
+
+#### BLOCKED
+
+- **Packaged stale-GUI error observation** — `Blocker: COMPUTER_USE_UNAVAILABLE`. One reasonable retry was attempted: the trusted Node process exited, then the retry returned `helper_unknown_error: setup refresh had errors`. No native UI action or conclusion was obtained. Manual queue: `WIN-MANUAL-001`.
+- **Packaged GUI interaction/path/DPI/NVDA matrix** — `Blocker: COMPUTER_USE_UNAVAILABLE`. The shared desktop-control capability was unavailable; no repeated retries were made after the capability failure. Process smoke, GUI tests, bundle audit and sidecar checks continued independently but prove narrower contracts only. Manual queue: `WIN-MANUAL-002` through `WIN-MANUAL-005`.
+
+#### Manual validation required
+
+- `WIN-MANUAL-001` through `WIN-MANUAL-005` remain `NOT_RUN` until a human operator or working Windows automation session performs the detailed procedures and records `PASS`, `FAIL` or `BLOCKED` with evidence.
+- `WIN-MANUAL-006` remains `NOT_RUN` pending release authorization and the separately controlled live Codex/PDF workflow. It must not be started by ordinary validation or consume paid/plan model usage implicitly.
+
+### Linux follow-up required
+
+1. Provision a usable native Windows desktop automation surface and run `WVQ-001` through `WVQ-004` plus the stale-GUI portion of `WVQ-009`: Chinese rendering, keyboard, DPI, NVDA, picker/allowlist, Unicode and path-space/permission cases, cancellation, reconnection, window close, clean-user and sidecar restart/recovery.
+2. Run the broader native Windows `WVQ-007` work-dir retention/cleanup/lock/retry/cancel/reconnect matrix; retain strict cleanup assertions even though the isolated QA cleanup now passes.
+3. Complete `WVQ-005` Defender/SmartScreen, signing, SBOM and formal release audit when release validation is authorized; assess npm advisories separately.
+4. Run live Codex/PDF integration only as a separately authorized usage-bearing task.
+
+### Final review
+
+- Current dirty WSL source was synchronized one-way to E:; 24 selected control/changed files matched, excluded local state remained preserved, and no validation process remained running.
+- Current row summary: `PASS 23`, `FAIL 0`, `BLOCKED 2`, `NOT RUN 5`, `NOT APPLICABLE 1`. Overall status remains `WINDOWS_VERIFICATION_PENDING`, not `WINDOWS_VERIFICATION_BLOCKING`.
+- This validation changed no WSL business code, dependencies, architecture or configuration. The only intended WSL write-back is this validation record and the matching plan/compatibility summaries.
+## Manual Windows Validation Queue handoff (2026-09-12)
+
+The automated native desktop surface was unavailable. The automated rows above
+therefore remain `BLOCKED` with `Blocker: COMPUTER_USE_UNAVAILABLE`; this
+handoff does not reclassify them as `PASS`. The detailed entries in the
+`Manual Windows Validation Queue` above are the authoritative manual checklist.
+Until an operator returns observations, the manual attempts have no conclusion
+and must remain `NOT_RUN` (or become `BLOCKED` with the applicable blocker if
+the human session itself cannot be controlled).
+
+| Test ID | Test name | Automated status | Blocker | Manual status | Manual procedure |
+|---|---|---|---|---|---|
+| `WIN-MANUAL-001` | Packaged stale-sidecar GUI error presentation | `BLOCKED` | `COMPUTER_USE_UNAVAILABLE` | `NOT_RUN` | Use the stale-sidecar package and follow the detailed steps above; verify an actionable startup/connection error before any job begins. |
+| `WIN-MANUAL-002` | Packaged GUI Chinese rendering and keyboard flow | `BLOCKED` | `COMPUTER_USE_UNAVAILABLE` | `NOT_RUN` | Follow the default-size, screen-label and `Tab`/`Shift+Tab` steps above; capture focus and layout evidence. |
+| `WIN-MANUAL-003` | DPI, NVDA and window lifecycle | `BLOCKED` | `COMPUTER_USE_UNAVAILABLE` | `NOT_RUN` | Repeat at 125%, 150% and 200%, run NVDA, resize, close and reopen; record scale and accessibility evidence. |
+| `WIN-MANUAL-004` | Picker, allowlist, paths, cancellation and reconnection | `BLOCKED` | `COMPUTER_USE_UNAVAILABLE` | `NOT_RUN` | Exercise allowed/denied, Unicode/space, missing/restricted paths, cancellation, artifact tamper and sidecar restart steps above. |
+| `WIN-MANUAL-005` | Clean-user installation, restart and recovery | `NOT_RUN` | Clean-user session pending; use `COMPUTER_USE_UNAVAILABLE` if the required desktop cannot be controlled | `NOT_RUN` | Install in an isolated user profile, start a mock job, restart the service, verify safe recovery and explicit retry. |
+| `WIN-MANUAL-006` | Release security and authorized live Codex/PDF acceptance | `NOT_RUN` | Authorization and release workflow pending | `NOT_RUN` | Execute only after written authorization and follow the security/live-integration steps above; no live request is permitted from this handoff. |
+Handoff directory: `E:\Shiraishi\VSCode Workspace\Codex_Translator\build\manual-gui-validation-20260912-152358`.
+
+The fresh pair contains the current GUI (`DAEEBE7F...8F7597`) and current sidecar (`29D0A257...BD02AC4`). The stale pair contains the same current GUI and the preserved older sidecar (`4577E0D453C8665507981A6D33620C4D41F9E80D78C22CF2D765C9D55400C06A`, built 2026-09-10). A read-only probe of that old sidecar reproduced `TypeError: TranslationConfig.__init__() got an unexpected keyword argument 'retry_policy'`, so the stale-GUI check must verify whether the GUI presents that startup incompatibility as an actionable user-facing error. Do not start a live Codex translation during this manual handoff.
+
+Until the manual result fields are returned, the Linux follow-up remains:
+complete `WVQ-001` through `WVQ-004`, the packaged stale-GUI part of `WVQ-009`,
+and the clean-user/release checks on a native Windows desktop, then reconcile
+the statuses here. No business code, dependency, architecture or
+configuration was changed for this handoff.
+
+For each completed manual entry, fill in:
+
+```text
+Result: PASS | FAIL | BLOCKED
+Notes:
+Error:
+Evidence:
+```
+
+Collect screenshots, exact error text, relevant GUI/sidecar logs, Windows Event
+Viewer entries for crashes, process status, package and sidecar hashes, and
+reproduction steps. Do not include credentials or full document text.
+
+## Manual GUI validation results (2026-09-12, operator report)
+
+The operator completed the prepared fresh/stale GUI handoff and returned observations without screenshots. The following statuses are based on the report; screenshots are supplementary evidence, not required to record the initial result.
+
+| Check | Classification | Status | Actual observation |
+|---|---|---|---|
+| M-GUI-01 fresh/stale launch and native window operations | Required | PASS | Both fresh and stale GUIs opened; title, move, resize, minimize, restore and close had no reported abnormality. |
+| M-GUI-02 page navigation and layout stability | Required | FAIL | Page switching was basically usable, but elements visibly jumped on some pages, including Settings. The operator suspects the New Translation page scrollbar changes the layout width; this remains a hypothesis until isolated. |
+| M-GUI-03 keyboard and focus | Required | NOT RUN | Explicitly skipped. |
+| M-GUI-03 NVDA | Required | NOT RUN | Explicitly skipped. |
+| M-GUI-04 display scaling/DPI | Required | NOT RUN | Explicitly skipped. |
+| M-GUI-05 native file picker open/cancel and PDF select/load | Required | PASS | Picker opened and cancelled normally; a PDF could be selected and loaded. |
+| M-GUI-05 native PDF drag-and-drop | Required | FAIL | Dragging a PDF into the drop zone did not load it. |
+| M-GUI-06 sidecar cancellation/restart/reconnect lifecycle | Applicable | NOT RUN | No observation was supplied and no live translation was started. |
+| Packaged stale-GUI error presentation | Required | FAIL | The stale GUI opened and behaved normally as reported, with no reported actionable stale/incompatible-sidecar error. This does not satisfy the stale-GUI presentation requirement. |
+
+Manual sub-result summary: `PASS 2 / FAIL 3 / BLOCKED 0 / NOT RUN 4 / NOT APPLICABLE 0`. The earlier automated native-desktop rows remain `BLOCKED` as automation evidence; these manual results supersede the observation gap but do not turn an observed GUI failure into a pass. Overall status remains `WINDOWS_VERIFICATION_PENDING`.
+
+### Failure analysis and Linux follow-up
+
+- **Settings/page element jump — likely project UI/CSS issue, not yet proven.** The current layout uses a state-dependent document height and a flex `.app-shell`/`.workspace` arrangement (`gui/src/styles.css:42-73`); the scrollbar appearing on the taller New Translation view can change the available content width when navigating. Reproduce at a fixed window size and compare scrollbar presence before changing layout code. Candidate follow-up area: `gui/src/styles.css` and the view containers in `gui/src/App.tsx`.
+- **Native PDF drag-and-drop — project/platform integration failure.** The drop handler is a DOM `onDrop` path (`gui/src/App.tsx:183-213`) and the browser-file adapter returns only `file.name` (`gui/src/filePicker.ts:28-31`). On Windows/Tauri, an OS file drop may not arrive as a browser `File` with a usable filesystem path, which is a likely reason the PDF was not loaded. Confirm the native event payload and preserve an absolute path before implementing a fix. Candidate follow-up area: `gui/src/App.tsx` and `gui/src/filePicker.ts`.
+- **Stale-GUI presentation — project UI error-display gap.** The Tauri transport starts the sidecar and performs the handshake (`gui/src/sidecar.ts:21-37`); `JobStore.connect()` stores a failed connection and error (`gui/src/jobStore.ts:74-79`), but the main shell renders only a generic connection label and notice (`gui/src/App.tsx:154-169`). The old sidecar independently reproduced `TranslationConfig.__init__() got an unexpected keyword argument 'retry_policy'`, yet the manual GUI report did not include an actionable compatibility explanation. Candidate follow-up area: render the safe connection error and a rebuild/recovery action without exposing a traceback or secrets.
+
+### Optional screenshot request
+
+No screenshot is strictly required to retain these statuses. If available, the most useful evidence is: (1) stale GUI immediately after launch showing its connection/status area, (2) Settings and New Translation at the same window size showing the position jump, and (3) the drop zone before and after dragging the PDF. Exact text or a short screen recording is preferable to a general desktop screenshot.
+
+The Linux follow-up is now to triage the three observed `FAIL` items, add regression coverage where practical, and schedule the skipped keyboard/NVDA/DPI checks separately. Do not alter the validation result by changing code solely to make this record pass.
+
+## Manual GUI screenshot evidence update (2026-09-12)
+
+The operator supplied three screenshots. All three were captured from the stale-GUI pair; no fresh-GUI screenshot was supplied. The images were copied into the E: validation pack and retained outside the WSL source tree.
+
+| Evidence | Observation | Validation impact |
+|---|---|---|
+| [Figure 1](<E:\Shiraishi\VSCode Workspace\Codex_Translator\build\manual-gui-validation-20260912-152358\evidence\stale-gui-01-new-translation-starting.png>) | New Translation view; top banner shows `Starting sidecar`, right status shows `正在连接本地服务`; the lower-left local-first notice is not completely visible. The drop zone has its default appearance. | Confirms stale-GUI startup state is visible, but not yet an actionable compatibility explanation; supports the layout/visibility issue. |
+| [Figure 2](<E:\Shiraishi\VSCode Workspace\Codex_Translator\build\manual-gui-validation-20260912-152358\evidence\stale-gui-02-new-translation-unavailable.png>) | New Translation view after startup failure; top banner shows `Sidecar unavailable`, right status shows `本地服务不可用`; the lower-left notice is still not completely visible. | Confirms a generic sidecar failure is surfaced. The stale-GUI criterion remains `FAIL` because the visible message does not explain the `retry_policy` incompatibility or give a rebuild/recovery action. |
+| [Figure 3](<E:\Shiraishi\VSCode Workspace\Codex_Translator\build\manual-gui-validation-20260912-152358\evidence\stale-gui-03-settings-unavailable.png>) | Settings view; the right-side `本地服务不可用` indicator is in a different horizontal position, while the lower-left local-first notice is completely visible. | Confirms the state-dependent layout/scrollbar-width hypothesis as a reproducible visual symptom; M-GUI-02 remains `FAIL`. |
+
+The operator additionally reports that the PDF drop zone looks the same before and after dragging a PDF, matching the default appearance in Figure 1, and no PDF is loaded. M-GUI-05 native drag-and-drop remains `FAIL`; file-picker selection/load remains `PASS`.
+
+The screenshots strengthen the existing manual results but do not change the skipped keyboard/NVDA/DPI checks. No business-code change was made.
+
+### Evidence hashes
+
+- `stale-gui-01-new-translation-starting.png`: 210,206 bytes, SHA-256 `DA1E5277CFAF35A8AB6EAC539C4B9E036092763D38535D2BB416E14C9C500C66`
+- `stale-gui-02-new-translation-unavailable.png`: 208,627 bytes, SHA-256 `7BB83A5A37A5D0EF2084F8ED843C54552674AED7DC45FFB07CB09174DE3906F9`
+- `stale-gui-03-settings-unavailable.png`: 162,906 bytes, SHA-256 `36C0057940AF3FA689A4F60B74627615D054B03C28210F94DB48AE6BC3855C66`
+
+## Validation run: 2026-09-12 (incremental continuation after interrupted validation)
+
+### Scope and source state
+
+- WSL source remained branch `dev`, HEAD `4e709d922849516c8162f5b17d387b32b5f42ceb`, with the same dirty working tree recorded above. A scoped SHA-256 recheck for the worker, CLI/QA, integration-test and validation-document inputs returned `TARGET_HASH_MISMATCHES=0`; the prior filtered WSL -> E: synchronization was therefore not repeated.
+- Previously completed checks were intentionally skipped: dependency/lock, Ruff, compileall, Python full suite, doctor, GUI tests/build, Cargo/Tauri checks, PyInstaller build, frozen/target-triple handshake, fresh/stale bundle audit, NSIS/MSI build and release GUI process smoke remain covered by the immediately preceding current-source record. No Linux business code, dependency, architecture or configuration change occurred between the records.
+
+### Incremental validation checklist
+
+| Item | Classification | Exact command or procedure | Status | Result |
+|---|---|---|---|---|
+| Subprocess mock integration revalidation | Required | `uv run pytest -q -m integration tests/test_e2e_mock.py::TestMockEndToEnd::test_subprocess_mock_translation -vv --tb=short` | FAIL | Reproduced on current source: `RuntimeError: Translation failed after 1 attempts`; worker client reported a failed worker result. The earlier same-request environment diagnostic remains reproducible: the worker allowlist containing only available `PATH`/home-like variables omitted Windows runtime directory variables and returned `WinError 10106`; adding `SystemRoot`, `USERPROFILE`, `TEMP`, `TMP`, `APPDATA`, `LOCALAPPDATA` and `PROGRAMDATA` allowed the same request to complete. |
+| QA CLI JSON contract revalidation | Required | `uv run pytest -q tests/test_cli.py::test_qa_cli_reports_passing_output --tb=short -vv` | FAIL | Reproduced: `JSONDecodeError` at `tests/test_cli.py:162`. The QA CLI writes the PyMuPDF warning `The fitz API is deprecated...` to stdout before the JSON document, so a machine consumer cannot parse the documented JSON output. |
+| Corrected MSI administrative extraction | Applicable | Quoted `msiexec.exe /a "<MSI>" TARGETDIR="<extract>" /qn /norestart /L*v "<log>"` | PASS | Corrected rerun returned `MSIEXEC_EXIT=0`; verbose log was 84,202 bytes and both GUI/sidecar payloads were present. The preceding empty extraction was a command-argument validation-input issue, not product evidence. |
+| MSI payload sidecar parity | Applicable | SHA-256 comparison of fresh `dist\\babelcodex-service.exe` and extracted `PFiles\\BabelCodex\\babelcodex-service.exe` | PASS | Fresh and extracted SHA-256 both `32D98B814C4DFA71DD1D2BCD5EF2662DDC0AFBFC239918B3CC80027D6EDB39FB`. |
+| MSI-extracted sidecar protocol v1 | Required | Extracted sidecar with `get_server_info`, `list_jobs`, `shutdown`, `protocol_version=1` and `config/example.toml` | PASS | Protocol 1, package `0.1.0`, expected capabilities, preserved E: state visible, and clean shutdown exit 0. |
+| MSI-extracted GUI process smoke | Applicable | Start extracted `babelcodex-gui.exe`, wait 8 seconds, stop only the validation process | PASS | Process remained alive after 8 seconds and was then stopped by PID. |
+| Native GUI interaction, clean-user, WVQ-007 lifecycle, release security and live Codex/PDF | Required / Applicable | Existing queue procedures | NOT RUN | Intentionally not repeated in this incremental run; prior manual GUI observations and the outstanding authorization/environment prerequisites remain authoritative. |
+
+### Failure and blocking analysis
+
+- **Worker subprocess - FAIL; likely category: Windows-specific project code.** `src/codex_babeldoc/backends/worker_client.py` constructs a restricted child environment that is too small for Windows Python/BabelDOC runtime initialization. The missing Windows runtime/profile variables cause a reproducible worker failure (`WinError 10106` in the minimal environment, followed by a home-directory error when only `SystemRoot` is restored). This blocks the Windows subprocess mock integration and dependent worker-based cancellation/reconnection/recovery acceptance. Linux follow-up: revise the Windows-safe environment allowlist and add a regression test that launches the worker with the intended restricted environment.
+- **QA CLI stdout contamination - FAIL; likely category: project CLI/dependency integration.** The QA result body is correct when invoked directly (`qa_status=passed`/`failed` and exit 0/1), but the PyMuPDF `fitz` deprecation warning precedes stdout JSON. Linux follow-up: keep stdout machine-readable and route dependency warnings to stderr or replace the deprecated import path; add a clean-subprocess JSON parsing regression test.
+- **MSI extraction - no product failure.** The first invocation produced no payload because the path-with-spaces arguments were not quoted correctly. The documented quoted invocation was then executed and passed; this correction did not alter source or package inputs.
+
+### Incremental result summary
+
+- New evidence in this continuation: `PASS 4`, `FAIL 2`, `BLOCKED 0`.
+- Overall status remains `WINDOWS_VERIFICATION_PENDING`; the two current `FAIL` items require Linux follow-up and Windows revalidation. No status was promoted to `WINDOWS_PASS`.
+
+### Linux follow-up required
+
+1. Fix and test the Windows worker environment allowlist in `src/codex_babeldoc/backends/worker_client.py`; rerun `WVQ-007`-related worker subprocess, cancellation, reconnection and recovery checks.
+2. Fix the QA CLI stdout/stderr contract around the PyMuPDF deprecation warning; rerun the QA CLI positive/tamper checks and the JSON regression.
+3. After Linux regression checks pass, repeat the Windows subprocess integration and QA CLI checks; retain the MSI parity evidence from this continuation.
+
+## Linux follow-up completed (2026-09-12) and Windows revalidation queue
+
+This section records the Linux work requested by the incremental 2026-09-12 run above. Both `FAIL` items were addressed and closed on the Linux side; the native Windows revalidation remains queued.
+
+### Worker environment allowlist fix
+
+`src/codex_babeldoc/backends/worker_client.py` now exposes a single testable builder `worker_environment(env_extra=None)` instead of an inline comprehension. The allowlist retains:
+
+- POSIX runtime keys: `PATH`, `HOME`, `USER`, `TMPDIR`, `LANG`, `LC_ALL`;
+- Windows runtime/profile keys: `SYSTEMROOT`, `USERPROFILE`, `TEMP`, `TMP`, `APPDATA`, `LOCALAPPDATA`, `PROGRAMDATA` — the full set named by the 2026-09-12 diagnosis (`SystemRoot`, `USERPROFILE`, `TEMP`, `TMP`, `APPDATA`, `LOCALAPPDATA`, `PROGRAMDATA`).
+
+Missing allowlist keys are skipped, so the same code is safe on POSIX (no Windows keys) and Windows (no POSIX keys), and `env_extra` always wins for explicit caller overrides. New regression coverage in `tests/test_worker.py::TestWorkerEnvironment`:
+
+- Windows runtime keys are preserved when present in the parent environment;
+- POSIX keys are preserved when present;
+- `env_extra` overrides the allowlist;
+- `run_worker` passes only the allowlisted keys (plus overrides) to `Popen`, never unrelated parent variables such as a `BABELCODEX_TEST_SECRET`.
+
+### QA CLI stdout contamination fix
+
+The PyMuPDF deprecation notice is emitted by the legacy `fitz` compatibility shim directly to **stdout** via a print, so `-W` filters cannot suppress it and a machine consumer sees `warning: The fitz API is deprecated...` before the JSON document. All production and test modules that used PyMuPDF now import the official `pymupdf` package instead:
+
+- `src/codex_babeldoc/qa/pdf_sanity.py`, `src/codex_babeldoc/qa/text_checks.py`, `src/codex_babeldoc/qa/layout_checks.py`;
+- `src/codex_babeldoc/core/pipeline_meta.py`, `src/codex_babeldoc/translation/context.py`;
+- matching fixtures in `tests/test_*.py`.
+
+New regression `tests/test_cli.py::test_qa_cli_stdout_is_machine_readable_in_clean_subprocess` launches the CLI (`python -m codex_babeldoc.cli qa`) from a fresh interpreter with a clean `PYTHONPATH` and asserts `returncode == 0` and the entire stdout payload parses as one JSON document with `ok == true`.
+
+### Linux verification results (current working tree)
+
+| Check | Result |
+|---|---|
+| `python -m compileall -q src tests` | PASS |
+| `uv run ruff check` (affected files) | PASS |
+| `uv run ruff format --check` (affected files) | PASS |
+| Python unit/default suite | 206 passed, 5 deselected (includes new `TestWorkerEnvironment` + clean-subprocess QA JSON regression) |
+| GUI Vitest | 22 passed |
+| GUI Vite production build | PASS |
+| Mock PDF integration (`-m integration tests/test_e2e_mock.py`) | 5 passed, 10 warnings |
+
+No dependency, configuration or architecture change was introduced by these fixes; they are code + regression-test changes only.
+
+### Windows revalidation queue for this round
+
+- `WVQ-014` — run the Windows subprocess mock integration and worker-based mock job with the allowlisted environment; confirm the worker starts, completes, supports cancellation/reconnection and does not inherit unrelated parent variables.
+- `WVQ-015` — run `cbpdf qa` positive/tamper and `cbpdf doctor`/`validate` in a clean Windows interpreter subprocess; assert stdout is a single parseable JSON document with no PyMuPDF deprecation noise.
+
+Both remain `WINDOWS_VERIFICATION_PENDING` until executed natively. Neither blocks further Linux development; no item was promoted to `WINDOWS_PASS` by this Linux work.

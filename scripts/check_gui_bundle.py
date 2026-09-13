@@ -43,9 +43,31 @@ def sha256(path: Path) -> str:
     return digest.hexdigest().upper()
 
 
-def audit(bundle_dir: Path, target: str, manifest_path: Path | None) -> int:
+def newest_source_mtime(source_tree: Path) -> float | None:
+    """Return the newest mtime among inputs embedded in the frozen sidecar.
+
+    The sidecar binary embeds the ``codex_babeldoc`` package and its declared
+    metadata, so any Python source, the PyInstaller spec, or ``pyproject.toml``
+    newer than the binary means the bundle shipped a stale sidecar (observed as
+    a protocol/config drift in the 2026-09-11 Windows validation).
+    """
+    candidates: list[Path] = [
+        source_tree / "pyproject.toml",
+        source_tree / "scripts" / "babelcodex-service.spec",
+        *sorted((source_tree / "src").rglob("*.py")),
+    ]
+    mtimes = [path.stat().st_mtime for path in candidates if path.is_file()]
+    return max(mtimes) if mtimes else None
+
+
+def audit(
+    bundle_dir: Path, target: str, manifest_path: Path | None, source_tree: Path | None = None
+) -> int:
     if not bundle_dir.is_dir():
         print(f"bundle directory does not exist: {bundle_dir}", file=sys.stderr)
+        return 2
+    if source_tree is not None and not (source_tree / "src").is_dir():
+        print(f"source tree has no src directory: {source_tree}", file=sys.stderr)
         return 2
 
     sidecar = bundle_dir / SIDECAR_NAMES[target]
@@ -54,6 +76,13 @@ def audit(bundle_dir: Path, target: str, manifest_path: Path | None) -> int:
         return 2
 
     violations: list[str] = []
+    if source_tree is not None:
+        newest = newest_source_mtime(source_tree)
+        if newest is not None and sidecar.stat().st_mtime < newest:
+            violations.append(
+                f"sidecar predates newer Python sources (sidecar={sidecar.stat().st_mtime:.0f}, "
+                "newest source input, %.0f); rebuild the frozen sidecar before packaging" % newest
+            )
     for path in bundle_dir.rglob("*"):
         relative = path.relative_to(bundle_dir)
         if set(relative.parts) & FORBIDDEN_PARTS:
@@ -98,8 +127,17 @@ def main() -> int:
     parser.add_argument("bundle_dir", type=Path)
     parser.add_argument("--target", choices=sorted(SIDECAR_NAMES), required=True)
     parser.add_argument("--manifest", type=Path)
+    parser.add_argument(
+        "--source-tree",
+        type=Path,
+        help=(
+            "repository checkout the sidecar was built from; when given, the audit "
+            "fails if the sidecar binary is older than any embedded Python source"
+        ),
+    )
     args = parser.parse_args()
-    return audit(args.bundle_dir.resolve(), args.target, args.manifest)
+    source_tree = args.source_tree.resolve() if args.source_tree is not None else None
+    return audit(args.bundle_dir.resolve(), args.target, args.manifest, source_tree)
 
 
 if __name__ == "__main__":

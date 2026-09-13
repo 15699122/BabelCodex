@@ -6,6 +6,17 @@ BabelCodex is designed primarily for personal, local PDF translation.
 
 The application stores job state, generated PDFs, logs, translation caches, configuration and glossary data on the user's machine. The public source repository must not contain these user-specific files.
 
+State, cache, glossary, context, thread metadata and worker directories are
+created as private local-data directories on POSIX systems, with files written
+using restrictive permissions where the platform supports them. Windows ACL
+behavior remains part of the deferred native validation queue.
+
+The translation cache stores translated text when enabled because that text is
+required to serve a cache hit. `cache_store_plaintext = false` only prevents
+retaining the original source segment; it is not an encrypted-cache mode. Use
+`cache_enabled = false` or a finite `cache_ttl_seconds` for more sensitive
+documents.
+
 ## What is sent to Codex
 
 Text segments selected by BabelDOC for translation are sent to the Codex service through the official `openai-codex` SDK and the user's existing Codex/ChatGPT authentication. BabelCodex does not operate a developer-owned document upload server.
@@ -17,6 +28,10 @@ BabelCodex does not scrape browser cookies, store ChatGPT credentials in project
 ## Logging
 
 Logs should contain job identifiers, stages, safe error codes, timings and aggregate metrics. Full source text, full translated text, prompts and authentication tokens must not be logged by default.
+
+MCP and GUI job responses use a reduced job view. They do not expose absolute
+source/output paths, runner PIDs, Codex thread IDs or internal configuration
+fingerprints.
 
 ## Public repository boundary
 

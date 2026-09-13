@@ -1,5 +1,29 @@
 # BabelCodex Development Plan
 
+### Linux 后续修复（2026-09-12，worker 环境与 QA CLI stdout）
+
+- 针对上一轮增量验证的两个 `FAIL` 项完成了 Linux 侧修复并闭环，Windows 原生重验证保留为 `WINDOWS_VERIFICATION_PENDING`（`WVQ-014`/`WVQ-015`）。
+- **worker 子进程环境 allowlist**：`src/codex_babeldoc/backends/worker_client.py` 将环境构建抽为 `worker_environment(env_extra=None)`，allowlist 同时保留 POSIX 键（`PATH/HOME/USER/TMPDIR/LANG/LC_ALL`）与 Windows 运行时/配置文件键（`SYSTEMROOT/USERPROFILE/TEMP/TMP/APPDATA/LOCALAPPDATA/PROGRAMDATA`），缺失键跳过、`env_extra` 优先。新增 `tests/test_worker.py::TestWorkerEnvironment`（Windows 键保留、POSIX 键保留、`env_extra` 覆盖、`Popen` 只收到 allowlist 键、不继承无关父变量）。
+- **QA CLI stdout 污染**：根因是 PyMuPDF 的 `fitz` 兼容 shim 直接用 print 向 stdout 输出 deprecation 提示，`-W` 无法抑制。源码与测试统一改用官方 `pymupdf` 包名（`src/codex_babeldoc/qa/*`、`core/pipeline_meta.py`、`translation/context.py` 及相关测试）。新增 `tests/test_cli.py::test_qa_cli_stdout_is_machine_readable_in_clean_subprocess`：子进程以干净 `PYTHONPATH` 启动 `python -m codex_babeldoc.cli qa`，断言整个 stdout 可解析为单个 JSON 文档且 `ok == true`。
+- Linux 验证：compileall PASS；ruff check/format PASS；Python 单元套件 `206 passed, 5 deselected`；GUI Vitest `22 passed`；Vite build PASS；mock PDF integration `5 passed`。未修改依赖、配置或架构。
+
+### Windows 验证复核（2026-09-12，MSI 重验证）
+### Windows 验证复核（2026-09-12，MSI 重验证）
+
+- 当前 WSL `dev` HEAD 为 `4e709d922849516c8162f5b17d387b32b5f42ceb`，本轮 dirty tree 包含 5 个文档文件和 11 个代码/测试文件；已按规则单向同步到 E:，68 个文件更新、0 个失败、17 个 Windows 本地排除/保留项，11 个变更代码/测试文件 SHA-256 一致。
+- Windows 自动化与包级验证均为 `PASS`：Python `201 passed、5 deselected`，GUI `22 passed`，mock PDF integration `5 passed`，QA CLI 正向/篡改/清理通过；lock/sync、Ruff、compileall、doctor、Vite、Cargo、Tauri 配置/icon、PyInstaller、sidecar handshake/worker 错误路径、target-triple、fresh/stale bundle audit、NSIS/MSI 构建、MSI 管理员提取与 payload parity、解包 sidecar handshake、release/解包 GUI 进程 smoke 均通过。之前的 `WinError 32` 清理问题本轮未复现。
+- 当前 fresh sidecar SHA-256 为 `B892AD80...D4EB5`，release GUI 为 `8B1450D6...A934`，NSIS 为 `EFE0FF2D...448A`，MSI 为 `28F5206C...3576`；均为 unsigned 开发产物。packaged stale-GUI 错误展示和原生 GUI 交互/路径/DPI/NVDA 矩阵因 Windows UI trusted RPC 不可用为 `BLOCKED`。
+- 本轮计数：`PASS 21 / FAIL 0 / BLOCKED 2 / NOT RUN 5 / NOT APPLICABLE 1`。clean-user、完整 WVQ-007 生命周期、Defender/SmartScreen/签名/SBOM/release 安全、live Codex/PDF 和依赖 advisory 处理为 `NOT RUN`；Linux-only AppImage/native-Linux acceptance 为 `NOT APPLICABLE`。整体仍为 `WINDOWS_VERIFICATION_PENDING`。
+- Linux 后续：Provision 可用的原生 Windows UI 自动化环境，完成 WVQ-001～004/009 原生桌面验证和 WVQ-007 全生命周期矩阵，再安排发布安全与 live service 验收；保留 sidecar handshake 与 source-freshness 双层门禁。本轮未修改业务代码、依赖或配置。
+
+### Windows 验证复核（2026-09-12，CLI/QA 变更重跑）
+
+- 当前 WSL `dev` HEAD 为 `4e709d922849516c8162f5b17d387b32b5f42ceb`，本轮包含 5 个既有文档变更和 11 个当前代码/测试变更；已按规则单向同步到 E:，68 个文件更新、0 个失败、17 个 Windows 本地排除/保留项，11 个变更代码/测试文件 SHA-256 一致。
+- Windows 自动化与包级验证均为 `PASS`：Python `201 passed、5 deselected`，GUI `22 passed`，mock PDF integration `5 passed`，QA CLI 正向/篡改/清理路径通过；lock/sync、Ruff、compileall、doctor、Vite、Cargo、Tauri 配置/icon、PyInstaller、sidecar handshake/worker 错误路径、target-triple、fresh/stale bundle audit、NSIS/MSI 构建和 release GUI 进程 smoke 通过。新增 CLI 日志文件句柄释放回归测试通过，之前的 QA fixture `WinError 32` 清理问题本轮未复现。
+- 当前 fresh sidecar SHA-256 为 `617E3B38...8FB53`，release GUI 为 `4801F156...A615F`，NSIS 为 `645CB227...8744`，MSI 为 `FEDCF16A...31CB`；均为 unsigned 开发产物。MSI 管理员提取/包内 parity 因超时且无 payload 为 `BLOCKED`；packaged stale-GUI 错误展示和原生 GUI 交互/路径/DPI/NVDA 矩阵因 Windows UI trusted RPC 不可用为 `BLOCKED`。
+- 本轮计数：`PASS 21 / FAIL 0 / BLOCKED 3 / NOT RUN 5 / NOT APPLICABLE 1`。clean-user、完整 WVQ-007 生命周期、Defender/SmartScreen/签名/SBOM/release 安全、live Codex/PDF 和依赖 advisory 处理为 `NOT RUN`；Linux-only AppImage/native-Linux acceptance 为 `NOT APPLICABLE`。整体仍为 `WINDOWS_VERIFICATION_PENDING`。
+- Linux 后续：恢复并重跑 MSI 管理员提取，完成 WVQ-007 workdir/lock/retry/cancel/reconnect 全矩阵，安排 WVQ-001～004/009 原生桌面与 clean-user、路径权限、DPI/NVDA 和发布安全验证；保留 sidecar handshake 与 source-freshness 双层门禁。本轮未修改业务代码、依赖或配置。
+
 本文档基于当前项目现状、AiNiee、PDFMathTranslate v1、PDFMathTranslate-next 与 BabelDOC 的实现分析，汇总成统一的开发框架与实施计划。
 
 相关文档：
@@ -687,6 +711,19 @@ MCP 与 GUI 共用 Python Application Service、JobState、事件和错误码；
 
 仍需后续完成：真实 Codex 账户下的 retry/compact/thread resume 行为验收、长文档稳定性 benchmark 和 packaged/clean-user Windows sidecar 回归。Windows 侧新增工作目录清理/锁定行为与类别重试观察并入 `WVQ-007`/`WVQ-003`/`WVQ-004`，保持 `WINDOWS_VERIFICATION_PENDING`，不阻塞 Linux 开发。
 
+#### 2026 年 9 月 11 日追加：Windows 验证后续硬化（Linux 完成）
+
+2026-09-11 Windows 全量验证（`4e709d9`，记录见 `docs/validation/windows.md`）完成后，基于验证事实在 Linux 侧追加以下工作：
+
+- 依赖通告评估：`npm audit` 两条 moderate 通告均来自 `@vitest/mocker`（GHSA-82fw-gwwq-j7x9，redirect mock 路径遍历），仅影响 dev 工具链 vitest（2.1.0–4.1.10），不进入打包产物；修复需升级 vitest 5（破坏性大版本）。决策：暂缓大版本升级并在此记录，GUI 打包产物不受通告影响；esbuild 0.28.2 无已知通告；
+- 陈旧 sidecar 防线（ADR-029）：Windows 验证中“陈旧 sidecar 打进安装包”的输入漂移暴露了结构性风险，追加两层防线——① `scripts/check_gui_bundle.py --source-tree` 静态新鲜度审计（校验打包内 sidecar 的 mtime 不早于其嵌入的 Python 源、`pyproject.toml` 与 PyInstaller spec）；② sidecar 新增 `get_server_info` 运行时握手（协议版本 + 包版本 + 能力列表），GUI 启动时执行握手，失败转为明确的连接错误而非任务中途协议失配；
+- Linux 验证：`uv run pytest -q` 为 200 passed、5 deselected；GUI `npx vitest run` 为 22 passed；`npx tsc --noEmit`、`uv run ruff check .`、`uv run ruff format --check .` 均通过。新增打包侧/握手 Windows 观察并入 `WVQ-009`，保持 `WINDOWS_VERIFICATION_PENDING`。
+
+- 归因修正（2026-09-11 dirty-tree 验证后）：该验证输入已包含 `tests/test_e2e_mock.py` resource-scope 修改，但 Windows harness 清理仍复现 `WinError 32`，因此该测试句柄修改仅是测试卫生改进，不是该清理失败的根因或修复。Linux 静态审查确认 QA 边界（`pdf_sanity`/`text_checks`/`layout_checks`）无生产句柄泄漏；`WinError 32` 候选根因位于 Windows 验证 harness 生命周期（未退出子进程、Defender/杀毒扫描或 `uv run` 包装进程在删除时仍持有 fixture 句柄），保持历史 `FAIL` 并归入 `WVQ-007` 原生重跑，不得由 Linux-only 改动转 PASS。
+- 句柄生命周期硬化（2026-09-12 日志句柄观察后）：2026-09-12 重跑中失败的锁定对象从 fixture PDF 变为 QA CLI 自写的 `logs/cbpdf.log`——两轮不同 artifact、同一失败类，指向短命 CLI 退出后的句柄生命周期。据此在 CLI `main()` 增加 `finally` 释放路径：命令完成时显式摘除并关闭 root logger 的全部 `FileHandler`（`_release_log_file_handlers`），不再仅依赖 `logging.shutdown()` atexit 钩子；新增回归测试 `test_cli_releases_log_file_handlers_at_exit` 固定摘除与流关闭行为。Linux 门禁：pytest `201 passed, 5 deselected`、Ruff/format、GUI Vitest 与 `tsc --noEmit` 均通过。定性为句柄暴露窗口的缓解措施，不声明为 Windows 清理失败的修复；`WVQ-007` 保持 `WINDOWS_VERIFICATION_PENDING`，需 Windows 原生重跑确认。
+- Windows 原生复验（2026-09-12 CLI/QA 改动重验）：包含上述硬化的源码已同步并在 Windows 原生重跑——此前失败的 QA harness 临时目录清理 `PASS`，`WinError 32` 未复现，本轮无 `FAIL`。Windows 侧明确限定：仅清除 QA harness 清理路径，不证明完整 `WVQ-007` work-dir/lock/retry/cancel/reconnect 矩阵；`WVQ-007` 保持 `WINDOWS_VERIFICATION_PENDING`。同轮 `WVQ-009` 的 stale bundle **负向审计**获得原生 PASS 证据（陈旧 sidecar 被以 `sidecar predates newer Python sources` 拒绝），但 stale-GUI 原生错误展示与原生 GUI 交互仍 `BLOCKED`（trusted RPC `sky` 不可用），MSI admin extraction 仍 `BLOCKED`（90 秒无输出无 payload），clean-user、`WVQ-005` 发布安全与 live Codex/PDF 仍 `NOT RUN`，整体保持 `WINDOWS_VERIFICATION_PENDING`。本轮 Linux 未做新代码改动：余下失败归属 Windows 环境观察项，投机性 Linux-only 改动不构成证据。
+
+
 ### Phase 13：PDF QA 与发布硬化
 
 **优先级：P3 | 复杂度：L/XL | 预计：7–12 个开发日；L0/L1/L2、缺字与空白启发、越界、未翻译比例、QA JSON/人类报告、资源检查与发布操作文档已完成 Linux 验证（2026 年 9 月 10 日）**
@@ -1052,6 +1089,33 @@ peak memory
 - 安装/portable GUI 真实交互、clean-user、路径/权限矩阵、取消/重连、Defender/SmartScreen、签名/SBOM/release 审计、live Codex/PDF 仍为 `NOT RUN`；目标 Linux machine smoke 为 `NOT APPLICABLE`；本轮无 `FAIL` 或 `BLOCKED`，整体仍为 `WINDOWS_VERIFICATION_PENDING`。
 - Linux 后续：后续 GUI 改动后继续重跑 Linux/Windows GUI 套件，再安排真实桌面/clean-user 与发布安全验收。本轮未修改业务代码、配置或依赖。
 
+### Windows 验证复核（2026-09-12，最新 Linux 状态重跑）
+
+- 当前 WSL Ubuntu `dev` HEAD `4e709d9`（dirty tree，5 个文档文件与 9 个代码/测试文件为既有变更）已在保留 E: 本地依赖、缓存、状态和用户数据的前提下受控单向同步；68 个文件同步、0 个失败，9 个代码/测试文件哈希一致。
+- 本轮自动化与包级验证：Python `200 passed、5 deselected`，GUI `22 passed`，mock PDF integration `5 passed`；QA CLI 初始通过且删除 artifact 后正确失败；PyInstaller、protocol-v1/target-triple handshake、真实 assets 布局下的 fresh/stale bundle audit、NSIS/MSI 构建和 release GUI 8 秒进程 smoke 均通过。QA 断言之后的临时日志清理再次暴露 Windows `WinError 32`；MSI admin extraction 90 秒无输出、无 payload 为 `BLOCKED`；原生 GUI 与 stale-GUI 错误展示因 trusted RPC `sky` 不可用为 `BLOCKED`。
+- 产物哈希：sidecar `CBAD9089...A7841`、GUI `452E86E9...0274F`、NSIS `AE89EB2F...477E1`、MSI `DA638042...42AD3`。状态计数为 `PASS 20 / FAIL 1 / BLOCKED 3 / NOT RUN 5 / NOT APPLICABLE 1`。
+- Linux 后续：优先调查 QA 日志/临时目录句柄生命周期并重跑 `WVQ-007`；恢复可验证的当前 MSI 解包 parity；安排 `WVQ-001`～`WVQ-004` 与 `WVQ-009` 的原生桌面验证；保留 freshness + runtime handshake 双层门禁，并另行安排发布安全与 live Codex/PDF 验收。本轮未修改业务代码、依赖或配置，整体保持 `WINDOWS_VERIFICATION_PENDING`。
+
+### Windows 验证复核（2026-09-12，当前 dirty tree 重跑）
+
+- 当前 WSL `dev` HEAD `4e709d9` 已再次受控同步到 E:；排除了 `gui/dist`、依赖、缓存、状态和用户数据目录，68 个文件同步、0 个失败，10 个代码/测试文件哈希一致。
+- 自动化验证：Python `200 passed、5 deselected`，GUI `22 passed`，mock PDF integration `5 passed`；QA CLI/tamper、PyInstaller、protocol-v1/target-triple handshake、fresh/stale bundle audit、NSIS/MSI 构建和 release GUI 8 秒进程 smoke 均通过。QA 断言通过后，临时 fixture 清理再次暴露 Windows `WinError 32`；MSI admin extraction 因无有效解包输出为 `BLOCKED`，原生 GUI 与 stale-GUI 错误展示因 trusted RPC `sky` 不可用为 `BLOCKED`。
+- Linux 后续：优先调查 fixture/harness 文件句柄生命周期并重跑 `WVQ-007`；恢复有效 MSI 解包证据；安排 WVQ-001～004/009 原生桌面验证，保留 handshake 与 source freshness 双层门禁。本轮未修改业务代码、依赖或配置，整体保持 `WINDOWS_VERIFICATION_PENDING`。
+
+### Windows 验证复核（2026-09-11，当前 dirty tree、WVQ-008/WVQ-009）
+
+- WSL `dev` HEAD `4e709d9` 及未提交的 sidecar `get_server_info` 握手、GUI 协议回归、mock-test 资源范围变更和 `check_gui_bundle --source-tree` 新鲜度审计已同步到 E:；71 个源文件更新，0 个同步失败，变更文件哈希一致。
+- Windows 自动化与包级验证：Python `200 passed、5 deselected`，GUI `22 passed`，mock PDF integration `5 passed`；QA CLI 对真实 fixture mock job 返回 PASS，删除 artifact 后返回 `qa_status=failed`；PyInstaller、握手、worker 错误路径、target-triple、fresh/stale bundle audit、NSIS/MSI、MSI 解包 sidecar/GUI 启动均完成。
+- 本轮暴露一项未解决 Windows `WinError 32` 临时 fixture 清理失败，归入 `WVQ-007` 后续调查；原生 GUI 交互与 packaged stale-GUI 错误展示因 computer-use trusted RPC 未配置而为 `BLOCKED`。因此不能把本轮提升为完整 Windows release/desktop acceptance，整体保持 `WINDOWS_VERIFICATION_PENDING`。
+- Linux 后续：保留 `WVQ-009` 双层防线并在 sidecar/协议/打包变化后重跑；优先调查 Windows 文件句柄清理，再安排 `WVQ-001` 至 `WVQ-005` 的原生桌面、clean-user、路径/权限、DPI/NVDA 和发布安全验收。本轮未修改业务代码、依赖或配置。
+
+### Windows 验证复核（2026-09-11，PDF QA 与发布路径）
+
+- 当前 WSL `dev` HEAD `4e709d9` 已在 E: Windows 验证副本完成受控同步；修正初次过滤同步遗漏后，PDF QA、workdir、artifact manifest、release 文档和测试文件均已核对一致。Linux 工作树原有的 `scripts/build_linux_gui_bundle.sh` mode-only 改动保持不变。
+- 当前 Python 全量 `196 passed、5 deselected`，mock PDF integration `5 passed`；Ruff、compileall、doctor、GUI `19 passed`、Vite、Cargo、PyInstaller、sidecar JSONL/worker、target-triple、bundle audit、NSIS/MSI、MSI 解包 sidecar 和 GUI 启动均完成。新增 PDF QA 的命令、报告和 service/MCP/CLI 覆盖因此达到 Windows 自动化与包级验证通过。
+- 首次临时 bundle audit 因 staging 缺少 target-triple 文件名而 `FAIL`；首次 MSI 解包 sidecar 因 Tauri 输入仍是陈旧二进制而以 `retry_policy` 配置不兼容 `FAIL`。两者均已在不改业务代码的前提下修正验证输入并重跑 `PASS`，详见 `docs/validation/windows.md`。
+- 中文真实渲染、键盘/DPI/NVDA、安装/portable 交互、clean-user、路径权限、取消/重连、Defender/SmartScreen、签名/SBOM/release 审计及 live Codex/PDF 仍为 `NOT RUN`；整体保持 `WINDOWS_VERIFICATION_PENDING`。后续 Linux 需保留 PDF QA 回归门禁，并安排上述 Windows 原生验收。
+
 ### Windows 验证复核（2026-09-10，当前 UI 工作树）
 
 - 当前 WSL `dev` HEAD `8f6ee91`（含未提交 GUI、架构和文档变化）已完成受控单向同步并在 Windows E: 验证；依赖/lock、Ruff、compileall、Python 全量 `157 passed、3 deselected`、doctor、GUI 全量 `19 passed`、Vite、Cargo、Tauri 配置/icon、PyInstaller、冻结/target-triple/MSI 解包 sidecar smoke、bundle audit、NSIS/MSI 构建和包级 GUI 启动均为 `PASS`。
@@ -1067,3 +1131,27 @@ peak memory
 - 当前 fresh sidecar SHA-256 为 `4577E0D4...`；NSIS `9C9332AD...`（195,743,723 bytes），MSI `D0C5D8B8...`（195,715,072 bytes）；MSI 管理员解包、包内 sidecar smoke 和解包 GUI 启动均通过，产物为 unsigned 开发包。
 - 安装/portable GUI 真实交互、clean-user、路径/权限矩阵、取消/重连、Defender/SmartScreen、签名/SBOM/release 审计、live Codex/PDF 仍为 `NOT RUN`；目标 Linux machine smoke 为 `NOT APPLICABLE`；本轮无 `FAIL` 或 `BLOCKED`，整体仍为 `WINDOWS_VERIFICATION_PENDING`。
 - Linux 后续：后续 GUI 改动后继续重跑 Linux/Windows GUI 套件，再安排真实桌面/clean-user 与发布安全验收。本轮未修改业务代码、配置或依赖。
+
+### Windows 验证复核（2026-09-12，当前 dirty tree fresh sidecar/package 重跑）
+
+- 当前 WSL `dev` HEAD `4e709d922849516c8162f5b17d387b32b5f42ceb`（dirty working tree）已按流程单向同步到 E:；Robocopy dry-run/实际均为 67 个文件、0 个失败、17 个 E: extras 保留，24 个选定控制/变更文件 SHA-256 一致。依赖、缓存、状态、日志、用户内容和生成 GUI 资产均未反向同步。
+- Windows 自动化与包级验证：`uv sync --locked`/lock、Ruff、compileall、Python `201 passed、5 deselected`、doctor、GUI `22 passed`、Vite、Cargo/Tauri 配置图标、mock PDF integration `5 passed`、QA/tamper、PyInstaller、protocol-v1/target-triple handshake、fresh/stale bundle audit、NSIS/MSI、MSI admin extraction、解包 sidecar handshake 和解包 GUI 8 秒 smoke 均 `PASS`。
+- 本轮 QA 临时目录清理通过，之前的 `WinError 32` 未在当前 CLI handler-release 路径复现；这只清除了 QA harness 路径，不等于完整 `WVQ-007` 生命周期矩阵已验证。fresh sidecar SHA-256 为 `29D0A257...BD02AC4`，NSIS 为 `D7AD204A...24BD2B2`，MSI 为 `114EE0EC...551F30BB`，均为 unsigned development artifacts。
+- Native GUI/stale-GUI 观察因 trusted desktop automation 两次 `helper_unknown_error: setup refresh had errors` 为 `BLOCKED`；clean-user、完整 WVQ-007、WVQ-005 release security、live Codex/PDF 为 `NOT RUN`。状态计数为 `PASS 23 / FAIL 0 / BLOCKED 2 / NOT RUN 5 / NOT APPLICABLE 1`，整体保持 `WINDOWS_VERIFICATION_PENDING`。
+- Linux 后续：配置可用的原生 Windows desktop automation，执行 WVQ-001～004 与 WVQ-009 stale-GUI 展示；执行完整 WVQ-007 生命周期矩阵；另行安排 WVQ-005 发布安全和经授权的 live Codex/PDF。验证期间未修改业务代码、依赖、架构或配置。
+
+### Windows GUI 手动验证移交（2026-09-12）
+
+自动化桌面控制面两次不可用后，已在 E: 验证副本准备隔离人工验证包：`build\manual-gui-validation-20260912-152358`。`fresh` 使用当前 GUI + 当前 sidecar；`stale` 使用相同当前 GUI + 2026-09-10 旧 sidecar。详细步骤、PASS/FAIL/BLOCKED/NOT RUN 判定和证据模板见该目录的 `MANUAL-VALIDATION.md`。
+
+当前自动化记录中的 GUI/stale-GUI 仍保留 `BLOCKED`，人工移交项在收到实际观察前记为 `NOT RUN`，不得据此提升为 Windows GUI 验收通过。Linux 后续只需回收人工结果并更新 `docs/validation/windows.md`；本次未修改业务代码、依赖、架构或配置。
+
+### Windows GUI 手动验证结果（2026-09-12）
+
+人工验证已完成并回填：fresh/stale GUI 的启动及窗口基本操作为 `PASS`；页面切换基本可用但设置页出现元素位置跳动，记为 `FAIL`；文件选择器打开/取消及 PDF 选择加载为 `PASS`；原生 PDF 拖入拖放框无法加载，记为 `FAIL`；stale GUI 可正常打开但未报告可理解的旧 sidecar/兼容性错误，stale-GUI 展示记为 `FAIL`。键盘、NVDA、DPI/缩放均按用户报告记为 `NOT RUN`，未作负面推断。
+
+初步 Linux 后续：排查视图内容高度变化导致的滚动条/布局宽度变化；核对 Tauri 原生拖放事件中的真实 Windows 路径；让 sidecar 启动/握手失败的安全错误进入 GUI 可见区域。上述仅为问题记录，本轮未修改业务代码。
+
+### Windows GUI 截图证据补充（2026-09-12）
+
+已保存用户提供的三张 stale-GUI 截图：图 1 为 `Starting sidecar`，图 2 为 `Sidecar unavailable`，图 3 为设置页。截图确认 sidecar 通用错误可见，但左下角本地优先提示在新建翻译页显示不完整，设置页可完整显示且右上角服务状态位置发生变化；PDF 拖放前后拖放框无变化。布局稳定性、原生 PDF 拖放和 stale-GUI 可操作错误提示继续分别记为 `FAIL`；键盘、NVDA、DPI 继续为 `NOT RUN`。
