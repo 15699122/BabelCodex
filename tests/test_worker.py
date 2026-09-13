@@ -505,6 +505,15 @@ class TestWorkerEnvironment:
 
 
 class TestWorkerCommand:
+    def test_frozen_spec_collects_bitstring_worker_dependency(self) -> None:
+        spec = Path(__file__).resolve().parents[1] / "scripts" / "babelcodex-service.spec"
+        text = spec.read_text(encoding="utf-8")
+        assert "collect_submodules" in text
+        assert 'collect_submodules("bitstring")' in text
+        assert "excludes=" not in text
+        assert '"tiktoken"' in text
+        assert '"tiktoken_ext"' in text
+
     def test_uses_module_entry_in_regular_python(self, monkeypatch) -> None:
         monkeypatch.delattr(sys, "frozen", raising=False)
         command = worker_command(Path("req.json"))

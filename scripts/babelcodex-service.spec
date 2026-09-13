@@ -23,7 +23,7 @@ sidecar protocol and the in-frozen worker entry point.
 
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_all
+from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 # Resolve paths relative to this spec file so the build is reproducible
 # from any working directory. PyInstaller exposes the spec directory as
@@ -50,9 +50,15 @@ hiddenimports = [
     "codex_babeldoc.translation.context",
     "codex_babeldoc.translation.thread_state",
 ]
+# BabelDOC imports bitstring implementation modules dynamically. The regular
+# interpreter sees them through package imports, but PyInstaller's static
+# analysis can omit them from the frozen worker runtime. Collect the package's
+# complete submodule set so upgrades do not require another hand-maintained
+# list of internal bitstring modules.
+hiddenimports += collect_submodules("bitstring")
 binaries = []
 datas = []
-for _package in ("babeldoc", "openai_codex"):
+for _package in ("babeldoc", "openai_codex", "tiktoken", "tiktoken_ext"):
     try:
         _datas, _binaries, _hidden = collect_all(_package)
         datas += _datas
@@ -70,7 +76,9 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["tkinter", "unittest", "pydoc"],
+    # Do not exclude standard-library modules here. BabelDOC and its runtime
+    # dependencies import modules such as unittest and pydoc dynamically while
+    # processing a PDF; excluding them breaks valid frozen worker requests.
     noarchive=False,
 )
 pyz = PYZ(a.pure)

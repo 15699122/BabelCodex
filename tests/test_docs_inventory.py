@@ -145,6 +145,22 @@ def test_check_without_map_reports_missing_file(tmp_path: Path) -> None:
     assert inventory.check(tmp_path) == ["missing required file: docs/development/codebase-map.md"]
 
 
+def test_managed_files_use_posix_paths_independent_of_host_separator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Inventory diagnostics stay stable when a Windows-style relative path is returned."""
+    _make_repo(tmp_path)
+    original_relative_to = Path.relative_to
+
+    def windows_style_relative_to(self: Path, other: Path) -> Path:
+        relative = original_relative_to(self, other)
+        return Path(str(relative).replace("/", "\\"))
+
+    monkeypatch.setattr(Path, "relative_to", windows_style_relative_to)
+
+    assert inventory._managed_files(tmp_path) == ["src/codex_babeldoc/cli.py"]
+
+
 def test_main_returns_nonzero_on_problems(
     tmp_path: Path, capfd: pytest.CaptureFixture[str]
 ) -> None:

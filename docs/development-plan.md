@@ -8,7 +8,6 @@
 - Linux 验证：compileall PASS；ruff check/format PASS；Python 单元套件 `206 passed, 5 deselected`；GUI Vitest `22 passed`；Vite build PASS；mock PDF integration `5 passed`。未修改依赖、配置或架构。
 
 ### Windows 验证复核（2026-09-12，MSI 重验证）
-### Windows 验证复核（2026-09-12，MSI 重验证）
 
 - 当前 WSL `dev` HEAD 为 `4e709d922849516c8162f5b17d387b32b5f42ceb`，本轮 dirty tree 包含 5 个文档文件和 11 个代码/测试文件；已按规则单向同步到 E:，68 个文件更新、0 个失败、17 个 Windows 本地排除/保留项，11 个变更代码/测试文件 SHA-256 一致。
 - Windows 自动化与包级验证均为 `PASS`：Python `201 passed、5 deselected`，GUI `22 passed`，mock PDF integration `5 passed`，QA CLI 正向/篡改/清理通过；lock/sync、Ruff、compileall、doctor、Vite、Cargo、Tauri 配置/icon、PyInstaller、sidecar handshake/worker 错误路径、target-triple、fresh/stale bundle audit、NSIS/MSI 构建、MSI 管理员提取与 payload parity、解包 sidecar handshake、release/解包 GUI 进程 smoke 均通过。之前的 `WinError 32` 清理问题本轮未复现。
@@ -1155,3 +1154,19 @@ peak memory
 ### Windows GUI 截图证据补充（2026-09-12）
 
 已保存用户提供的三张 stale-GUI 截图：图 1 为 `Starting sidecar`，图 2 为 `Sidecar unavailable`，图 3 为设置页。截图确认 sidecar 通用错误可见，但左下角本地优先提示在新建翻译页显示不完整，设置页可完整显示且右上角服务状态位置发生变化；PDF 拖放前后拖放框无变化。布局稳定性、原生 PDF 拖放和 stale-GUI 可操作错误提示继续分别记为 `FAIL`；键盘、NVDA、DPI 继续为 `NOT RUN`。
+
+### Windows 验证复核（2026-09-13，当前 HEAD 14b4856，worker/打包重验）
+
+- 当前 Linux `dev` HEAD `14b4856bf37cf06674b6319da8f0ab6451728348`（工作树仍只有 `scripts/build_linux_gui_bundle.sh` mode-only dirty diff）已按受控排除规则单向同步到 E:；87 个受控文件复制、0 failed，17 个文件和 3 个目录 extras 保留，40 个选定源/测试/配置/验证文件 SHA-256 一致。
+- Windows 验证：锁定依赖、Ruff、compileall、文档清单 CLI、GUI `22 passed`、jobStore `9 passed`、Vite/TypeScript、Cargo/Tauri、mock PDF `5 passed`、QA 正向/篡改和清理、当前源 PyInstaller、sidecar protocol-v1、invalid-worker、target-triple、fresh/stale bundle audit、NSIS/MSI、MSI parity/解包 sidecar handshake 和两个 GUI 8 秒 smoke 均通过。
+- 两项当前失败需要 Linux 处理：`tests/test_docs_inventory.py` 在 Windows 路径分隔符断言失败，导致 Python `220 passed、1 failed、5 deselected`；有效 frozen worker mock 请求在冻结产物中报 `No module named 'bitstring.bitstore_bitarray'`、exit 3，而普通 `.venv` import 正常，疑似 PyInstaller 动态依赖/hidden-import 漏收集。本轮未修改业务代码或 spec。
+- 当前轮状态计数为 `PASS 29 / FAIL 3 / BLOCKED 2 / NOT RUN 5 / NOT APPLICABLE 1`。native GUI/stale-GUI 因 computer-use helper `helper_unknown_error: setup refresh had errors` 为 `BLOCKED`；clean-user、完整 WVQ-007、WVQ-005 release security、live Codex/PDF 和 dependency remediation 仍为 `NOT RUN`，目标 Linux smoke 为 `NOT APPLICABLE`。整体保持 `WINDOWS_VERIFICATION_PENDING`。
+- Linux 后续：先修复文档清单测试的跨平台路径断言并调查 frozen worker 的 `bitstring.bitstore_bitarray` 打包缺失，完成 Linux regression 后重跑 Windows frozen-worker、fresh/stale freshness、target-triple、NSIS/MSI 和解包 sidecar；另行安排原生桌面、WVQ-007、clean-user、发布安全和经授权 live Codex/PDF 验收。
+
+### Linux follow-up（2026-09-13，Windows FAIL reconciliation）
+
+- 文档库存路径问题已在 Linux 修复：`scripts/check_docs_inventory.py` 现在显式将相对路径规范化为 `/`，并新增 Windows 风格分隔符回归测试；相关文档库存测试通过。
+- frozen worker 打包问题已在 Linux 修复：`scripts/babelcodex-service.spec` 使用 `collect_submodules("bitstring")`，收集 `tiktoken`/`tiktoken_ext` 动态插件，并移除会错误排除 `unittest`/`pydoc` 的标准库排除项；新增 spec 回归测试。
+- Linux 证据：Python 默认套件 `223 passed, 5 deselected`；针对性文档库存/worker 测试 `39 passed`；Ruff check/format、compileall、文档库存 CLI、GUI Vitest `22 passed`、Vite/TypeScript build 均通过；Linux PyInstaller sidecar 构建成功；冻结 worker mock PDF 请求 exit 0，生成 mono/dual PDF artifact。
+- 以上仅证明 Linux 源码和 Linux 冻结产物已修复，不能替代 Windows 原生重验证。Windows frozen worker、fresh/stale bundle、target-triple、NSIS/MSI、解包 sidecar 和 GUI/package acceptance 继续标记为 `WINDOWS_VERIFICATION_PENDING`，不得提前提升为 `WINDOWS_PASS`。
+- 当前下一步：将本轮修复后的 Linux 工作树单向同步到 Windows，重跑原 frozen worker/package gates；保留 `WIN-MANUAL-002 / WVQ-001` 的有限范围 PASS，`WVQ-002` 的 `NOT RUN`、`WVQ-003`/stale-GUI 的 `BLOCKED` 以及 clean-user、WVQ-007、WVQ-005、live Codex/PDF 的未执行状态。

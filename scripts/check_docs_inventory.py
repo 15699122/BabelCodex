@@ -102,7 +102,10 @@ def _managed_files(root: Path) -> list[str]:
         if not scope_dir.is_dir():
             continue
         for path in sorted(scope_dir.rglob(pattern)):
-            rel = path.relative_to(root).as_posix()
+            # Normalize explicitly rather than relying on Path's host-specific
+            # string form. This keeps diagnostics and comparisons stable when
+            # the same check runs on Windows and POSIX hosts.
+            rel = str(path.relative_to(root)).replace("\\", "/")
             if "__pycache__" in rel or path.suffix == ".pyc":
                 continue
             files.append(rel)
