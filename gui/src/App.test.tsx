@@ -55,6 +55,8 @@ describe("BabelCodex GUI shell", () => {
     expect(jobRow.textContent).toContain("mock-job-1");
     fireEvent.click(jobRow);
     expect(await screen.getByRole("heading", { name: "任务详情" })).toBeTruthy();
+    expect(screen.getByText("输出产物")).toBeTruthy();
+    expect(screen.getByText("mock-job-1.mono.pdf")).toBeTruthy();
   });
 
   it("queues a PDF through the transport boundary", async () => {

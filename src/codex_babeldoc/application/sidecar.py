@@ -36,6 +36,9 @@ class SidecarMethod(StrEnum):
     GET_JOB = "get_job"
     LIST_JOBS = "list_jobs"
     CANCEL_JOB = "cancel_job"
+    RETRY_JOB = "retry_job"
+    VALIDATE_OUTPUT = "validate_output"
+    RUN_QA = "run_qa"
     POLL_EVENTS = "poll_events"
     LIST_GLOSSARY = "list_glossary"
     SAVE_GLOSSARY = "save_glossary"
@@ -118,6 +121,12 @@ class JsonlSidecar:
                 result = {"jobs": [self.service.job_view(job) for job in self.service.list_jobs()]}
             elif method is SidecarMethod.CANCEL_JOB:
                 result = self._cancel(request)
+            elif method is SidecarMethod.RETRY_JOB:
+                result = self._retry(request)
+            elif method is SidecarMethod.VALIDATE_OUTPUT:
+                result = self._validate_output(request)
+            elif method is SidecarMethod.RUN_QA:
+                result = self._run_qa(request)
             elif method is SidecarMethod.POLL_EVENTS:
                 result = self._poll_events(request)
             elif method is SidecarMethod.LIST_GLOSSARY:
@@ -286,6 +295,39 @@ class JsonlSidecar:
             running.cancel_event.set()
         self._emit(EventType.STATUS_CHANGED, job_id, {"status": "cancel_requested"})
         return {"job_id": job_id, "cancelled": True, "status": "cancel_requested"}
+
+    def _retry(self, request: dict[str, object]) -> dict[str, object]:
+        job_id = str(request.get("job_id", ""))
+        if not job_id:
+            raise SidecarError("job_id is required")
+        job = self.service.get_job(job_id)
+        if job is None:
+            raise SidecarError("job was not found")
+        with self._lock:
+            if job_id in self._running:
+                raise SidecarError("job is already active")
+            running = _RunningJob(job_id=job_id)
+            self._running[job_id] = running
+        self._emit(EventType.STATUS_CHANGED, job_id, {"status": JobStatus.RUNNING.value})
+        running.future = self._executor.submit(
+            self._run_job,
+            running,
+            Path(job.source_path),
+            True,
+        )
+        return {"job_id": job_id, "status": JobStatus.RUNNING.value}
+
+    def _validate_output(self, request: dict[str, object]) -> dict[str, object]:
+        job_id = str(request.get("job_id", ""))
+        if not job_id:
+            raise SidecarError("job_id is required")
+        return self.service.validate_output(job_id)
+
+    def _run_qa(self, request: dict[str, object]) -> dict[str, object]:
+        job_id = str(request.get("job_id", ""))
+        if not job_id:
+            raise SidecarError("job_id is required")
+        return self.service.run_qa(job_id)
 
     def _poll_events(self, request: dict[str, object]) -> dict[str, object]:
         raw_after_sequence = request.get("after_sequence", 0)

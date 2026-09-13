@@ -112,6 +112,9 @@ class BabelCodexService:
             "artifacts": [
                 {
                     "artifact_type": artifact.artifact_type.value,
+                    # External DTOs must not expose local absolute paths. The
+                    # service and manifest retain the full path internally.
+                    "path": Path(artifact.path).name,
                     "size": artifact.size,
                     "sha256": artifact.sha256,
                     "created_at": artifact.created_at,

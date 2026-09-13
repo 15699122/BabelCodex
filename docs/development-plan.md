@@ -536,7 +536,7 @@ GUI 必须通过 Application Service 访问任务；Tauri Rust 层只负责窗�
 - 已完成 Linux `.deb`/AppImage bundle、512×512 方形图标、bundle audit、Linux bundle 构建脚本和 Linux CI GUI test/build job；
 - 已完成 GUI Glossary 页面：通过 `JobStore` 调用 scoped sidecar API，支持 global/document glossary、enabled/notes、增删保存、版本显示和 document stem 校验；
 - 已完成 document context 编辑：通过同一 sidecar API 加载/保存 UTF-8 context sidecar，并显示服务端返回的 bounded parser/version 结果；
-- 尚未完成完整 GUI packaged 交互 E2E、干净用户环境验收、输入/输出 allowlist 与 Windows 路径矩阵、sidecar 自身重启编排、Linux 目标机 smoke、签名/SBOM 和正式发布验收；GUI 的重试、输出目录打开、cleanup 和 `validate_output` 仍需扩展 sidecar/Application Service contract，MCP 侧 scoped cleanup/validate 已完成。
+- Linux/WSL 侧已通过 sidecar/Application Service contract 补齐 GUI 任务详情、显式 retry、artifact validation 和 PDF QA；GUI 只接收脱敏后的 artifact 文件名，不暴露本地绝对路径，也不提供任意路径打开或 shell 操作。尚未完成完整 GUI packaged 交互 E2E、干净用户环境验收、输入/输出 allowlist 与 Windows 路径矩阵、sidecar 自身重启编排、Linux 目标机 smoke、签名/SBOM 和正式发布验收；这些继续保留在 Windows/目标平台验证清单。
 - Linux/WSL 可完成的 glossary/context 基础接入与编辑页面已完成；剩余 packaged 交互、目标机运行、签名/SBOM 和正式发布验收继续保留在 Windows/目标平台清单中。
 
 #### Phase 9B：白色 Vercel 风格 GUI 设计与中文排版重构（LINUX_VERIFIED，2026 年 9 月 10 日；Windows 原生交互仍为 WINDOWS_VERIFICATION_PENDING）

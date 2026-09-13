@@ -26,6 +26,19 @@ export interface Artifact {
   validated?: boolean;
 }
 
+export interface QaResult {
+  job_id: string;
+  qa_status: string;
+  ok: boolean;
+  reports: Array<{
+    artifact: string;
+    ok: boolean;
+    path: string;
+    report?: string;
+    summary: string;
+  }>;
+}
+
 export interface JobState {
   job_id: string;
   source_path: string;

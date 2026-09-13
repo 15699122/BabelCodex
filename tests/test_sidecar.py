@@ -80,6 +80,9 @@ def test_get_server_info_reports_protocol_version_and_capabilities(tmp_path):
     assert info["protocol_version"] == PROTOCOL_VERSION
     assert isinstance(info["package_version"], str) and info["package_version"]
     assert "start_translation" in info["capabilities"]
+    assert "retry_job" in info["capabilities"]
+    assert "validate_output" in info["capabilities"]
+    assert "run_qa" in info["capabilities"]
     assert "shutdown" in info["capabilities"]
     sidecar.close()
 

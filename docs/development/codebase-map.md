@@ -10,8 +10,8 @@
 | `src/codex_babeldoc/__init__.py` | __init__ module | — | service | — | — |
 | `src/codex_babeldoc/application/__init__.py` | __init__ module | — | service | — | — |
 | `src/codex_babeldoc/application/mcp.py` | Minimal local stdio MCP server for scoped BabelCodex job operations | `McpError`; `McpServer`; `run_stdio`; `serve` | service | — | — |
-| `src/codex_babeldoc/application/service.py` | service module | `InvocationSource`; `StartTranslationCommand`; `BabelCodexService` | service | — | — |
-| `src/codex_babeldoc/application/sidecar.py` | Fixed JSONL sidecar boundary for the future GUI and MCP clients | `SidecarMethod`; `SidecarError`; `JsonlSidecar`; `run_jsonl`; `main` | service | — | — |
+| `src/codex_babeldoc/application/service.py` | Shared application façade for translation, job inspection, artifact validation, QA, retry, cleanup and scoped glossary/context operations | `InvocationSource`; `StartTranslationCommand`; `BabelCodexService` | service | — | `tests/test_application_service.py` |
+| `src/codex_babeldoc/application/sidecar.py` | Fixed JSONL sidecar boundary for GUI job operations, including async translation, cancellation, retry, artifact validation, QA and scoped glossary/context access | `SidecarMethod`; `SidecarError`; `JsonlSidecar`; `run_jsonl`; `main` | service | — | `tests/test_sidecar.py` |
 | `src/codex_babeldoc/backends/babeldoc_internal.py` | Backward-compatible facade over the versioned BabelDOC backend | `BabelDocInternalBackend` | service | — | — |
 | `src/codex_babeldoc/backends/babeldoc_v064.py` | BabelDOC 0.6.x compatibility implementation | `detect_version`; `is_supported_version`; `assert_supported`; `normalize_watermark_mode`; `artifacts_from_result`; `convert_progress` | service | — | — |
 | `src/codex_babeldoc/backends/babeldoc_worker.py` | BabelDOC worker process entry point | `main` | worker | — | — |

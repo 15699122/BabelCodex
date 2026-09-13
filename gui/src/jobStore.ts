@@ -1,4 +1,4 @@
-import type { JobEvent, JobState, PollEventsResult, SidecarTransport } from "./protocol";
+import type { JobEvent, JobState, PollEventsResult, QaResult, SidecarTransport } from "./protocol";
 import { createSidecarTransport } from "./sidecar";
 
 export type ConnectionState =
@@ -104,6 +104,23 @@ export class JobStore {
   async cancel(jobId: string): Promise<void> {
     await this.request("cancel_job", { job_id: jobId });
     await this.pollOnce();
+  }
+
+  async retry(jobId: string): Promise<JobState | null> {
+    await this.request("retry_job", { job_id: jobId });
+    return this.refreshJob(jobId);
+  }
+
+  async validateOutput(jobId: string): Promise<Record<string, unknown>> {
+    const result = await this.request<Record<string, unknown>>("validate_output", { job_id: jobId });
+    await this.refreshJob(jobId);
+    return result;
+  }
+
+  async runQa(jobId: string): Promise<QaResult> {
+    const result = await this.request<QaResult>("run_qa", { job_id: jobId });
+    await this.refreshJob(jobId);
+    return result;
   }
 
   async getJob(jobId: string): Promise<JobState | null> {

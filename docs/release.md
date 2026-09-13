@@ -14,7 +14,7 @@ python -m compileall -q src
 git diff --check
 ```
 
-预期：默认套件全绿；集成套件 4 passed；ruff/format/compileall/diff check 全绿。
+预期：默认套件和 mock integration 套件全部通过；ruff/format/compileall/diff check 全绿。测试数量以当前运行结果为准，不在发布文档中固定。
 
 ## 2. 运行时健康检查
 

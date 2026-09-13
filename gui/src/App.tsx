@@ -168,7 +168,13 @@ function App() {
         )}
         {view === "new" && <NewTranslation sourcePath={sourcePath} onPickPdf={pickPdf} onBrowserFile={handleBrowserFile} onStart={() => void startTranslation()} fileInputRef={fileInputRef} />}
         {view === "jobs" && <Jobs jobs={jobs} cancelling={cancelling} refreshingJob={refreshingJob} onOpen={openJob} onCancel={(id) => void cancelJob(id)} onRefresh={(id) => void refreshJob(id)} />}
-        {view === "details" && <JobDetails jobId={selectedJobId} onBack={() => setView("jobs")} />}
+        {view === "details" && (
+          <JobDetails
+            job={jobs.find((candidate) => candidate.job_id === selectedJobId) ?? null}
+            store={store}
+            onBack={() => setView("jobs")}
+          />
+        )}
         {view === "glossary" && <GlossaryEditor store={store} />}
         {view === "diagnostics" && <Diagnostics connection={snapshot.connection} onReconnect={() => void reconnect()} />}
         {view === "settings" && <Settings />}
@@ -330,14 +336,37 @@ function StageBadge({ stage, status }: { stage: JobState["stage"]; status: JobSt
   );
 }
 
-function JobDetails({ jobId, onBack }: { jobId: string | null; onBack: () => void }) {
-  if (!jobId) {
+function JobDetails({ job, store, onBack }: { job: JobState | null; store: JobStore; onBack: () => void }) {
+  const [busy, setBusy] = useState<"retry" | "validate" | "qa" | null>(null);
+  const [feedback, setFeedback] = useState("");
+
+  if (!job) {
     return (
       <div className="content-column reveal">
         <div className="empty-state"><span>尚未选择任务。</span></div>
       </div>
     );
   }
+
+  const runAction = async (action: "retry" | "validate" | "qa") => {
+    setBusy(action);
+    setFeedback("");
+    try {
+      if (action === "retry") await store.retry(job.job_id);
+      if (action === "validate") {
+        const result = await store.validateOutput(job.job_id);
+        setFeedback(result.validated ? "产物校验通过。" : "产物校验失败，请检查输出文件。");
+      }
+      if (action === "qa") {
+        const result = await store.runQa(job.job_id);
+        setFeedback(result.ok ? "PDF QA 通过。" : "PDF QA 发现问题，请查看 CLI QA 报告。");
+      }
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "操作失败。");
+    } finally {
+      setBusy(null);
+    }
+  };
 
   return (
     <div className="content-column reveal">
@@ -348,12 +377,54 @@ function JobDetails({ jobId, onBack }: { jobId: string | null; onBack: () => voi
         <div>
           <p className="eyebrow">翻译任务</p>
           <h2>任务详情</h2>
-          <p className="job-id">任务 ID：{jobId}</p>
+          <p className="job-id">任务 ID：{job.job_id}</p>
         </div>
       </div>
       <Card className="detail-card">
         <CardContent>
-          <p className="form-help">详细任务信息将通过本地服务协议提供。</p>
+          <div className="result-summary">
+            <div><strong>状态：</strong><StageBadge stage={job.stage} status={job.status} /></div>
+            <div><strong>源文件：</strong><span className="path-value">{job.source_path}</span></div>
+            <div><strong>尝试次数：</strong>{job.attempts}</div>
+            <div><strong>QA 状态：</strong>{job.qa_status ?? "pending"}</div>
+            {job.safe_error_message && <div className="job-error">{job.safe_error_message}</div>}
+          </div>
+          <div className="detail-actions">
+            <Button
+              variant="secondary"
+              onClick={() => void runAction("retry")}
+              disabled={busy !== null || isActiveJob(job)}
+            >
+              {busy === "retry" ? "正在重试" : "显式重试"}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => void runAction("validate")}
+              disabled={busy !== null || isActiveJob(job)}
+            >
+              {busy === "validate" ? "正在校验" : "校验产物"}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => void runAction("qa")}
+              disabled={busy !== null || isActiveJob(job)}
+            >
+              {busy === "qa" ? "正在 QA" : "运行 PDF QA"}
+            </Button>
+          </div>
+          {feedback && <p className="form-help" role="status">{feedback}</p>}
+          <h3 className="detail-subheading">输出产物</h3>
+          {job.artifacts?.length ? (
+            <div className="artifact-list">
+              {job.artifacts.map((artifact) => (
+                <div className="artifact-row" key={`${artifact.artifact_type}-${artifact.path}`}>
+                  <strong>{artifact.artifact_type}</strong>
+                  <span className="path-value">{artifact.path}</span>
+                  <small>{artifact.size} bytes · {artifact.validated ? "已校验" : "未校验"}</small>
+                </div>
+              ))}
+            </div>
+          ) : <p className="form-help">当前没有已登记的输出产物。</p>}
         </CardContent>
       </Card>
     </div>

@@ -33,6 +33,35 @@ describe("JobStore", () => {
     await store.close();
   });
 
+  it("routes retry, artifact validation and QA through the sidecar contract", async () => {
+    const state = {
+      sequence: 0,
+      jobs: [
+        {
+          job_id: "mock-job-1",
+          source_path: "/workspace/incoming/failed.pdf",
+          status: "failed" as const,
+          stage: "completed" as const,
+          attempts: 1,
+          safe_error_message: "failed",
+          updated_at: "2026-09-10T00:00:00.000Z",
+          completed_at: "",
+        },
+      ],
+      events: [] as Array<import("./protocol").JobEvent>,
+    };
+    const transport = new MockSidecarTransport(state);
+    const store = new JobStore(() => transport);
+    await store.connect();
+    await store.retry("mock-job-1");
+    await store.validateOutput("mock-job-1");
+    await store.runQa("mock-job-1");
+    expect(transport.requests.map((request) => request.method)).toEqual(
+      expect.arrayContaining(["retry_job", "validate_output", "run_qa"]),
+    );
+    await store.close();
+  });
+
   it("does not duplicate a job when a created event is replayed after list_jobs", async () => {
     const state = {
       sequence: 1,

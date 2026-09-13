@@ -211,6 +211,11 @@ textarea:focus { border-color: var(--foreground); }
 .safe-note { color: var(--muted-foreground); font-size: 12px; line-height: 1.5; }
 .back-action { margin-bottom: 12px; }
 .result-summary { display: grid; gap: 8px; margin-top: 16px; }
+.detail-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+.detail-subheading { margin: 24px 0 8px; font-size: 14px; }
+.artifact-list { display: grid; gap: 8px; }
+.artifact-row { display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-subtle); }
+.artifact-row small, .path-value { color: var(--muted-foreground); overflow-wrap: anywhere; }
 .select-like { display: inline-flex; align-items: center; gap: 4px; min-height: 36px; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--foreground); font-size: 14px; }
 .notice-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-subtle); color: var(--foreground); font-size: 13px; }
 .notice-banner span { flex: 1 1 auto; }

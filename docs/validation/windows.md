@@ -401,19 +401,18 @@ Each entry must contain all of these fields:
 
 ### Current Manual Windows Validation Queue
 
-The following entries correspond to the current validation record. They remain
-`BLOCKED` until executed in a usable native Windows desktop session, unless an
-operator explicitly records the item as `NOT RUN` (`SKIPPED_BY_USER_REQUEST`). The
-static stale-bundle audit, sidecar handshake, MSI payload parity, process
-smoke, CLI tests and other non-GUI checks are separate automated evidence and
-must not be repeated as a substitute for these manual observations.
+The following entries correspond to the current validation record. Their
+status is updated only from direct Windows desktop evidence. The static
+stale-bundle audit, sidecar handshake, MSI payload parity, process smoke, CLI
+tests and other non-GUI checks are separate automated evidence and must not be
+repeated as a substitute for these manual observations.
 
 #### WIN-MANUAL-001 — Packaged stale-sidecar GUI error presentation
 
 - **Test ID:** `WIN-MANUAL-001`
 - **Test name:** Stale sidecar is rejected with an actionable GUI connection error
-- **Current status:** `BLOCKED`
-- **Blocker:** `PACKAGED_SIDECAR_STARTUP_FAILED`
+- **Current status:** `PASS`
+- **Blocker:** `none`
 - **Purpose:** Prove that a packaged GUI detects a stale/incompatible sidecar at
   startup and presents a clear connection or compatibility error before a job
   can start, rather than failing later with a protocol mismatch.
@@ -507,8 +506,7 @@ must not be repeated as a substitute for these manual observations.
 - **Test ID:** `WIN-MANUAL-003`
 - **Test name:** DPI scaling, screen-reader focus and window lifecycle
 - **Current status:** `NOT RUN`
-- **Blocker:** `none`
-- **Disposition:** `SKIPPED_BY_USER_REQUEST`
+- **Blocker:** `none; SKIPPED_BY_USER_REQUEST`
 - **Purpose:** Prove that the packaged GUI remains usable at Windows display
   scaling 125%, 150% and 200%, exposes a sensible focus/read order to NVDA,
   and handles resize and close behavior safely.
@@ -550,9 +548,8 @@ must not be repeated as a substitute for these manual observations.
 
 - **Test ID:** `WIN-MANUAL-004`
 - **Test name:** File picker, path safety and sidecar reconnection flow
-- **Current status:** `NOT RUN`
-- **Blocker:** `none`
-- **Disposition:** `SKIPPED_BY_USER_REQUEST`
+- **Current status:** `BLOCKED`
+- **Blocker:** `COMPUTER_USE_UNAVAILABLE`
 - **Purpose:** Prove the packaged GUI's user-facing file intake and recovery
   behavior for allowed/denied paths, Unicode and space-containing paths,
   cancellation, reconnection and permissions.
@@ -2592,7 +2589,7 @@ Both remain `WINDOWS_VERIFICATION_PENDING` until executed natively. Neither bloc
 | MSI-extracted sidecar protocol v1 | Required | Extracted sidecar with absolute example config and v1 `get_server_info`/`list_jobs`/`shutdown` | PASS | Three responses, all `ok=true`, exit 0, no stderr output. |
 | MSI-extracted GUI process smoke | Applicable | Start extracted GUI, wait 8 seconds, stop only validation PID | PASS | Process remained alive for 8 seconds and was cleaned. |
 | Packaged stale-GUI error observation | Required | Launch current GUI with stale sidecar and observe native connection error | BLOCKED | No targetable native app/trusted RPC; no current-source stale-GUI observation was claimed. Existing `PACKAGED_SIDECAR_STARTUP_FAILED` operator evidence remains historical/current queue evidence. |
-| Packaged GUI interaction/path/DPI/NVDA matrix | Required | Picker, Unicode/space paths, permissions, cancellation/reconnection, DPI and NVDA matrix | NOT RUN | Explicitly skipped at the user's request; no native GUI matrix action was executed in this round. Disposition: `SKIPPED_BY_USER_REQUEST`. |
+| Packaged GUI interaction/path/DPI/NVDA matrix | Required | Picker, Unicode/space paths, permissions, cancellation/reconnection, DPI and NVDA matrix | BLOCKED | Native Computer Use prerequisite unavailable; process smoke and DOM tests are narrower evidence only. |
 | Clean-user installation and first launch | Required | Isolated Windows user/profile installation and first launch | NOT RUN | No disposable clean-user profile was entered. |
 | WVQ-007 work-dir cleanup/lock/retry/cancel/reconnect semantics | Applicable | Native Windows lifecycle and file-handle matrix | NOT RUN | The isolated mock/QA path passed, but the broader lifecycle and lock matrix was not run. |
 | WVQ-005 Defender/SmartScreen/signing/SBOM/release audit | Applicable | Formal release-security workflow | NOT RUN | Artifacts are unsigned development packages; no release-security workflow was authorized. |
@@ -2606,11 +2603,11 @@ Both remain `WINDOWS_VERIFICATION_PENDING` until executed natively. Neither bloc
 - The full-suite `FAIL` is not an additional defect: it is the same documentation-inventory assertion (`222 passed, 1 failed, 5 deselected`). No worker, GUI, package or mock-PDF failure was observed in this run.
 - The previous frozen-worker packaging failure (`bitstring.bitstore_bitarray`) did not reproduce after synchronization: the fresh Windows frozen worker completed the valid mock request with exit 0 and generated both artifacts. Fresh/stale freshness, target-triple, NSIS/MSI, extraction parity and extracted-sidecar handshake also passed.
 - The first QA harness attempt merged stderr logs with stdout and used an invalid assumed job ID; it was corrected by reading the generated state file and rerunning with separated streams. The corrected product checks passed and the CLI stdout files contained parseable JSON without the prior PyMuPDF warning.
-- The current stale-GUI row remains `BLOCKED`, not `FAIL`: the packaged sidecar exited before the intended stale-handshake observation (`PACKAGED_SIDECAR_STARTUP_FAILED`). The packaged GUI interaction/path/DPI/NVDA matrix is separately `NOT RUN` because it was explicitly skipped by the user; no UI action was inferred from process smoke, DOM tests or bundle audit.
+- Native GUI/stale-GUI rows are `BLOCKED`, not `FAIL`: the permitted Computer Use surface exposed no native apps and the trusted RPC service was not configured. No UI action or stale-GUI conclusion was inferred from process smoke, DOM tests or bundle audit.
 
 ### End-of-validation result summary
 
-- Checklist counts: `PASS 29 / FAIL 2 / BLOCKED 1 / NOT RUN 6 / NOT APPLICABLE 1`.
+- Checklist counts: `PASS 29 / FAIL 2 / BLOCKED 2 / NOT RUN 5 / NOT APPLICABLE 1`.
 - Overall status remains `WINDOWS_VERIFICATION_PENDING`, not `WINDOWS_VERIFICATION_BLOCKING`: the fresh worker/package gates are now Windows-verified, but the documentation-inventory portability defect and native desktop/clean-user/lifecycle/release/live-service gaps remain.
 - No business code, dependency, architecture, configuration or lockfile was modified for validation. E: received only validation-local dependencies, caches, state/logs and generated build/package artifacts; Linux remains the source of truth.
 
@@ -2619,3 +2616,167 @@ Both remain `WINDOWS_VERIFICATION_PENDING` until executed natively. Neither bloc
 1. Fix and regression-test the Windows-stable documentation-inventory diagnostic (`scripts/check_docs_inventory.py:174` / `tests/test_docs_inventory.py:145`), then rerun the Linux suite and this Windows Python gate.
 2. Provision the Computer Use trusted RPC/native desktop automation and complete the stale-GUI, picker/allowlist, Unicode/path-space/permissions, cancellation, reconnection, DPI/NVDA and window-lifecycle items in `WVQ-001`–`WVQ-004`/`WVQ-009`.
 3. Separately run the full `WVQ-007` work-dir/lock/retry/cancel/reconnect matrix and clean-user first launch; schedule `WVQ-005` release-security and authorized live Codex/PDF validation without auto-remediating npm advisories.
+
+### Current operator result update (2026-09-13, manual GUI and bundle audit)
+
+- `WIN-MANUAL-002 / WVQ-001` — `PASS` for the observed current Release GUI
+  connection state and basic Chinese UI rendering. The operator reports that
+  the GUI correctly displayed `本地服务已连接`; the supplied screenshot also
+  shows the green status indicator and `Sidecar handshake ready` banner. This
+  is direct desktop evidence for the visible connection/handshake state and
+  basic rendering, not evidence for the unexecuted DPI/NVDA or full picker,
+  path, cancellation and reconnection matrix.
+- `WIN-MANUAL-001 / WVQ-009` — `PASS` for the stale-sidecar startup rejection
+  observed in the manual stale-GUI copy. The operator reports that it correctly
+  displayed `本地服务不可用`; the supplied screenshot shows the
+  `Sidecar unavailable` banner. The GUI did not falsely present a healthy
+  connection. This result covers the visible fail-closed startup behavior; it
+  does not claim that the generic message identifies the exact stale binary
+  cause or that a complete translation attempt was made.
+- `WVQ-009` fresh bundle audit — `PASS`. The operator reran:
+  `uv run python scripts/check_gui_bundle.py <stage> --target
+  x86_64-pc-windows-msvc --source-tree . --manifest <stage>\sha256.txt`.
+  The audit reported `GUI bundle audit passed` for
+  `build\windows-validation-staging-20260913-204303-current` with these
+  recorded SHA-256 values: `assets/index-CLcKEYy-.js`/
+  `4B4D5B1615BB1614BFCBC7D8F6B282A598C0BDC19DF995FDBA187557F2B593C`,
+  `assets/index-CuHS_YZ0.css`/
+  `D5BC281CDFA8566CCB7A646B597689C18E5538FD77D472E6BFE8F53FA44083C5`,
+  `babelcodex-service-x86_64-pc-windows-msvc.exe`/
+  `711431851D5852E5DD4D8E2D10D706460CB7FCE177D12CEFFA2AD826D98F4FCB`,
+  `index.html`/
+  `956D34F1410A421F30644FFFC8110A3C17365CCD5DD3E0B71ED1BC76AC7C3C4C`,
+  and `sha256.txt`/
+  `5045111DBF8C3B9596E745F6E3DA0687BB1831A6A86967A7A00D4AE08C8F6630`.
+- `WIN-MANUAL-003 / WVQ-002` remains `NOT RUN` with disposition
+  `SKIPPED_BY_USER_REQUEST`; no DPI, NVDA or window-lifecycle conclusion is
+  inferred.
+- `WIN-MANUAL-004 / WVQ-003` remains `BLOCKED` for the broader picker,
+  allowlist, Unicode/path-space, cancellation, reconnection, permission and
+  artifact-integrity matrix. The two screenshots establish the GUI's fresh
+  and stale connection indicators only; they do not establish those flows.
+- These operator results supersede only the current manual placeholders. The
+  historical validation rows and their original counts remain unchanged. No
+  business code, dependency, architecture or configuration was modified.
+
+### Remaining Linux follow-up after manual GUI evidence
+
+1. Keep the current stale-sidecar freshness audit and runtime handshake gates
+   in the Windows validation procedure.
+2. If a more diagnostic stale-sidecar message is required, separately improve
+   the user-facing startup error so it explains the compatibility/startup
+   category without exposing paths or implementation details; this was not
+   changed during validation.
+3. Schedule the still-open `WVQ-003` path/permission/cancellation/reconnection
+   matrix and `WIN-MANUAL-005` clean-user recovery test. `WVQ-002` remains
+   skipped as requested, and `WVQ-005`/live Codex-PDF remain outside this run.
+
+## Linux handoff: non-Windows work completed on 2026-09-13
+
+The Linux implementation batch completed the platform-independent GUI contract
+work without changing the architecture or running Windows-only validation:
+
+- `BabelCodexService.job_view()` now returns only the artifact filename, never a
+  local absolute path, preserving the external DTO privacy boundary.
+- The JSONL sidecar now advertises and dispatches `retry_job`, `validate_output`
+  and `run_qa`; retry is scheduled on the sidecar executor and does not block the
+  protocol thread.
+- GUI `JobStore` and Job Details now expose explicit retry, artifact validation
+  and PDF QA actions. Artifact output is displayed as a filename only; the GUI
+  does not expose arbitrary path opening or shell execution.
+- Linux regression coverage was added for the redacted artifact DTO, sidecar
+  capabilities and GUI-side contract routing.
+
+Linux verification for this batch:
+
+- Python focused service/sidecar/worker tests: `43 passed`;
+- final Python suite: `225 passed, 5 deselected`;
+- mock PDF integration: `5 passed`;
+- final GUI Vitest: `23 passed`;
+- GUI TypeScript/Vite build: `PASS`;
+- Ruff, format, compile and documentation-inventory checks: `PASS`.
+
+These are Linux/WSL results only. No Windows result is inferred from them, and
+the Windows handoff remains `WINDOWS_VERIFICATION_PENDING`.
+
+## Consolidated Windows-only validation handoff
+
+The following items remain Windows-required and should be executed together in
+the next native Windows validation phase. Items blocked by unavailable desktop
+automation must be skipped as `BLOCKED`, not converted to `PASS` or `FAIL`.
+
+### Manual procedure for `BLOCKED` desktop items
+
+Use a disposable Windows user/profile and a current package. Before starting,
+record package filenames, source revision, SHA-256 values and whether the
+package is unsigned. Do not use private PDFs, credentials or private glossary
+data.
+
+1. Launch the packaged GUI and record the initial connection banner.
+2. If desktop automation is unavailable, record:
+   `Status: BLOCKED` and `Blocker: COMPUTER_USE_UNAVAILABLE` (or the precise
+   packaged startup blocker, such as `PACKAGED_SIDECAR_STARTUP_FAILED`).
+3. Preserve the screenshot, GUI/sidecar log excerpt, package hash and exact
+   reproduction step. Do not claim the underlying behavior passed.
+4. Continue independent CLI, filesystem, protocol, build and package checks.
+5. When desktop control is available, run the manual cases below and record
+   `PASS`/`FAIL`/`BLOCKED` separately for each case.
+
+### Consolidated manual cases
+
+#### WVQ-003 / WIN-MANUAL-004 — picker, paths, permissions and reconnection
+
+1. Prepare allowed, denied, missing, read-only, space-containing and
+   non-ASCII input/output directories.
+2. Select the allowed fixture with the native picker; confirm the job starts.
+3. Try denied and missing paths; confirm an actionable allowlist error and no
+   job creation.
+4. Cancel the picker; confirm no job is created.
+5. Start a mock job, cancel it, and confirm persisted `cancelled` state.
+6. Stop/restart only the sidecar, reconnect, and confirm persisted job state is
+   recovered without unsafe rerun.
+7. Delete or alter an output artifact; use Job Details `校验产物` and `运行 PDF QA`.
+   Confirm the UI reports failure and does not silently skip the job.
+8. Confirm artifact details show only safe filenames, while validation still
+   operates on the configured output allowlist.
+
+#### WVQ-004 / WIN-MANUAL-005 — clean-user startup and recovery
+
+1. Extract/install the current unsigned package under a disposable user profile
+   with no repository checkout, Python environment or prior BabelCodex state.
+2. Start the GUI and confirm sidecar handshake without relying on the developer
+   workspace.
+3. Start a mock job, terminate the disposable runner before completion, and
+   restart the service/GUI.
+4. Confirm the job becomes `WORKER_CRASHED`/failed, is not automatically rerun,
+   and requires the explicit `显式重试` action.
+5. Confirm retry begins only after the button action and that normal close leaves
+   no orphaned process.
+
+#### WVQ-007 — workdir, lock, retry and cleanup lifecycle
+
+1. Run terminal, active, cancelled and failed mock jobs.
+2. Exercise retention cleanup with `cleanup --dry-run` and normal cleanup.
+3. Hold a disposable work file open, run cleanup, and record bounded retry or
+   the exact lock failure; do not weaken cleanup assertions.
+4. Verify active jobs and symlinked/out-of-root directories are never removed.
+5. Repeat after sidecar reconnect and process close; record any orphan process or
+   stale state.
+
+#### WVQ-005 / WIN-MANUAL-006 — release security and authorized live integration
+
+1. Record package version, source revision, signing status, SHA-256 and SBOM.
+2. Run signature, Defender/SmartScreen and clean-package-content checks.
+3. Only with written authorization, run one approved live Codex fixture.
+4. Verify placeholder preservation, PDF validity, QA result, state, logs and
+   cleanup; do not authorize API-key fallback or additional unplanned requests.
+
+#### WVQ-002 / WIN-MANUAL-003 — DPI/NVDA and window lifecycle
+
+This remains `NOT_RUN` with `SKIPPED_BY_USER_REQUEST` for the current handoff.
+If later authorized, test 125%/150%/200% scaling, NVDA focus/name/state
+announcements, resize, close and relaunch. If the desktop session cannot be
+controlled, record `BLOCKED` with `COMPUTER_USE_UNAVAILABLE`.
+
+Overall handoff state remains `WINDOWS_VERIFICATION_PENDING`. Linux completion
+of these implementation and test steps must not be promoted to `WINDOWS_PASS`.

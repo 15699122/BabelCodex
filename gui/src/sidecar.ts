@@ -135,6 +135,24 @@ export class MockSidecarTransport implements SidecarTransport {
       }
       return { job_id: jobId, cancelled: Boolean(job), status: job?.status ?? null } as T;
     }
+    if (method === "retry_job") {
+      const jobId = String(params.job_id ?? "");
+      const job = this.state.jobs.find((candidate) => candidate.job_id === jobId);
+      if (!job) throw new Error("job was not found");
+      job.status = "running";
+      job.attempts += 1;
+      job.safe_error_message = null;
+      this.emit("status_changed", jobId, { status: job.status });
+      return { job_id: jobId, status: job.status } as T;
+    }
+    if (method === "validate_output") {
+      const jobId = String(params.job_id ?? "");
+      return { job_id: jobId, validated: true, qa_status: "passed", artifacts: [] } as T;
+    }
+    if (method === "run_qa") {
+      const jobId = String(params.job_id ?? "");
+      return { job_id: jobId, qa_status: "passed", ok: true, reports: [] } as T;
+    }
     if (method === "get_job") {
       const jobId = String(params.job_id ?? "");
       const job = this.state.jobs.find((candidate) => candidate.job_id === jobId) ?? null;
@@ -149,7 +167,7 @@ export class MockSidecarTransport implements SidecarTransport {
               artifacts: job.status === "cancelled" ? [] : [
                 {
                   artifact_type: "mono_pdf",
-                  path: `/workspace/translated/${job.job_id}.mono.pdf`,
+                  path: `${job.job_id}.mono.pdf`,
                   size: 24832,
                   sha256: "mock-sha256",
                   created_at: job.updated_at,
@@ -204,6 +222,9 @@ export class MockSidecarTransport implements SidecarTransport {
           "get_job",
           "list_jobs",
           "cancel_job",
+          "retry_job",
+          "validate_output",
+          "run_qa",
           "poll_events",
           "list_glossary",
           "save_glossary",

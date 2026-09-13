@@ -63,6 +63,30 @@ def test_get_and_list_jobs(tmp_path):
     assert service.get_job("0" * 64) is None
 
 
+def test_job_view_redacts_artifact_directory(tmp_path):
+    artifact_path = tmp_path / "translated" / "paper.mono.pdf"
+    job = type(
+        "Job",
+        (),
+        {
+            "job_id": "a" * 64,
+            "source_path": str(tmp_path / "incoming" / "paper.pdf"),
+            "status": JobStatus.COMPLETED,
+            "stage": JobStage.COMPLETED,
+            "attempts": 1,
+            "safe_error_message": None,
+            "updated_at": "",
+            "completed_at": "",
+            "artifacts": [Artifact(ArtifactType.MONO_PDF, str(artifact_path))],
+            "qa_status": "pending",
+        },
+    )()
+
+    view = BabelCodexService.job_view(job)
+    assert view is not None
+    assert view["artifacts"][0]["path"] == "paper.mono.pdf"
+
+
 def test_validate_output_refreshes_manifest_and_detects_tampering(tmp_path):
     from codex_babeldoc.core.state import StateStore
 
