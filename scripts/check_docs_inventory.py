@@ -171,7 +171,7 @@ def check(root: Path) -> list[str]:
     """Run every documentation gate check and return aggregated problems."""
     problems: list[str] = []
     if _map_text(root) is None:
-        problems.append(f"missing required file: {MAP_REL}")
+        problems.append(f"missing required file: {MAP_REL.as_posix()}")
     else:
         problems.extend(missing_inventory(root))
         problems.extend(map_paths_exist(root))

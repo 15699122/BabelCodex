@@ -145,6 +145,24 @@ def test_check_without_map_reports_missing_file(tmp_path: Path) -> None:
     assert inventory.check(tmp_path) == ["missing required file: docs/development/codebase-map.md"]
 
 
+def test_check_missing_map_uses_posix_paths_independent_of_host_separator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The check() diagnostic must use POSIX separators even when the host uses backslashes."""
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "README.md").write_text("x\n", encoding="utf-8")
+
+    original_relative_to = Path.relative_to
+
+    def windows_style_relative_to(self: Path, other: Path) -> Path:
+        relative = original_relative_to(self, other)
+        return Path(str(relative).replace("/", "\\"))
+
+    monkeypatch.setattr(Path, "relative_to", windows_style_relative_to)
+
+    assert inventory.check(tmp_path) == ["missing required file: docs/development/codebase-map.md"]
+
+
 def test_managed_files_use_posix_paths_independent_of_host_separator(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

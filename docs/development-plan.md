@@ -1170,3 +1170,12 @@ peak memory
 - Linux 证据：Python 默认套件 `223 passed, 5 deselected`；针对性文档库存/worker 测试 `39 passed`；Ruff check/format、compileall、文档库存 CLI、GUI Vitest `22 passed`、Vite/TypeScript build 均通过；Linux PyInstaller sidecar 构建成功；冻结 worker mock PDF 请求 exit 0，生成 mono/dual PDF artifact。
 - 以上仅证明 Linux 源码和 Linux 冻结产物已修复，不能替代 Windows 原生重验证。Windows frozen worker、fresh/stale bundle、target-triple、NSIS/MSI、解包 sidecar 和 GUI/package acceptance 继续标记为 `WINDOWS_VERIFICATION_PENDING`，不得提前提升为 `WINDOWS_PASS`。
 - 当前下一步：将本轮修复后的 Linux 工作树单向同步到 Windows，重跑原 frozen worker/package gates；保留 `WIN-MANUAL-002 / WVQ-001` 的有限范围 PASS，`WVQ-002` 的 `NOT RUN`、`WVQ-003`/stale-GUI 的 `BLOCKED` 以及 clean-user、WVQ-007、WVQ-005、live Codex/PDF 的未执行状态。
+
+### Windows 验证复核（2026-09-13，当前 HEAD `62f23d9`）
+
+本轮已完成修复后 frozen worker、sidecar handshake、fresh/stale bundle audit、target-triple、NSIS/MSI、MSI 解包 parity、QA/tamper、GUI 自动化测试和 mock PDF 的 Windows 重验；逐项状态与证据以 [`docs/validation/windows.md`](validation/windows.md) 的本轮记录为准。当前仍为 `WINDOWS_VERIFICATION_PENDING`：Windows 文档清单测试仍有路径分隔符 `FAIL`，原生桌面自动化因 trusted RPC 未配置而 `BLOCKED`，clean-user、WVQ-007 完整生命周期、WVQ-005 发布安全和 live Codex/PDF 尚未执行。Linux 后续只处理文档清单跨平台断言并安排上述 Windows 队列，不在本验证任务中扩大为业务开发。
+
+### Windows 操作员处置（2026-09-13）
+
+- 按用户要求，本轮 packaged GUI interaction/path/DPI/NVDA 矩阵记为 `NOT RUN`（`SKIPPED_BY_USER_REQUEST`）；未执行原生桌面操作，不据此宣称 Windows GUI 验收通过。
+- packaged stale-sidecar GUI 错误展示仍保持 `BLOCKED`，因为 sidecar 在握手前因 `config/example.toml` 不在包工作目录而退出，尚未观察到目标的 stale/incompatible-handshake 可理解错误。分步骤操作、判定标准和证据要求见 [`docs/validation/windows.md`](validation/windows.md)。
