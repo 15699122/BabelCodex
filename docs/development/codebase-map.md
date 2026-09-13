@@ -14,7 +14,7 @@
 | `src/codex_babeldoc/application/sidecar.py` | Fixed JSONL sidecar boundary for the future GUI and MCP clients | `SidecarMethod`; `SidecarError`; `JsonlSidecar`; `run_jsonl`; `main` | service | — | — |
 | `src/codex_babeldoc/backends/babeldoc_internal.py` | Backward-compatible facade over the versioned BabelDOC backend | `BabelDocInternalBackend` | service | — | — |
 | `src/codex_babeldoc/backends/babeldoc_v064.py` | BabelDOC 0.6.x compatibility implementation | `detect_version`; `is_supported_version`; `assert_supported`; `normalize_watermark_mode`; `artifacts_from_result`; `convert_progress` | service | — | — |
-| `src/codex_babeldoc/backends/babeldoc_worker.py` | BabelDOC worker process entry point | `main` | service | — | — |
+| `src/codex_babeldoc/backends/babeldoc_worker.py` | BabelDOC worker process entry point | `main` | worker | — | — |
 | `src/codex_babeldoc/backends/base.py` | base module | `PdfTranslateRequest`; `PdfTranslateResult`; `PdfBackend`; `ProgressEvent`; `EventSink` | service | — | — |
 | `src/codex_babeldoc/backends/worker_client.py` | Main-process client for the BabelDOC worker subprocess | `worker_environment`; `WorkerClientError`; `worker_command`; `build_worker_request`; `run_worker` | service | — | — |
 | `src/codex_babeldoc/backends/worker_protocol.py` | Versioned JSON protocol between the orchestrator and the BabelDOC worker | `TranslatorSpec`; `WorkerRequest`; `WorkerArtifact`; `WorkerProgress`; `WorkerResult`; `WorkerError` | service | — | — |
@@ -97,14 +97,14 @@
 
 | 文件 | 职责 | 入口/公共符号 | 运行位置 | 主要依赖 | 测试 |
 |---|---|---|---|---|---|
-| `gui/src/filePicker.test.ts` | filePicker.test（描述待补） | — | gui | — | — |
-| `gui/src/filePicker.ts` | filePicker（描述待补） | `PickedPdf`; `FilePicker`; `isTauriRuntime`; `isPdfPath`; `createFilePicker` | gui | — | — |
-| `gui/src/jobStore.test.ts` | jobStore.test（描述待补） | — | gui | — | — |
-| `gui/src/jobStore.ts` | jobStore（描述待补） | `ConnectionState`; `JobStoreSnapshot`; `JobStore`; `isActiveJob`; `GlossaryEntry`; `GlossaryResult` | gui | — | — |
-| `gui/src/protocol.test.ts` | protocol.test（描述待补） | — | gui | — | — |
-| `gui/src/protocol.ts` | protocol（描述待补） | `PROTOCOL_VERSION`; `JobStatus`; `JobStage`; `Artifact`; `JobState`; `JobEvent` | gui | — | — |
-| `gui/src/sidecar.ts` | sidecar（描述待补） | `MockSidecarTransport`; `createSidecarTransport` | gui | — | — |
-| `gui/src/test-setup.ts` | test-setup（描述待补） | — | gui | — | — |
+| `gui/src/filePicker.test.ts` | Tests for the Tauri/browser PDF file picker abstraction | — | gui | — | — |
+| `gui/src/filePicker.ts` | PDF file picker abstraction: Tauri dialog vs browser fallback with PDF-only filter | `PickedPdf`; `FilePicker`; `isTauriRuntime`; `isPdfPath`; `createFilePicker` | gui | — | — |
+| `gui/src/jobStore.test.ts` | Tests for the centralized GUI job state store with sidecar lifecycle | — | gui | — | — |
+| `gui/src/jobStore.ts` | Centralized GUI state: sidecar lifecycle, job list sync, event cursor, polling, reconnect | `ConnectionState`; `JobStoreSnapshot`; `JobStore`; `isActiveJob`; `GlossaryEntry`; `GlossaryResult` | gui | — | — |
+| `gui/src/protocol.test.ts` | Tests for the JSONL sidecar protocol types and (de)serialization | — | gui | — | — |
+| `gui/src/protocol.ts` | JSONL sidecar protocol types: requests, responses, events, server info, compatibility assertion | `PROTOCOL_VERSION`; `JobStatus`; `JobStage`; `Artifact`; `JobState`; `JobEvent` | gui | — | — |
+| `gui/src/sidecar.ts` | Sidecar transport abstraction: Tauri subprocess and mock transport for tests | `MockSidecarTransport`; `createSidecarTransport` | gui | — | — |
+| `gui/src/test-setup.ts` | Vitest/React Testing Library global test setup with auto-cleanup | — | gui | — | — |
 
 ## 维护规则
 
