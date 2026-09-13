@@ -78,6 +78,35 @@ export interface SidecarResponse<T> {
   };
 }
 
+export interface PollEventsResult {
+  events: JobEvent[];
+  next_sequence: number;
+  oldest_sequence?: number;
+}
+
+export interface ServerInfo {
+  protocol_version: number;
+  package_version: string;
+  capabilities: string[];
+}
+
+/**
+ * Fail fast when the bundled sidecar was built from older sources.
+ *
+ * A stale frozen sidecar can silently speak an incompatible protocol or config
+ * schema; turning that into an explicit startup error points the user at the
+ * rebuild step instead of unexplained job failures.
+ */
+export const assertCompatibleServerInfo = (info: ServerInfo): void => {
+  if (info.protocol_version !== PROTOCOL_VERSION) {
+    throw new Error(
+      `sidecar protocol mismatch: sidecar speaks v${info.protocol_version}, ` +
+        `GUI expects v${PROTOCOL_VERSION}. Rebuild the bundled babelcodex-service ` +
+        `sidecar (reported package version: ${info.package_version}).`,
+    );
+  }
+};
+
 export interface SidecarTransport {
   start(configPath: string): Promise<void>;
   request<T>(method: string, params?: Record<string, unknown>): Promise<T>;

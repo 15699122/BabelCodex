@@ -1,4 +1,4 @@
-import type { JobEvent, JobState, SidecarTransport } from "./protocol";
+import type { JobEvent, JobState, PollEventsResult, SidecarTransport } from "./protocol";
 import { createSidecarTransport } from "./sidecar";
 
 export type ConnectionState =
@@ -225,10 +225,18 @@ export class JobStore {
   private async pollOnce(): Promise<void> {
     if (this.snapshot.connection.status !== "ready") return;
     try {
-      const result = await this.transport.request<{ events: JobEvent[]; next_sequence: number }>(
+      const result = await this.transport.request<PollEventsResult>(
         "poll_events",
         { after_sequence: this.snapshot.lastSequence },
       );
+      if (
+        result.oldest_sequence !== undefined &&
+        this.snapshot.lastSequence + 1 < result.oldest_sequence
+      ) {
+        await this.refreshJobs();
+        this.setSnapshot({ lastSequence: result.next_sequence });
+        return;
+      }
       let jobs = this.snapshot.jobs;
       for (const event of result.events) jobs = this.applyEvent(jobs, event);
       this.setSnapshot({ jobs, lastSequence: Math.max(this.snapshot.lastSequence, result.next_sequence) });

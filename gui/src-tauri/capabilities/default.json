@@ -15,7 +15,7 @@
           "args": [
             "--config",
             {
-              "validator": "[A-Za-z0-9_./\\\\-]+\\.toml"
+              "validator": "config/example\\.toml"
             }
           ]
         }

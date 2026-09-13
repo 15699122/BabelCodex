@@ -1,5 +1,13 @@
 import { Command, Child } from "@tauri-apps/plugin-shell";
-import { JobState, makeRequest, PROTOCOL_VERSION, SidecarResponse, SidecarTransport } from "./protocol";
+import {
+  JobState,
+  makeRequest,
+  PROTOCOL_VERSION,
+  ServerInfo,
+  SidecarResponse,
+  SidecarTransport,
+  assertCompatibleServerInfo,
+} from "./protocol";
 
 const SIDECAR_PROGRAM = "binaries/babelcodex-service";
 
@@ -19,6 +27,15 @@ class TauriSidecarTransport implements SidecarTransport {
       }
     });
     this.child = await command.spawn();
+    // Runtime handshake: reject a stale frozen sidecar with an explicit
+    // rebuild hint before any job operation can silently misbehave.
+    try {
+      const info = await this.request<ServerInfo>("get_server_info");
+      assertCompatibleServerInfo(info);
+    } catch (error) {
+      await this.close();
+      throw error;
+    }
   }
 
   async request<T>(method: string, params: Record<string, unknown> = {}): Promise<T> {
@@ -76,6 +93,10 @@ export class MockSidecarTransport implements SidecarTransport {
 
   async start(_configPath: string): Promise<void> {
     this.requests.push({ method: "start", params: {} });
+    // Mirror the real transport's startup handshake in dev/test mode so stale
+    // sidecars fail fast outside of packaged Tauri runs as well.
+    const info = await this.request<ServerInfo>("get_server_info");
+    assertCompatibleServerInfo(info);
   }
 
   async request<T>(method: string, params: Record<string, unknown> = {}): Promise<T> {
@@ -172,6 +193,25 @@ export class MockSidecarTransport implements SidecarTransport {
         title: "",
         abstract: "",
         version: "mock-context-version",
+      } as T;
+    }
+    if (method === "get_server_info") {
+      return {
+        protocol_version: PROTOCOL_VERSION,
+        package_version: "mock-babelcodex",
+        capabilities: [
+          "start_translation",
+          "get_job",
+          "list_jobs",
+          "cancel_job",
+          "poll_events",
+          "list_glossary",
+          "save_glossary",
+          "get_context",
+          "save_context",
+          "get_server_info",
+          "shutdown",
+        ],
       } as T;
     }
     if (method === "shutdown") return { closing: true } as T;

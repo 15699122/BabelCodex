@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { PROTOCOL_VERSION } from "./protocol";
 import { JobStore } from "./jobStore";
 import { MockSidecarTransport } from "./sidecar";
 import type { SidecarTransport } from "./protocol";
@@ -189,5 +190,28 @@ describe("JobStore", () => {
     await store.close();
     await vi.advanceTimersByTimeAsync(30000);
     expect(transport.requests.filter((request) => request.method === "start")).toHaveLength(1);
+  });
+
+  it("fails fast with a rebuild hint when the sidecar handshake is stale", async () => {
+    class StaleSidecarTransport extends MockSidecarTransport implements SidecarTransport {
+      override async request<T>(method: string, params: Record<string, unknown> = {}): Promise<T> {
+        if (method === "get_server_info") {
+          return {
+            protocol_version: PROTOCOL_VERSION - 1,
+            package_version: "stale-babelcodex",
+            capabilities: [],
+          } as T;
+        }
+        return super.request<T>(method, params);
+      }
+    }
+
+    const transport = new StaleSidecarTransport();
+    const store = new JobStore(() => transport);
+    await expect(store.connect()).rejects.toThrow(/sidecar protocol mismatch/);
+    const { connection } = store.getSnapshot();
+    expect(connection.status).toBe("failed");
+    if (connection.status !== "failed") throw new Error("expected a failed connection");
+    expect(connection.error).toContain("Rebuild the bundled babelcodex-service");
   });
 });
