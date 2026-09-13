@@ -15,6 +15,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from codex_babeldoc.core.private_data import ensure_private_dir, restrict_file
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS translations (
     cache_key TEXT PRIMARY KEY,
@@ -53,7 +55,7 @@ class TranslationCache:
             self._db = None
             return
 
-        db_path.parent.mkdir(parents=True, exist_ok=True)
+        ensure_private_dir(db_path.parent)
         self._db = sqlite3.connect(
             str(db_path),
             timeout=30,
@@ -63,6 +65,9 @@ class TranslationCache:
         self._db.execute("PRAGMA journal_mode=WAL")
         self._db.execute("PRAGMA synchronous=NORMAL")
         self._db.commit()
+        restrict_file(db_path)
+        restrict_file(Path(f"{db_path}-wal"))
+        restrict_file(Path(f"{db_path}-shm"))
 
     @staticmethod
     def make_key(

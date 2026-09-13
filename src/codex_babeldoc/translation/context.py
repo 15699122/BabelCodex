@@ -38,7 +38,7 @@ class ContextExtractor:
     def from_pdf(self, path: Path) -> DocumentContext:
         """Extract bounded metadata and opening-page text from a PDF."""
         try:
-            import fitz
+            import pymupdf as fitz  # official package name; the fitz shim is deprecated
         except ImportError as exc:
             raise RuntimeError("PDF context extraction requires PyMuPDF") from exc
 

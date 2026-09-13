@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -14,10 +15,12 @@ from threading import RLock
 
 from codex_babeldoc.core.artifacts import Artifact
 from codex_babeldoc.core.errors import ErrorCategory, ErrorCode
+from codex_babeldoc.core.private_data import ensure_private_dir, restrict_file
 
 SCHEMA_VERSION = 2
 STATE_TRANSIENT_RETRIES = 5
 STATE_TRANSIENT_BACKOFF_SECONDS = 0.02
+JOB_ID_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 
 class JobStatus(StrEnum):
@@ -228,9 +231,11 @@ class StateStore:
     def __init__(self, root: Path):
         self.root = root
         self._save_lock = RLock()
-        self.root.mkdir(parents=True, exist_ok=True)
+        ensure_private_dir(self.root)
 
     def _path(self, job_id: str) -> Path:
+        if not isinstance(job_id, str) or JOB_ID_PATTERN.fullmatch(job_id) is None:
+            raise ValueError("job_id must be a 64-character lowercase hexadecimal identifier")
         return self.root / f"{job_id}.json"
 
     def load(self, source: Path, *, config_fingerprint: str = "") -> JobState:
@@ -317,10 +322,12 @@ class StateStore:
                 temporary.flush()
                 os.fsync(temporary.fileno())
                 temporary_path = Path(temporary.name)
+            restrict_file(temporary_path)
             try:
                 for attempt in range(STATE_TRANSIENT_RETRIES):
                     try:
                         os.replace(temporary_path, target)
+                        restrict_file(target)
                         break
                     except PermissionError:
                         if attempt == STATE_TRANSIENT_RETRIES - 1:

@@ -40,7 +40,7 @@ def _babeldoc_version() -> str:
 
 def _source_page_count(source: Path) -> int | None:
     try:
-        import fitz  # pymupdf, already a BabelDOC dependency; kept lazy
+        import pymupdf as fitz  # official package name; fitz shim writes deprecation to stdout
 
         with fitz.open(source) as document:
             return document.page_count

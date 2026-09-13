@@ -9,6 +9,8 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from threading import RLock
 
+from codex_babeldoc.core.private_data import ensure_private_dir, restrict_file
+
 
 @dataclass(frozen=True, slots=True)
 class ThreadState:
@@ -23,7 +25,7 @@ class ThreadStateStore:
 
     def __init__(self, root: Path) -> None:
         self.root = root.resolve()
-        self.root.mkdir(parents=True, exist_ok=True)
+        ensure_private_dir(self.root)
         self._lock = RLock()
 
     def _path(self, document_id: str) -> Path:
@@ -69,6 +71,7 @@ class ThreadStateStore:
                 temporary = Path(handle.name)
             try:
                 os.replace(temporary, target)
+                restrict_file(target)
             finally:
                 temporary.unlink(missing_ok=True)
 

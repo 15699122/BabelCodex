@@ -70,7 +70,7 @@ def check_pdf_structure(path: Path | str) -> list[QaFinding]:
     findings: list[QaFinding] = []
     candidate = Path(path)
     try:
-        import fitz  # pymupdf; lazy like the rest of the BabelDOC-bound code
+        import pymupdf as fitz  # official package name; the fitz shim prints deprecation to stdout
     except ImportError as exc:
         findings.append(
             QaFinding(

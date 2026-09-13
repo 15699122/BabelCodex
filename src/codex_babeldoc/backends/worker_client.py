@@ -33,10 +33,52 @@ from codex_babeldoc.backends.worker_protocol import (
     WorkerResult,
     request_file_path,
 )
+from codex_babeldoc.core.private_data import ensure_private_dir, restrict_file
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_WORKER_TIMEOUT_SECONDS = 1800.0
+
+# Environment keys the worker subprocess inherits. The allowlist must keep the
+# BabelDOC Python runtime alive on every supported platform without leaking the
+# full parent environment. Windows runtime initialization fails with
+# ``WinError 10106`` when the system-root/profile/temp variables are missing
+# (observed in Windows validation), so the platform-neutral set includes both
+# the POSIX home/temp keys and the Windows runtime keys; absent keys on the
+# current platform are simply skipped.
+_WORKER_ENV_KEYS = (
+    "PATH",
+    # POSIX runtime keys
+    "HOME",
+    "USER",
+    "TMPDIR",
+    "LANG",
+    "LC_ALL",
+    # Windows runtime/profile keys required by CPython and BabelDOC
+    "SYSTEMROOT",
+    "USERPROFILE",
+    "TEMP",
+    "TMP",
+    "APPDATA",
+    "LOCALAPPDATA",
+    "PROGRAMDATA",
+)
+
+
+def worker_environment(env_extra: dict[str, str] | None = None) -> dict[str, str]:
+    """Build the restricted subprocess environment for a BabelDOC worker.
+
+    Only the documented keys are copied from the parent environment, so
+    unrelated variables (credentials, VCS state, desktop session values) are
+    not inherited. ``env_extra`` always wins over the allowlist for explicit
+    caller overrides. Missing allowlist keys are skipped instead of raising,
+    which makes the allowlist safe to use on POSIX where the Windows keys are
+    absent and on Windows where the POSIX keys are absent.
+    """
+    allowed = {key: os.environ[key] for key in _WORKER_ENV_KEYS if key in os.environ}
+    if env_extra:
+        allowed.update(env_extra)
+    return allowed
 
 
 class WorkerClientError(Exception):
@@ -89,12 +131,17 @@ def run_worker(
     cancel_event: Event | None = None,
 ) -> WorkerResult:
     """Run one translate operation in a fresh worker subprocess."""
-    working_dir.mkdir(parents=True, exist_ok=True)
+    ensure_private_dir(working_dir)
     request_path = request_file_path(working_dir, job_id)
     request_path.write_text(request.to_json(), encoding="utf-8")
+    restrict_file(request_path)
 
     command = worker_command(request_path)
-    env = {**os.environ, **(env_extra or {})}
+    # Keep env minimal but not so minimal that it blocks the BabelDOC runtime.
+    # The translation sandbox, job isolation and worker-request file restrictions
+    # are enforced elsewhere; this is only about keeping the subprocess alive and
+    # not leaking the full parent environment.
+    env = worker_environment(env_extra)
 
     logger.info("Starting BabelDOC worker for job %s", job_id)
     try:

@@ -86,6 +86,16 @@ def classify_exception(exc: Exception) -> BabelCodexError:
     )
 
 
+def safe_internal_error() -> BabelCodexError:
+    """Create a protocol-safe error without exposing exception details."""
+    return BabelCodexError(
+        category=ErrorCategory.UNKNOWN,
+        code=ErrorCode.UNKNOWN,
+        safe_message="The requested operation failed.",
+        retryable=False,
+    )
+
+
 # Per-category maximum total attempts. Connections, credentials and user input
 # are never retried automatically; transient translation/resource failures are.
 DEFAULT_RETRY_LIMITS: dict[ErrorCategory, int] = {

@@ -6,6 +6,8 @@ from dataclasses import asdict, dataclass, field
 from hashlib import sha256
 from pathlib import Path
 
+from codex_babeldoc.core.private_data import ensure_private_dir
+
 
 @dataclass(slots=True)
 class ProjectConfig:
@@ -37,7 +39,9 @@ class TranslationConfig:
     # ceiling. See ``core.errors.DEFAULT_RETRY_LIMITS`` for the defaults.
     retry_policy: dict[str, int] = field(default_factory=dict)
     cache_enabled: bool = True
-    cache_store_plaintext: bool = True
+    # Historical name retained for config compatibility. This controls only
+    # source-text retention; translated text is required for cache hits.
+    cache_store_plaintext: bool = False
     cache_ttl_seconds: int | None = None
 
 
@@ -100,7 +104,16 @@ class AppConfig:
             self.project.context_dir,
             self.babeldoc.working_dir,
         ):
-            path.mkdir(parents=True, exist_ok=True)
+            if path in {
+                self.project.state_dir,
+                self.project.log_dir,
+                self.project.glossary_dir,
+                self.project.context_dir,
+                self.babeldoc.working_dir,
+            }:
+                ensure_private_dir(path)
+            else:
+                path.mkdir(parents=True, exist_ok=True)
 
     def fingerprint(self) -> str:
         """Hash translation-affecting configuration without machine-specific paths."""

@@ -20,7 +20,7 @@ from codex_babeldoc.application.service import (
     StartTranslationCommand,
 )
 from codex_babeldoc.cli import collect_doctor_checks
-from codex_babeldoc.core.errors import BabelCodexError
+from codex_babeldoc.core.errors import BabelCodexError, safe_internal_error
 from codex_babeldoc.core.state import JobState, JobStatus
 from codex_babeldoc.core.workdir import WorkdirError, remove_work_dir, resolve_work_dir
 
@@ -184,9 +184,13 @@ class McpServer:
             return {"jsonrpc": JSONRPC_VERSION, "id": request_id, "result": result}
         except McpError as exc:
             return self._error(request_id, exc.code, str(exc), exc.data)
-        except Exception as exc:  # noqa: BLE001 - protocol boundary must remain alive
+        except Exception:  # noqa: BLE001 - protocol boundary must remain alive
+            safe = safe_internal_error()
             return self._error(
-                request_id, -32603, "internal MCP server error", {"detail": str(exc)}
+                request_id,
+                -32603,
+                safe.safe_message,
+                {"category": safe.category.value, "code": safe.code.value},
             )
 
     def _initialize(self, params: dict[str, object]) -> dict[str, object]:
@@ -275,12 +279,14 @@ class McpServer:
 
     def _get_job(self, arguments: dict[str, object]) -> dict[str, object]:
         job = self._job(arguments)
-        return {"job": job.to_dict()}
+        return {"job": self.context.service.job_view(job)}
 
     def _list_jobs(self, arguments: dict[str, object]) -> dict[str, object]:
         if arguments:
             raise McpError(-32602, "babelcodex_list_jobs takes no arguments")
-        return {"jobs": [job.to_dict() for job in self.context.service.list_jobs()]}
+        return {
+            "jobs": [self.context.service.job_view(job) for job in self.context.service.list_jobs()]
+        }
 
     def _cancel_job(self, arguments: dict[str, object]) -> dict[str, object]:
         job = self._job(arguments)
@@ -352,7 +358,10 @@ class McpServer:
         job_id = arguments.get("job_id")
         if not isinstance(job_id, str) or not job_id:
             raise McpError(-32602, "job_id is required")
-        job = self.context.service.get_job(job_id)
+        try:
+            job = self.context.service.get_job(job_id)
+        except ValueError as exc:
+            raise McpError(-32602, str(exc)) from exc
         if job is None:
             raise McpError(-32004, "job was not found")
         return job

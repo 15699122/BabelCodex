@@ -24,7 +24,7 @@ _MATCH_LENGTH = 5  # 5 consecutive words = one translated sentence shape
 
 def page_texts(path: Path | str) -> list[str]:
     """Extract one plain-text string per page; errors yield empty strings."""
-    import fitz  # pymupdf; lazy import kept inside the QA boundary
+    import pymupdf as fitz  # official package name; fitz shim writes deprecation to stdout
 
     texts: list[str] = []
     document = fitz.open(path)

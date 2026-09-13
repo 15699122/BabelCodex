@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
+from codex_babeldoc.core.private_data import ensure_private_dir, restrict_file
+
 
 @dataclass(frozen=True, slots=True)
 class GlossaryEntry:
@@ -37,7 +39,7 @@ def read_csv(path: Path) -> tuple[GlossaryEntry, ...]:
 
 
 def write_csv(path: Path, entries: tuple[GlossaryEntry, ...] | list[GlossaryEntry]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
+    ensure_private_dir(path.parent)
     with NamedTemporaryFile(
         "w",
         encoding="utf-8",
@@ -63,6 +65,7 @@ def write_csv(path: Path, entries: tuple[GlossaryEntry, ...] | list[GlossaryEntr
         temporary = Path(handle.name)
     try:
         os.replace(temporary, path)
+        restrict_file(path)
     finally:
         temporary.unlink(missing_ok=True)
 

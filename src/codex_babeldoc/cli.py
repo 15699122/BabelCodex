@@ -11,7 +11,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from codex_babeldoc.application.service import BabelCodexService
-from codex_babeldoc.core.config import load_config
+from codex_babeldoc.core.config import AppConfig, load_config
 from codex_babeldoc.translation.glossary import GlossaryStore
 
 
@@ -26,6 +26,25 @@ def _configure_logging(log_dir: Path, verbose: bool) -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         handlers=handlers,
     )
+
+
+def _release_log_file_handlers() -> None:
+    """Close root-logger file handlers before the CLI process exits.
+
+    Windows validation observed a transient ``PermissionError: [WinError 32]``
+    while a temporary directory containing a freshly written ``logs/cbpdf.log``
+    was removed right after a QA command returned (an earlier round saw the
+    same failure class on the fixture PDF). Closing file handlers explicitly at
+    command completion shortens the window in which the log file handle stays
+    open, instead of relying only on the ``logging.shutdown()`` atexit hook.
+    This is a best-effort mitigation for handle-lifecycle races; it does not
+    change cleanup semantics elsewhere.
+    """
+    root = logging.getLogger()
+    for handler in list(root.handlers):
+        if isinstance(handler, logging.FileHandler):
+            root.removeHandler(handler)
+            handler.close()
 
 
 def _bundled_codex_runtime() -> str | None:
@@ -149,6 +168,16 @@ def main(argv=None) -> int:
 
     cfg = load_config(args.config)
     _configure_logging(cfg.project.log_dir, args.verbose)
+    try:
+        return _dispatch_command(args, cfg)
+    finally:
+        # Close file handlers before returning so the freshly written log file
+        # is not held open while callers (and Windows validation harnesses)
+        # remove the containing temporary directory.
+        _release_log_file_handlers()
+
+
+def _dispatch_command(args: argparse.Namespace, cfg: AppConfig) -> int:
     if args.command == "doctor":
         return doctor(cfg)
 
@@ -173,7 +202,11 @@ def main(argv=None) -> int:
 
     service = BabelCodexService(cfg)
     if args.command == "inspect":
-        result = service.inspect_job(args.job_id)
+        try:
+            result = service.inspect_job(args.job_id)
+        except ValueError as exc:
+            print(json.dumps({"error": str(exc)}, ensure_ascii=False))
+            return 1
         if result is None:
             print(json.dumps({"error": "job was not found"}, ensure_ascii=False))
             return 1

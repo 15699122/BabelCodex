@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import fitz  # pymupdf; QA boundary keeps the import lazy via callers
+import pymupdf as fitz  # official package name; the fitz shim prints a deprecation notice to stdout
 
 from codex_babeldoc.qa.models import QaFinding, QaSeverity
 

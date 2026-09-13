@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import io
+import logging
 import os
+import warnings
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from enum import StrEnum
@@ -8,11 +11,14 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from threading import Event
 
+logger = logging.getLogger(__name__)
+
 from codex_babeldoc.backends.base import ProgressEvent
 from codex_babeldoc.core.artifact_manifest import validate_artifacts
 from codex_babeldoc.core.config import AppConfig
 from codex_babeldoc.core.orchestrator import Orchestrator
-from codex_babeldoc.core.state import JobState, JobStatus
+from codex_babeldoc.core.private_data import ensure_private_dir, restrict_file
+from codex_babeldoc.core.state import JOB_ID_PATTERN, JobState, JobStatus
 from codex_babeldoc.translation.context import ContextExtractor
 from codex_babeldoc.translation.glossary import (
     GlossaryEntry,
@@ -20,6 +26,25 @@ from codex_babeldoc.translation.glossary import (
     version_for,
     write_csv,
 )
+
+
+def _format_warnings(recorded: list[Warning]) -> str:
+    """Return a compact, non-sensitive summary of recorded warnings."""
+
+    def _mesg(w: Warning) -> str:
+        base = str(w.message)
+        cat = type(w.category).__name__
+        loc = ""
+        try:
+            fn = w.filename  # type: ignore[attr-defined]
+            _ln = w.lineno  # type: ignore[attr-defined]
+        except AttributeError:
+            fn = None
+        if fn:
+            loc = f" at {Path(fn).name}:{w.lineno}"  # type: ignore[attr-defined]
+        return f"[{cat}] {base}{loc}"
+
+    return " | ".join(_mesg(w) for w in recorded)
 
 
 class InvocationSource(StrEnum):
@@ -61,6 +86,7 @@ class BabelCodexService:
         )
 
     def get_job(self, job_id: str) -> JobState | None:
+        self._validate_job_id(job_id)
         return self.orchestrator.state.load_by_job_id(job_id)
 
     def list_jobs(self) -> list[JobState]:
@@ -68,7 +94,38 @@ class BabelCodexService:
 
     def inspect_job(self, job_id: str) -> dict[str, object] | None:
         job = self.get_job(job_id)
-        return job.to_dict() if job is not None else None
+        return self.job_view(job) if job is not None else None
+
+    @staticmethod
+    def job_view(job: JobState | None) -> dict[str, object] | None:
+        if job is None:
+            return None
+        return {
+            "job_id": job.job_id,
+            "source_name": Path(job.source_path).name,
+            "status": job.status.value,
+            "stage": job.stage.value,
+            "attempts": job.attempts,
+            "safe_error_message": job.safe_error_message,
+            "updated_at": job.updated_at,
+            "completed_at": job.completed_at,
+            "artifacts": [
+                {
+                    "artifact_type": artifact.artifact_type.value,
+                    "size": artifact.size,
+                    "sha256": artifact.sha256,
+                    "created_at": artifact.created_at,
+                    "validated": artifact.validated,
+                }
+                for artifact in job.artifacts
+            ],
+            "qa_status": job.qa_status,
+        }
+
+    @staticmethod
+    def _validate_job_id(job_id: str) -> None:
+        if not isinstance(job_id, str) or JOB_ID_PATTERN.fullmatch(job_id) is None:
+            raise ValueError("job_id is invalid")
 
     def validate_output(self, job_id: str) -> dict[str, object]:
         job = self.get_job(job_id)
@@ -96,6 +153,9 @@ class BabelCodexService:
         not disturb artifact manifest integrity checks. Any ERROR-level
         finding sets ``qa_status`` to ``failed`` so abnormal output is never
         marked as fully successful.
+
+        Warnings and stderr emitted during QA are captured and routed to the
+        process log so that CLI stdout remains clean JSON through the QA path.
         """
         from codex_babeldoc.core.artifacts import ArtifactType
         from codex_babeldoc.qa.report import (
@@ -106,65 +166,76 @@ class BabelCodexService:
             to_text,
         )
 
-        job = self.get_job(job_id)
-        if job is None:
-            raise ValueError("job was not found")
-        if job.status in {JobStatus.RUNNING, JobStatus.RETRY_PENDING}:
-            raise ValueError("cannot run QA on an active job")
+        _captured_warnings = io.StringIO()
+        with warnings.catch_warnings(record=True) as _recorded:
+            warnings.simplefilter("always")
+            try:
+                job = self.get_job(job_id)
+                if job is None:
+                    raise ValueError("job was not found")
+                if job.status in {JobStatus.RUNNING, JobStatus.RETRY_PENDING}:
+                    raise ValueError("cannot run QA on an active job")
 
-        pdf_artifacts = [
-            artifact
-            for artifact in job.artifacts
-            if artifact.artifact_type in {ArtifactType.MONO_PDF, ArtifactType.DUAL_PDF}
-        ]
-        source_path = Path(job.source_path)
-        if not source_path.is_file():
-            source_path = None
+                pdf_artifacts = [
+                    artifact
+                    for artifact in job.artifacts
+                    if artifact.artifact_type in {ArtifactType.MONO_PDF, ArtifactType.DUAL_PDF}
+                ]
+                source_path = Path(job.source_path)
+                if not source_path.is_file():
+                    source_path = None
 
-        qa_dir = self.config.project.output_dir / "qa"
-        results: list[dict[str, object]] = []
-        all_ok = True
-        for artifact in pdf_artifacts:
-            target = Path(artifact.path)
-            if not target.is_file():
-                all_ok = False
-                results.append(
-                    {
-                        "artifact": artifact.artifact_type.value,
-                        "ok": False,
-                        "path": str(target),
-                        "summary": "output file is missing",
-                    }
-                )
-                continue
-            stem = f"{Path(job.source_path).stem}.{artifact.artifact_type.value}"
-            report = run_report(
-                target,
-                lang_out=self.config.translation.lang_out,
-                source_path=source_path,
-                deep=deep,
-            )
-            report_path = save_report(report, qa_dir, stem)
-            results.append(
-                {
-                    "artifact": artifact.artifact_type.value,
-                    "ok": report.ok,
-                    "path": str(target),
-                    "report": str(report_path),
-                    "summary": to_text(report, verbosity=2 if verbose else 0),
+                qa_dir = self.config.project.output_dir / "qa"
+                results: list[dict[str, object]] = []
+                all_ok = True
+                for artifact in pdf_artifacts:
+                    target = Path(artifact.path)
+                    if not target.is_file():
+                        all_ok = False
+                        results.append(
+                            {
+                                "artifact": artifact.artifact_type.value,
+                                "ok": False,
+                                "path": str(target),
+                                "summary": "output file is missing",
+                            }
+                        )
+                        continue
+                    stem = f"{Path(job.source_path).stem}.{artifact.artifact_type.value}"
+                    report = run_report(
+                        target,
+                        lang_out=self.config.translation.lang_out,
+                        source_path=source_path,
+                        deep=deep,
+                    )
+                    report_path = save_report(report, qa_dir, stem)
+                    results.append(
+                        {
+                            "artifact": artifact.artifact_type.value,
+                            "ok": report.ok,
+                            "path": str(target),
+                            "report": str(report_path),
+                            "summary": to_text(report, verbosity=2 if verbose else 0),
+                        }
+                    )
+                    if not report.ok:
+                        all_ok = False
+
+                job.qa_status = "passed" if all_ok else "failed"
+                self.orchestrator.state.save(job)
+                return {
+                    "job_id": job.job_id,
+                    "qa_status": job.qa_status,
+                    "ok": all_ok,
+                    "reports": results,
                 }
-            )
-            if not report.ok:
-                all_ok = False
-
-        job.qa_status = "passed" if all_ok else "failed"
-        self.orchestrator.state.save(job)
-        return {
-            "job_id": job.job_id,
-            "qa_status": job.qa_status,
-            "ok": all_ok,
-            "reports": results,
-        }
+            except Exception:
+                _captured_warnings.write(_format_warnings(_recorded))
+                raise
+            finally:
+                _captured_warnings.write(_format_warnings(_recorded))
+                if _captured_warnings.getvalue():
+                    logger.warning("QA warnings captured: %s", _captured_warnings.getvalue())
 
     def cleanup_work_dirs(self, *, dry_run: bool = False) -> dict[str, object]:
         """Sweep terminal job working directories older than the retention window."""
@@ -241,7 +312,7 @@ class BabelCodexService:
 
     def save_context(self, document_id: str, text: str) -> dict[str, object]:
         path = self._context_path(document_id)
-        path.parent.mkdir(parents=True, exist_ok=True)
+        ensure_private_dir(path.parent)
         with NamedTemporaryFile(
             "w",
             encoding="utf-8",
@@ -254,8 +325,10 @@ class BabelCodexService:
             handle.flush()
             os.fsync(handle.fileno())
             temporary = Path(handle.name)
+        restrict_file(temporary)
         try:
             os.replace(temporary, path)
+            restrict_file(path)
         finally:
             temporary.unlink(missing_ok=True)
         return self.get_context(document_id)

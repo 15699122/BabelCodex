@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import sys
+from collections import deque
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -26,6 +27,8 @@ from codex_babeldoc.core.state import JobState, JobStatus
 from .service import BabelCodexService, InvocationSource, StartTranslationCommand
 
 PROTOCOL_VERSION = 1
+MAX_RETAINED_EVENTS = 512
+MAX_EVENTS_PER_POLL = 128
 
 
 class SidecarMethod(StrEnum):
@@ -38,6 +41,7 @@ class SidecarMethod(StrEnum):
     SAVE_GLOSSARY = "save_glossary"
     GET_CONTEXT = "get_context"
     SAVE_CONTEXT = "save_context"
+    GET_SERVER_INFO = "get_server_info"
     SHUTDOWN = "shutdown"
 
 
@@ -66,6 +70,18 @@ def _classify_sidecar_exception(exc: Exception) -> BabelCodexError:
     return classify_exception(exc)
 
 
+def _package_version() -> str:
+    """Return the installed package version, tolerating frozen distributions."""
+    try:
+        from importlib.metadata import PackageNotFoundError, version
+
+        return version("babelcodex")
+    except PackageNotFoundError:
+        return "unknown"
+    except Exception:  # noqa: BLE001 - metadata must never break the handshake
+        return "unknown"
+
+
 class JsonlSidecar:
     """Dispatch versioned JSONL requests through the shared application service."""
 
@@ -84,7 +100,7 @@ class JsonlSidecar:
         self._owns_executor = executor is None
         self._lock = Lock()
         self._running: dict[str, _RunningJob] = {}
-        self._events: list[JobEvent] = []
+        self._events: deque[JobEvent] = deque(maxlen=MAX_RETAINED_EVENTS)
         self._next_sequence = 1
         self._closed = False
 
@@ -99,7 +115,7 @@ class JsonlSidecar:
             elif method is SidecarMethod.GET_JOB:
                 result = self._get_job(request)
             elif method is SidecarMethod.LIST_JOBS:
-                result = {"jobs": [job.to_dict() for job in self.service.list_jobs()]}
+                result = {"jobs": [self.service.job_view(job) for job in self.service.list_jobs()]}
             elif method is SidecarMethod.CANCEL_JOB:
                 result = self._cancel(request)
             elif method is SidecarMethod.POLL_EVENTS:
@@ -112,6 +128,8 @@ class JsonlSidecar:
                 result = self._get_context(request)
             elif method is SidecarMethod.SAVE_CONTEXT:
                 result = self._save_context(request)
+            elif method is SidecarMethod.GET_SERVER_INFO:
+                result = self._server_info()
             elif method is SidecarMethod.SHUTDOWN:
                 result = {"closing": True}
                 self.close()
@@ -141,6 +159,20 @@ class JsonlSidecar:
             self._closed = True
         if self._owns_executor:
             self._executor.shutdown(wait=False, cancel_futures=True)
+
+    def _server_info(self) -> dict[str, object]:
+        """Describe the running sidecar so clients can reject stale binaries.
+
+        A frozen sidecar built from older sources can silently speak an
+        incompatible protocol or config schema (observed in the 2026-09-11
+        Windows validation). Clients call this before any job operation and
+        fail fast with an explicit rebuild hint instead of mysterious errors.
+        """
+        return {
+            "protocol_version": PROTOCOL_VERSION,
+            "package_version": _package_version(),
+            "capabilities": [method.value for method in SidecarMethod],
+        }
 
     def _start(self, request: dict[str, object]) -> dict[str, object]:
         if self._closed:
@@ -193,7 +225,7 @@ class JsonlSidecar:
                 self._emit(
                     EventType.JOB_COMPLETED,
                     running.job_id,
-                    {"status": job.status.value, "job": job.to_dict()},
+                    {"status": job.status.value, "job": self.service.job_view(job)},
                 )
             return job
         except Exception as exc:
@@ -235,7 +267,7 @@ class JsonlSidecar:
         if not job_id:
             raise SidecarError("job_id is required")
         job = self.service.get_job(job_id)
-        return {"job": job.to_dict() if job is not None else None}
+        return {"job": self.service.job_view(job)}
 
     def _cancel(self, request: dict[str, object]) -> dict[str, object]:
         job_id = str(request.get("job_id", ""))
@@ -248,7 +280,7 @@ class JsonlSidecar:
                 return {
                     "job_id": job_id,
                     "cancelled": False,
-                    "status": job.status.value if job else None,
+                    "status": job.status.value if job is not None else "unknown",
                 }
             running.cancel_requested = True
             running.cancel_event.set()
@@ -272,8 +304,14 @@ class JsonlSidecar:
                 for event in self._events
                 if event.sequence > after_sequence and (job_id is None or event.job_id == job_id)
             ]
+            events = events[:MAX_EVENTS_PER_POLL]
             next_sequence = self._next_sequence - 1
-        return {"events": events, "next_sequence": next_sequence}
+            oldest_sequence = self._events[0].sequence if self._events else next_sequence + 1
+        return {
+            "events": events,
+            "next_sequence": next_sequence,
+            "oldest_sequence": oldest_sequence,
+        }
 
     def _list_glossary(self, request: dict[str, object]) -> dict[str, object]:
         scope = str(request.get("scope", "global"))
