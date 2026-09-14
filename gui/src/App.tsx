@@ -2,13 +2,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Activity, ArrowUpRight, BookOpen, CheckCircle2, FolderOpen, Gauge, Library, RefreshCw, Settings2, ShieldCheck } from "lucide-react";
 import { createFilePicker, isTauriRuntime } from "./filePicker";
 import { isActiveJob, JobStore } from "./jobStore";
-import type { ContextResult, GlossaryEntry, GlossaryResult } from "./jobStore";
+import type { ConnectionState, ContextResult, GlossaryEntry, GlossaryResult } from "./jobStore";
 import type { JobState } from "./protocol";
 import { Button } from "./components/ui/button";
 import { Card, CardContent, CardHeader } from "./components/ui/card";
 import { Progress } from "./components/ui/progress";
 
 type View = "new" | "jobs" | "details" | "glossary" | "diagnostics" | "settings";
+
+export const connectionStatusTone = (status: ConnectionState["status"]): string => status;
 
 function App() {
   const [view, setView] = useState<View>("new");
@@ -31,31 +33,26 @@ function App() {
   }, [store]);
 
   const jobs = snapshot.jobs;
+  const showNotice = (notice: string) => store.setNotice(notice);
 
   const startTranslation = async () => {
     if (!sourcePath.trim()) {
-      setSnapshot((current) => ({
-        ...current,
-        notice: "请先选择配置输入目录中的 PDF 文件。",
-      }));
+      showNotice("请先选择配置输入目录中的 PDF 文件。");
       return;
     }
     try {
       const jobId = await store.startTranslation(sourcePath.trim());
       setView("jobs");
-      setSnapshot((current) => ({ ...current, notice: `已加入翻译队列：${jobId}` }));
+      showNotice(`已加入翻译队列：${jobId}`);
     } catch (error) {
-      setSnapshot((current) => ({
-        ...current,
-        notice: error instanceof Error ? error.message : "无法开始翻译。",
-      }));
+      showNotice(error instanceof Error ? error.message : "无法开始翻译。");
     }
   };
 
   const applyPickedPdf = (picked: { path: string; displayName: string } | null) => {
     if (!picked) return;
     setSourcePath(picked.path);
-    setSnapshot((current) => ({ ...current, notice: `已选择：${picked.displayName}` }));
+    showNotice(`已选择：${picked.displayName}`);
   };
 
   const pickPdf = async () => {
@@ -66,10 +63,7 @@ function App() {
       }
       applyPickedPdf(await filePicker.pickPdf());
     } catch (error) {
-      setSnapshot((current) => ({
-        ...current,
-        notice: error instanceof Error ? error.message : "无法打开文件选择器。",
-      }));
+      showNotice(error instanceof Error ? error.message : "无法打开文件选择器。");
     }
   };
 
@@ -77,7 +71,7 @@ function App() {
     if (!file) return;
     const picked = filePicker.fromBrowserFile(file);
     if (!picked) {
-      setSnapshot((current) => ({ ...current, notice: "请选择 PDF 文件。" }));
+      showNotice("请选择 PDF 文件。");
       return;
     }
     applyPickedPdf(picked);
@@ -88,10 +82,7 @@ function App() {
     try {
       await store.cancel(jobId);
     } catch (error) {
-      setSnapshot((current) => ({
-        ...current,
-        notice: error instanceof Error ? error.message : "无法取消任务。",
-      }));
+      showNotice(error instanceof Error ? error.message : "无法取消任务。");
     } finally {
       setCancelling(null);
     }
@@ -102,10 +93,7 @@ function App() {
     try {
       await store.refreshJob(jobId);
     } catch (error) {
-      setSnapshot((current) => ({
-        ...current,
-        notice: error instanceof Error ? error.message : "无法刷新任务。",
-      }));
+      showNotice(error instanceof Error ? error.message : "无法刷新任务。");
     } finally {
       setRefreshingJob(null);
     }
@@ -154,7 +142,7 @@ function App() {
       <main className="workspace">
         <div className="topbar">
           <div />
-          <div className="connection" data-status={connectionStatus} aria-live="polite">
+          <div className="connection" data-status={connectionStatusTone(connectionStatus)} aria-live="polite">
             <span className="pulse" aria-hidden="true" />
             <span>{connectionStatus === "ready" ? "本地服务已连接" : connectionStatus === "starting" ? "正在连接本地服务" : connectionStatus === "reconnecting" ? "正在重新连接" : "本地服务不可用"}</span>
           </div>
@@ -163,7 +151,7 @@ function App() {
         {snapshot.notice && (
           <div className="notice-banner" role="status" aria-live="polite">
             <span>{snapshot.notice}</span>
-            <Button variant="ghost" size="sm" aria-label="关闭提示" onClick={() => setSnapshot((current) => ({ ...current, notice: "" }))}>×</Button>
+              <Button variant="ghost" size="sm" aria-label="关闭提示" onClick={() => store.dismissNotice()}>×</Button>
           </div>
         )}
         {view === "new" && <NewTranslation sourcePath={sourcePath} onPickPdf={pickPdf} onBrowserFile={handleBrowserFile} onStart={() => void startTranslation()} fileInputRef={fileInputRef} />}

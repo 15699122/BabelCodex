@@ -33,6 +33,40 @@ describe("JobStore", () => {
     await store.close();
   });
 
+  it("dismisses the current notice without changing connection state", async () => {
+    const store = new JobStore(() => new MockSidecarTransport());
+    await store.connect();
+    expect(store.getSnapshot().notice).toBe("Sidecar handshake ready");
+    store.dismissNotice();
+    expect(store.getSnapshot().notice).toBe("");
+    expect(store.getSnapshot().connection.status).toBe("ready");
+    await store.close();
+  });
+
+  it("keeps a shared notice across polling and preserves ready state on path rejection", async () => {
+    class RejectingTransport extends MockSidecarTransport implements SidecarTransport {
+      override async request<T>(method: string, params: Record<string, unknown> = {}): Promise<T> {
+        if (method === "start_translation") throw new Error("source_path is outside the configured input directory");
+        return super.request<T>(method, params);
+      }
+    }
+
+    const transport = new RejectingTransport();
+    const store = new JobStore(() => transport);
+    await store.connect();
+    store.setNotice("selected.pdf");
+    expect(store.getSnapshot().notice).toBe("selected.pdf");
+    await store.getJob("mock-job-1").catch(() => undefined);
+    expect(store.getSnapshot().notice).toBe("selected.pdf");
+
+    await expect(store.startTranslation("/outside/missing.pdf")).rejects.toThrow(
+      /outside the configured input directory/,
+    );
+    expect(store.getSnapshot().connection.status).toBe("ready");
+    expect(transport.requests.filter((request) => request.method === "poll_events")).not.toContain("start");
+    await store.close();
+  });
+
   it("routes retry, artifact validation and QA through the sidecar contract", async () => {
     const state = {
       sequence: 0,

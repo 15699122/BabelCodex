@@ -52,6 +52,18 @@ export class JobStore {
     return this.snapshot;
   }
 
+  dismissNotice(): void {
+    this.setSnapshot({ notice: "" });
+  }
+  setNotice(notice: string): void {
+    this.setSnapshot({ notice });
+  }
+
+  /** Submit a one-shot request without treating a rejection as a transport loss. */
+  private async requestOnce<T>(method: string, params: Record<string, unknown> = {}): Promise<T> {
+    return this.transport.request<T>(method, params);
+  }
+
   async connect(configPath = this.configPath): Promise<void> {
     this.configPath = configPath;
     this.closed = false;
@@ -96,7 +108,7 @@ export class JobStore {
   }
 
   async startTranslation(sourcePath: string): Promise<string> {
-    const result = await this.request<{ job_id: string }>("start_translation", { source_path: sourcePath });
+    const result = await this.requestOnce<{ job_id: string }>("start_translation", { source_path: sourcePath });
     await this.refreshJobs();
     return result.job_id;
   }

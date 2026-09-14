@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import App from "./App";
+import App, { connectionStatusTone } from "./App";
 
 describe("BabelCodex GUI shell", () => {
   it("renders the local translation intake by default", async () => {
@@ -10,6 +10,19 @@ describe("BabelCodex GUI shell", () => {
     expect(screen.getByText("只能选择配置输入目录中的 PDF 文件。")).toBeTruthy();
     expect(await screen.findByText("本地服务已连接")).toBeTruthy();
     expect(screen.getByRole("button", { name: "选择 PDF" })).toBeTruthy();
+  });
+
+  it("maps failed sidecar connections to the destructive status tone", () => {
+    expect(connectionStatusTone("failed")).toBe("failed");
+    expect(connectionStatusTone("ready")).toBe("ready");
+  });
+
+  it("keeps a dismissed notice closed in the shared job store", async () => {
+    render(<App />);
+    expect(await screen.findByText("本地服务已连接")).toBeTruthy();
+    expect(screen.getByText("Sidecar handshake ready")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "关闭提示" }));
+    expect(screen.queryByText("Sidecar handshake ready")).toBeNull();
   });
 
   it("accepts a dropped PDF and rejects a non-PDF", async () => {
