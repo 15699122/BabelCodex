@@ -6,6 +6,7 @@
   "permissions": [
     "core:default",
     "dialog:allow-open",
+    "mcp-bridge:default",
     {
       "identifier": "shell:allow-spawn",
       "allow": [
