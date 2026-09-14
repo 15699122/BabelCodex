@@ -94,3 +94,14 @@ def test_transient_retry_budget_is_bounded(tmp_path, monkeypatch):
         monkeypatch.undo()
 
     assert attempts["count"] == STATE_TRANSIENT_RETRIES
+
+
+def test_process_query_oserror_is_conservative(monkeypatch):
+    """An indeterminate native PID query must not recover a live job as dead."""
+    from codex_babeldoc.core import state as state_module
+
+    def query_failed(*_args):
+        raise OSError(11, "resource temporarily unavailable")
+
+    monkeypatch.setattr(state_module.os, "kill", query_failed)
+    assert state_module._process_is_alive(1234) is True

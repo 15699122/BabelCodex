@@ -8,7 +8,13 @@ This file is the single frozen entry point referenced by
 
 from __future__ import annotations
 
-from codex_babeldoc.application.sidecar import main
+import multiprocessing
 
 if __name__ == "__main__":
+    # PyInstaller worker children re-enter the frozen executable with
+    # multiprocessing's private command-line arguments. Handle those before
+    # BabelCodex's sidecar argparse sees them.
+    multiprocessing.freeze_support()
+    from codex_babeldoc.application.sidecar import main
+
     raise SystemExit(main())

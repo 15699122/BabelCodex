@@ -349,5 +349,10 @@ def _process_is_alive(pid: int) -> bool:
         # A foreign process can be alive even when the current user cannot
         # signal it; preserving its state is safer than falsely recovering it.
         return True
+    except OSError:
+        # Windows may report a process-query failure as a generic OSError
+        # (for example, WinError 11). Treat an indeterminate result as alive
+        # so startup recovery never terminalizes a possibly running job.
+        return True
     else:
         return True

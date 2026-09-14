@@ -329,6 +329,14 @@ class TestWorkerEntry:
         assert len(lines) == 1
         json.loads(lines[0])
 
+    def test_frozen_entrypoint_contains_multiprocessing_freeze_support(self) -> None:
+        entry = Path(__file__).resolve().parents[1] / "scripts" / "sidecar_entry.py"
+        text = entry.read_text(encoding="utf-8")
+        assert "multiprocessing.freeze_support()" in text
+        assert text.index("multiprocessing.freeze_support()") < text.index(
+            "from codex_babeldoc.application.sidecar import main"
+        )
+
 
 class TestRunWorker:
     def _request(self, tmp_path: Path) -> WorkerRequest:
