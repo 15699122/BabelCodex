@@ -1,5 +1,129 @@
 # Compatibility Baseline
 
+## Linux GUI notice/state lifecycle follow-up (2026-09-14)
+
+- Linux routed App-level notices through a new shared `JobStore.setNotice()`
+  so polling/reconnect updates cannot overwrite a locally shown selection or
+  error notice; GUI regressions pin the behavior. The Windows Release
+  selection-notice persistence `FAIL` remains `WINDOWS_VERIFICATION_PENDING`
+  until native retest.
+- `startTranslation` now uses a one-shot request that does not schedule a
+  global reconnect on rejection; a rejected path keeps the healthy connection
+  `ready`. This addresses the observed `正在重新连接` after path rejection;
+  native Windows revalidation remains pending.
+- These fixes do not diagnose the Debug-only healthy-handshake failure, which
+  remains an open Windows follow-up.
+
+## Latest Windows revalidation after Linux status/PID fixes (2026-09-14)
+
+- The dirty WSL source at `dev` HEAD `7cd978e` was synchronized one-way to E:
+  with the GUI failed-state tone fix and conservative Windows PID-query fix.
+  Windows Python `226 passed, 5 deselected`, GUI `24 passed`, mock PDF
+  integration `5 passed`, current frozen/target-triple sidecars, freshness
+  audits, NSIS/MSI, extraction parity and process smokes passed.
+- The frozen valid worker functionally completed but emitted
+  `--multiprocessing-fork` argument/parser warnings; this remains a current
+  `FAIL` for frozen subprocess stderr cleanliness. Linux added
+  `multiprocessing.freeze_support()` before importing the frozen sidecar
+  entrypoint and a regression test; a fresh native Windows frozen-worker run is
+  still required before this item can be closed.
+- The earlier automated native stale-GUI attempt was `BLOCKED` by Computer Use,
+  but the subsequent human Windows retest passed: the stale sidecar showed
+  `本地服务不可用` / `Sidecar unavailable` with the corrected red status light,
+  while the fresh control showed `本地服务已连接`. The earlier historical
+  green-indicator `FAIL` remains preserved in the validation history.
+- The operator observed a green light during `正在连接本地服务`; a neutral
+  gray connecting-state indicator is recommended as a UX improvement, but is
+  not a current acceptance failure. The GUI picker/path/permission/
+  cancellation/reconnection matrix remains `NOT RUN` with
+  `SKIPPED_BY_USER_REQUEST`, per explicit user instruction. Details are in
+  [`docs/validation/windows.md`](validation/windows.md).
+- The follow-up manual GUI observations passed Chinese rendering, keyboard
+  navigation, Settings, empty Jobs state, reduced-size layout and the narrow
+  Unicode/space/allowlist/missing/permission/picker-cancel checks. NVDA is
+  permanently skipped because it is not installed. Mock-job cancellation and
+  sidecar reconnection were observed to fail; artifact tamper validation was
+  blocked because the mock job failed before producing an artifact. Clean-user
+  installation/recovery (`WIN-MANUAL-005`) is permanently skipped by explicit
+  user request, so no clean-user conclusion is inferred. A current GUI `FAIL`
+  was also recorded: clicking `x` on a top notice such as `Sidecar handshake
+  ready` closes it only momentarily before it reappears. Linux now stores
+  dismissal in the shared JobStore and has GUI regression coverage; native
+  Windows notice dismissal remains pending. Details are in
+  [`docs/validation/windows.md`](validation/windows.md).
+
+## Latest current-source stale-GUI observation (2026-09-14)
+
+- The fresh control GUI launched, displayed `本地服务已连接` with
+  `Sidecar handshake ready`, and exited normally.
+- The current GUI paired with the deliberately stale sidecar failed closed as
+  intended at the text/banner level (`本地服务不可用` / `Sidecar unavailable`),
+  but its status light remained green. The full stale-GUI observation is
+  therefore `FAIL` for semantic status presentation, not a release pass.
+- The likely cause and required Linux follow-up are recorded in
+  [`docs/validation/windows.md`](validation/windows.md). This is a manual
+  observation and does not establish general native GUI or release acceptance.
+- The GUI picker, path, permission, cancellation and reconnection interaction
+  matrix was explicitly skipped for this round and is recorded as `NOT RUN`
+  with disposition `SKIPPED_BY_USER_REQUEST`; no PASS or BLOCKED conclusion is
+  inferred from the narrower process-smoke evidence.
+
+## Latest real Codex benchmark attempt (2026-09-14)
+
+- An operator-initiated real `codex-sdk` run was started from the current
+  Windows source. The six-page input reached `translating`, but its runner
+  disappeared before persisting a terminal state or producing artifacts; this
+  is `BLOCKED`, not a translation or QA pass.
+- A follow-up `inspect` exposed a Windows-specific state-recovery error:
+  `_process_is_alive()` propagated `OSError: [WinError 11]` from
+  `os.kill(pid, 0)`. The formal live Codex/PDF compatibility conclusion
+  remains pending. Linux now handles indeterminate PID-query `OSError`
+  conservatively and has a regression test; the repaired source still requires
+  native Windows revalidation before this item can be considered closed.
+
+## Latest Windows validation reconciliation (2026-09-14, current source and package gates)
+
+- The current `dev` source at `7cd978eaa3bd1b9e4d7226d626603a0bdc3b7a9a` was
+  synchronized to the disposable Windows validation workspace with filtered
+  one-way copying and selected-file SHA-256 parity. The current-source package
+  and runtime checks passed: controlled-temp Python suite `225 passed, 5
+  deselected`, GUI `23 passed`, mock PDF integration `5 passed`, frozen worker
+  valid/invalid requests, protocol-v1 and target-triple handshakes, fresh/stale
+  bundle audits, NSIS/MSI build and extraction parity, QA/tamper checks and
+  release GUI process smoke.
+- The earlier Linux follow-ups for documentation-inventory separator handling
+  and frozen `bitstring` submodule collection are therefore both revalidated
+  natively. Their Windows status is closed by direct evidence; the historical
+  failed runs remain unchanged in `docs/validation/windows.md`.
+- The current automated product validation summary is `PASS 31 / FAIL 0 /
+  BLOCKED 4 / NOT RUN 6 / NOT APPLICABLE 1`; those blocked native desktop
+  observations were not executable from the automated run because no trusted
+  targetable desktop surface was available. A subsequent operator-run
+  current-source stale-sidecar observation is recorded above and is `FAIL` for
+  its green unavailable-state indicator. The unexecuted items include clean-
+  user recovery, WVQ-007 lifecycle, release security, dependency remediation
+  and live Codex/PDF. Overall status remains `WINDOWS_VERIFICATION_PENDING`.
+- This result does not establish a Windows release. Unsigned development
+  artifacts, native GUI/accessibility/path interaction, clean-user behavior,
+  lifecycle semantics and authorized live service acceptance remain separate
+  requirements. Linux results must not be promoted to `WINDOWS_PASS`.
+
+## Linux follow-up after the 2026-09-14 operator observations
+
+- Linux corrected the GUI connection-status CSS mapping so `failed` sidecar
+  connections use the destructive status color. A GUI regression test now pins
+  the failed/ready status-tone contract. The current Windows stale-GUI result
+  remains a historical `FAIL` until the repaired package is observed natively;
+  it is not promoted to `WINDOWS_PASS`.
+- Linux hardened `_process_is_alive()` against indeterminate native `OSError`
+  PID queries by conservatively treating the process as alive. A regression
+  test covers the behavior. The Windows recovery path and the real Codex
+  benchmark remain `WINDOWS_VERIFICATION_PENDING`/blocked until rerun with an
+  approved isolated benchmark.
+- Linux evidence after the fixes: Python `226 passed, 5 deselected`, mock PDF
+  integration `5 passed` with 10 non-blocking fork deprecation warnings, GUI
+  `24 passed`, GUI build, Ruff, format, compileall and docs inventory all pass.
+
 ## Latest Windows validation reconciliation (2026-09-12, MSI revalidation)
 
 - The current WSL `dev` working tree at HEAD `4e709d922849516c8162f5b17d387b32b5f42ceb` was synchronized one-way to the disposable E: validation workspace. The dirty source included five documentation files and eleven code/test files; 68 files were copied, 0 failed, 17 Windows-local excluded/preserved entries remained, and all eleven changed/untracked code/test SHA-256 hashes matched.

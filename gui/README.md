@@ -15,6 +15,19 @@ The browser/Vite development shell uses an in-memory mock transport. The
 packaged Tauri application uses the fixed `binaries/babelcodex-service`
 sidecar and passes only the configured TOML path.
 
+## Tauri MCP development bridge
+
+The Rust project includes `tauri-plugin-mcp-bridge` as a committed dependency.
+The bridge is registered only in Debug builds and binds to `127.0.0.1`; Release
+builds do not start it. The capability file includes `mcp-bridge:default` and
+Tauri global APIs are enabled for the development bridge.
+
+The MCP server itself is an external Agent tool, not a GUI project dependency.
+Do not add `@hypothesi/tauri-mcp-server` to this package. A desktop-capable
+Windows/Codex environment may run the server externally, for example with
+`npx.cmd -y @hypothesi/tauri-mcp-server`, while Linux Cline should normally not
+start it when no targetable desktop is available.
+
 The GUI does not import BabelDOC, initialize the Codex SDK, execute system
 Python, or expose arbitrary shell commands. Long-running work remains in the
 Python Application Service and its worker process.

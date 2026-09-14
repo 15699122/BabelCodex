@@ -96,6 +96,15 @@ Phase 0A/0B, the domain/error model, placeholder validation, BabelDOC compatibil
 - Runtime boundary: fixed `babelcodex-service` Python sidecar over a versioned JSONL protocol.
 - UI architecture: New Translation, Jobs, Job Details, Glossary, Diagnostics and Settings pages.
 - GUI E2E: Vitest/React Testing Library for frontend behavior and WebdriverIO for packaged/desktop flows.
+- Tauri MCP development bridge: `tauri-plugin-mcp-bridge` is a committed Rust
+  dependency and is enabled only for Debug builds, bound to `127.0.0.1`; Release
+  builds must not start the bridge. The MCP server package is an external Agent
+  tool and must not be added to the project npm dependencies.
+- Linux Cline development must not start Tauri MCP or pretend to validate a
+  desktop GUI without a targetable desktop. Linux may run Rust/config/schema
+  checks, frontend tests/builds and non-GUI integration tests; Windows/native
+  desktop validation remains concentrated and is recorded as
+  `WINDOWS_VERIFICATION_PENDING` until directly executed.
 
 ## Commands
 

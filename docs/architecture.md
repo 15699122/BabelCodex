@@ -744,6 +744,12 @@ MCP → Python Application Service
 CLI → Python Application Service
 ```
 
+Tauri GUI 的 MCP Bridge 仅用于 Debug 桌面开发/验证：Rust 侧通过
+`tauri-plugin-mcp-bridge` 绑定 `127.0.0.1`，并只在 Debug 构建注册；Release
+构建不启动 Bridge。`@hypothesi/tauri-mcp-server` 属于 Agent 环境工具，不
+作为 GUI 的 npm 依赖，也不进入发布包。Linux/WSL 无目标桌面时不启动该
+Bridge/MCP Server，只执行 Rust、配置、前端和非 GUI 验证。
+
 MCP Server 是 Codex 的自动化入口，GUI 是个人用户的可视化控制入口；二者不共享前端代码，但共享任务协议、状态模型和错误码。
 - 当前 MCP 实现使用标准库 newline-delimited JSON-RPC，工具调用仍限制在 Application Service 的任务、artifact 和诊断边界内；`validate_output` 只读取 job artifact，`cleanup_job` 只删除 job-owned worker 子目录。工具参数严格 allowlist，活动 job 绑定进程内 `cancel_event`，服务关闭时主动发出取消信号；注册示例和剩余平台验证见 `docs/mcp.md`。
 

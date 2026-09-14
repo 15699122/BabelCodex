@@ -1,5 +1,197 @@
 # BabelCodex Development Plan
 
+## Windows manual GUI basic-interaction result (2026-09-14)
+
+- Operator evidence confirms PASS for Debug Bridge startup, fail-closed
+  unavailable presentation, notice dismissal in the unavailable state, mouse
+  and keyboard navigation, no-PDF protection, native picker cancellation,
+  Unicode/space-containing path display and reduced-window layout.
+- Release GUI starts the sidecar and reaches the connected state. Release
+  valid-PDF selection also passes, but the selected-file notice disappears
+  immediately and remains a GUI notification-lifecycle FAIL.
+- Debug GUI remained in the unavailable state despite a successful Tauri/Vite
+  launch and no captured sidecar error. Debug healthy-handshake diagnosis is
+  still open; Release handshake passing does not clear the Debug path.
+- Detailed evidence and the operator transcript are recorded in
+  docs/validation/windows.md under the 2026-09-14 manual GUI basic-interaction
+  section. No business code was changed.
+
+## Windows manual file-selection/path result (2026-09-14)
+
+- Operator screenshots confirm PASS for the PDF picker filter, picker
+  cancellation, valid PDF selection, space-containing paths, Unicode paths,
+  uppercase PDF extensions, configured-input path rejection, missing-file
+  rejection and non-PDF invisibility under the PDF filter.
+- A new GUI lifecycle FAIL remains: after the outside-directory and
+  missing-file errors, the error notice is briefly visible and is then
+  replaced or obscured by Starting sidecar / 正在重新连接. The path-safety
+  checks pass; the error feedback does not remain stable enough to read.
+- The screenshots also show 正在重新连接 during the rejected-path cases.
+  This requires separating a real transport/reconnect transition from a
+  notice/status overwrite. No business code was changed.
+
+## Linux notice/state lifecycle follow-up (2026-09-14)
+
+- Linux implemented shared notice updates in `JobStore.setNotice()` and routed
+  App-level notices through it. This prevents polling/reconnect state updates
+  from recreating a locally overwritten selection or error notice, addressing
+  the Release selection-notice persistence `FAIL` at its shared-state root.
+- `startTranslation` now uses a one-shot transport request that does not
+  schedule global reconnect on rejection. A rejected path surfaces its error
+  to the notice while the previously healthy connection stays `ready`,
+  addressing the observed `正在重新连接` after path rejection.
+- New GUI regressions pin both behaviors: a shared notice survives polling,
+  and a rejected `start_translation` keeps the connection `ready`. Linux
+  GUI tests/build pass; native Windows retest remains
+  `WINDOWS_VERIFICATION_PENDING`.
+- The Debug-only healthy-handshake diagnosis is not resolved by these
+  lifecycle fixes and remains a Windows follow-up.
+
+## Windows validation rerun for current Linux HEAD (2026-09-14)
+
+- Current WSL HEAD 7cd978eaa3bd1b9e4d7226d626603a0bdc3b7a9a was synced
+  one-way to E: with 24/24 source-state hashes matching and no business-code
+  changes made in the validation workspace.
+- Controlled Windows evidence passed: Python 227 passed, 5 deselected, GUI
+  26 passed, mock integration 5 passed, source-scoped Ruff and
+  compile/docs/lock/doctor gates, fresh PyInstaller sidecar and
+  protocol/invalid/valid worker checks, target-sidecar and bundle audits,
+  NSIS/MSI build/extraction, and release/extracted GUI process smoke. Tauri
+  MCP Debug also passed narrow bridge, DOM, screenshot and navigation checks.
+- Remaining status: default pytest is BLOCKED by Windows Temp WinError 5;
+  unscoped Ruff is a FAIL caused by preserved build/uv-cache-current
+  artifacts; the valid frozen worker is functionally PASS but stderr
+  cleanliness remains FAIL for retry/fallback and PyMuPDF deprecation
+  warnings. Broad GUI lifecycle, clean-user, release security and live
+  Codex/PDF checks remain deferred.
+- Overall Windows state remains WINDOWS_VERIFICATION_PENDING. Detailed
+  evidence and Linux follow-up are in
+  [docs/validation/windows.md](validation/windows.md).
+
+## Latest Windows revalidation after Linux status/PID fixes (2026-09-14)
+
+- Current WSL source `7cd978e` was revalidated on E: after the Linux
+  failed-state color and conservative PID-query changes. Python `226 passed,
+  5 deselected`, GUI `24 passed`, mock PDF integration `5 passed`, frozen
+  worker functional output, protocol/freshness/package gates and MSI
+  extraction/process smokes passed.
+- The frozen worker also emitted `--multiprocessing-fork` parser/save warnings;
+  record this as a current frozen-runtime `FAIL`. Linux has added
+  `multiprocessing.freeze_support()` before the frozen sidecar imports its
+  argparse entrypoint, plus a regression test. The repaired source still needs
+  a fresh Windows frozen-worker/package revalidation. The earlier Computer Use blocker for
+  native stale-GUI visual confirmation was resolved by a human Windows retest:
+  the stale-sidecar state now shows the corrected red indicator and the fresh
+  control shows the connected state. A neutral gray indicator while connecting
+  is recorded as a UX recommendation, not a current acceptance failure.
+- The GUI picker/path/permission/cancellation/reconnection matrix remains
+  `NOT RUN` with `SKIPPED_BY_USER_REQUEST`, as explicitly requested. It is not
+  a Linux development blocker. Full details and remaining follow-up are in
+  [`docs/validation/windows.md`](validation/windows.md).
+- Subsequent operator checks passed Chinese rendering, keyboard navigation,
+  Settings, empty Jobs state, reduced-size layout and narrow path-rejection/
+  picker-cancel cases. NVDA is permanently skipped because it is not installed.
+  Mock-job cancellation and sidecar reconnection failed; artifact-tamper
+  validation was blocked by the failed mock translation. `WIN-MANUAL-005`
+- clean-user installation/recovery is permanently skipped by explicit user
+  request, with no clean-user conclusion inferred. The GUI notice banner also
+  has a current `FAIL`: clicking `x` on `Sidecar handshake ready` causes the
+  unchanged notice immediately; Linux now stores notice dismissal in the shared
+  `JobStore` and has regression coverage. Native Windows notice dismissal still
+  needs revalidation. These findings need focused Windows follow-up after the
+  frozen-worker issue is resolved.
+
+## Current-source stale-GUI manual result (2026-09-14)
+
+- The fresh control passed the observed launch/normal-exit check. The
+  current-source GUI paired with the stale sidecar showed the correct
+  fail-closed text and banner, but the `本地服务不可用` status light was
+  green; the full stale-GUI observation remains a historical `FAIL` until
+  native Windows revalidation.
+- Linux follow-up completed: failed sidecar status now uses the destructive
+  color selector and a GUI regression test fixes the `failed` status mapping.
+  Native Windows stale-GUI revalidation remains
+  `WINDOWS_VERIFICATION_PENDING` and must not be promoted by Linux evidence.
+- The GUI picker/path/permission/cancellation/reconnection interaction matrix
+  is `NOT RUN` for this round because it was explicitly skipped by the user;
+  retain it in the Windows queue for a separately authorized native run.
+- No business-code change is part of the validation task.
+
+## Real Codex and long-document benchmark follow-up (2026-09-14)
+
+- The first operator-initiated real Codex benchmark attempt is `BLOCKED`: the
+  six-page input reached `translating`, then the runner disappeared without a
+  terminal state or artifacts. The subsequent CLI inspection also exposed a
+  Windows PID-recovery error in `_process_is_alive()`.
+- Linux follow-up completed: `_process_is_alive()` now treats indeterminate
+  native `OSError` PID queries conservatively as alive, with a regression test.
+  The next step is to rerun with a fresh isolated state directory and an approved,
+  substantially longer de-identified PDF. The detailed run evidence remains
+  in [`docs/validation/windows.md`](validation/windows.md); no benchmark pass
+  or long-document stability conclusion is claimed yet.
+
+## Current plan reconciliation (2026-09-14)
+
+- The latest Windows validation result is now a new fact input. The current
+  source tree at `7cd978e` passed the frozen worker mock request, sidecar
+  protocol-v1 handshake, target-triple sidecar, fresh/stale `WVQ-009` audit,
+  NSIS/MSI build and extraction parity, QA/tamper checks, GUI tests/build and
+  mock PDF integration. The recorded product summary is `PASS 31 / FAIL 0 /
+  BLOCKED 4 / NOT RUN 6 / NOT APPLICABLE 1`; the overall state remains
+  `WINDOWS_VERIFICATION_PENDING`.
+- The previous Windows failures for documentation-inventory path separators and
+  frozen `bitstring.bitstore_bitarray` collection are closed as Linux
+  implementation work and have now been revalidated natively. They must not be
+  carried forward as open Linux tasks or reimplemented.
+- No new Linux product-code fix is required by the latest Windows result. The
+  remaining Linux-applicable work is regression maintenance plus the planned
+  non-Windows evidence work: authorized live Codex/thread behavior,
+  long-document and batching/cache benchmarks, and QA/font/visual calibration.
+  These must remain separate from Windows-only acceptance and must not consume
+  live model usage by default.
+- Native GUI interaction remains `BLOCKED` because the automated run lacked a
+  trusted targetable desktop surface. The subsequent operator-run
+  current-source stale-GUI observation is `FAIL` for the green unavailable-
+  state indicator; its text/banner behavior passed narrowly and the fix/retest
+  is recorded at the top of this document and in the validation record.
+  The GUI picker/path/permission/cancellation/reconnection matrix is separately
+  `NOT RUN` by explicit user request, not `BLOCKED`.
+  DPI/NVDA is `NOT RUN` by explicit request; clean-user, WVQ-007, WVQ-005,
+  live Codex/PDF and dependency-remediation checks remain unexecuted. All of
+  these stay in the Windows validation queue with
+  `WINDOWS_VERIFICATION_PENDING` or their documented `NOT RUN`/`BLOCKED` state.
+
+## Tauri MCP bridge configuration (2026-09-14)
+
+- Added the committed Rust dependency `tauri-plugin-mcp-bridge` to the Tauri
+  host. The Bridge is registered only under `debug_assertions` and binds to
+  `127.0.0.1`; Release builds do not start it.
+- Added `mcp-bridge:default` capability permission and enabled Tauri global APIs
+  required by the development Bridge. The external
+  `@hypothesi/tauri-mcp-server` package is intentionally not added to
+  `gui/package.json`; it remains an Agent-environment tool.
+- Linux/WSL validation does not start Tauri MCP or claim desktop GUI validation
+  without a targetable desktop. Native Windows/Codex Bridge and packaged GUI
+  checks remain `WINDOWS_VERIFICATION_PENDING` until directly executed.
+
+## Linux follow-up after the current-source Windows observations (2026-09-14)
+
+- **Stale-GUI status mapping:** the Windows operator observed a green status
+  light beside the unavailable-sidecar message. Linux changed the CSS rule to
+  style the actual `failed` connection state as destructive and added a GUI
+  regression for the state-to-tone mapping. The historical Windows observation
+  remains `FAIL`; native retest remains `WINDOWS_VERIFICATION_PENDING`.
+- **PID recovery safety:** the live benchmark follow-up exposed
+  `OSError: [WinError 11]` from `_process_is_alive()`. Linux now treats an
+  indeterminate native PID query conservatively as alive, avoiding unsafe
+  terminalization of a possibly running job, and added a regression test.
+  Native Windows recovery and the authorized live Codex benchmark remain
+  pending; no benchmark pass or long-document acceptance is claimed.
+- **Linux verification after these fixes:** Python `226 passed, 5
+  deselected`; mock PDF integration `5 passed` with 10 fork deprecation
+  warnings; GUI Vitest `24 passed`; GUI build, Ruff, format, compileall and
+  documentation inventory passed.
+
 ### Linux 后续修复（2026-09-12，worker 环境与 QA CLI stdout）
 
 - 针对上一轮增量验证的两个 `FAIL` 项完成了 Linux 侧修复并闭环，Windows 原生重验证保留为 `WINDOWS_VERIFICATION_PENDING`（`WVQ-014`/`WVQ-015`）。
