@@ -515,3 +515,26 @@ GUI portable bundle 内嵌的 sidecar 二进制可能落后于仓库源码，此
 2. **运行时能力握手**：sidecar 新增 `get_server_info`（协议版本、包版本、能力列表），GUI 建立连接后立即调用并校验协议兼容性；不兼容时连接进入 `failed` 并呈现明确的可操作错误，而不是静默的功能异常。
 
 两层防线各自独立生效：审计拦截构建期污染，握手拦截人工替换二进制等绕过审计的情况。
+
+### ADR-030：采用 @wdio/tauri-service 作为 GUI 桌面 E2E 基础设施
+
+**状态：已接受**
+
+BabelCodex GUI 需要可重复、可进入 CI 的桌面自动化测试。Tauri 官方推荐 WebdriverIO + `@wdio/tauri-service` 作为 WebDriver 测试方案，支持 embedded provider、Tauri API 调用、IPC mock 和前后端日志捕获。
+
+**决策：**
+
+1. 采用 `@wdio/tauri-service` 的 embedded provider 作为默认测试路径，不需要单独运行 `tauri-driver`。
+2. MCP Debug Bridge 与 WDIO E2E 使用互斥的 Cargo feature（`mcp-dev` vs `e2e`），编译期拒绝同时启用。
+3. E2E capability 通过 `scripts/capabilities/` 模板管理，不进入生产构建。
+4. E2E 运行使用 `config/e2e.toml`（`translator = "mock"`），不访问真实 Codex。
+5. 前端通过 `import.meta.env.VITE_E2E` 在 build time 条件加载 `@wdio/tauri-plugin`。
+6. 测试分为三层：Vitest（组件/状态）、WDIO Browser（renderer 用户旅程）、WDIO Native（真实 Tauri WebView + sidecar）。
+7. Windows 验证只需执行仓库标准 npm 命令（`npm run e2e:native`），不单独配置测试体系。
+8. Computer Use 作为补充验收层，覆盖 WDIO 无法处理的系统文件选择器、DPI、NVDA、安装器等场景。
+
+**理由：**
+
+- MCP Bridge 更适合作为 AI 探索/调试工具，WDIO 更适合作为确定性、可重复、能进入 CI 的回归框架。
+- 两者可共存，但控制面必须互斥，避免生命周期互相干扰和权限泄漏。
+- 共享测试 specs 避免 Linux/Windows 双套维护，只有平台特有测试放在 `tests/e2e/windows/`。

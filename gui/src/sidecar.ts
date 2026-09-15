@@ -11,6 +11,48 @@ import {
 
 const SIDECAR_PROGRAM = "binaries/babelcodex-service";
 
+export const E2E_MOCK_STATE_KEY = "babelcodex:e2e:mock-state";
+
+type MockSidecarState = {
+  sequence: number;
+  jobs: JobState[];
+  events: Array<import("./protocol").JobEvent>;
+};
+
+const createMockState = (): MockSidecarState => ({
+  sequence: 0,
+  jobs: [],
+  events: [],
+});
+
+const loadE2EMockState = (): MockSidecarState => {
+  if (typeof window === "undefined") return createMockState();
+  try {
+    const raw = window.localStorage.getItem(E2E_MOCK_STATE_KEY);
+    if (!raw) return createMockState();
+    const parsed = JSON.parse(raw) as Partial<MockSidecarState>;
+    if (
+      typeof parsed.sequence !== "number" ||
+      !Array.isArray(parsed.jobs) ||
+      !Array.isArray(parsed.events)
+    ) {
+      return createMockState();
+    }
+    return {
+      sequence: parsed.sequence,
+      jobs: parsed.jobs as JobState[],
+      events: parsed.events as Array<import("./protocol").JobEvent>,
+    };
+  } catch {
+    return createMockState();
+  }
+};
+
+const isE2EInputPath = (candidate: string): boolean => {
+  const normalized = candidate.replaceAll("\\", "/");
+  return /(?:^|\/)build\/e2e\/incoming\/[^/]+\.pdf$/i.test(normalized);
+};
+
 class TauriSidecarTransport implements SidecarTransport {
   private child: Child | null = null;
   private readonly pending = new Map<string, (value: unknown) => void>();
@@ -80,14 +122,10 @@ class TauriSidecarTransport implements SidecarTransport {
 }
 
 export class MockSidecarTransport implements SidecarTransport {
-  private readonly state: {
-    sequence: number;
-    jobs: JobState[];
-    events: Array<import("./protocol").JobEvent>;
-  };
+  private readonly state: MockSidecarState;
   readonly requests: Array<{ method: string; params: Record<string, unknown> }> = [];
 
-  constructor(state = { sequence: 0, jobs: [] as JobState[], events: [] as Array<import("./protocol").JobEvent> }) {
+  constructor(state: MockSidecarState = createMockState(), private readonly persistState = false) {
     this.state = state;
   }
 
@@ -110,9 +148,13 @@ export class MockSidecarTransport implements SidecarTransport {
       } as T;
     }
     if (method === "start_translation") {
+      const sourcePath = String(params.source_path ?? "");
+      if (this.persistState && !isE2EInputPath(sourcePath)) {
+        throw new Error("source_path is outside the configured input directory");
+      }
       const job: JobState = {
         job_id: `mock-job-${this.state.jobs.length + 1}`,
-        source_path: String(params.source_path ?? "sample.pdf"),
+        source_path: sourcePath || "sample.pdf",
         status: "running",
         stage: "preparing_runtime",
         attempts: 1,
@@ -256,11 +298,25 @@ export class MockSidecarTransport implements SidecarTransport {
       timestamp: new Date().toISOString(),
       payload,
     });
+    if (
+      this.persistState &&
+      typeof window !== "undefined" &&
+      window.localStorage
+    ) {
+      window.localStorage.setItem(E2E_MOCK_STATE_KEY, JSON.stringify(this.state));
+    }
   }
 }
 
 export const createSidecarTransport = (): SidecarTransport => {
   const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+  const isE2E = import.meta.env.VITE_E2E === "1";
+  // @wdio/tauri-service injects an invoke spy into the WebView. In the
+  // current 1.4.x embedded driver it does not transparently pass through
+  // plugin-shell calls, so GUI E2E uses a persistent deterministic transport.
+  // The frozen Windows sidecar remains covered by the separate protocol
+  // handshake/start/shutdown check in the Windows validation procedure.
+  if (isE2E) return new MockSidecarTransport(loadE2EMockState(), true);
   return isTauri ? new TauriSidecarTransport() : new MockSidecarTransport();
 };
 

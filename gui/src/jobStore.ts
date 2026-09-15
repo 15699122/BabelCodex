@@ -17,6 +17,11 @@ export interface JobStoreSnapshot {
 type Listener = (snapshot: JobStoreSnapshot) => void;
 type TransportFactory = () => SidecarTransport;
 
+// The sidecar config path is chosen at build time: E2E builds always use the
+// deterministic mock-translator config so automated tests can never consume a
+// real Codex session. Normal builds keep the operator config.
+const defaultConfigPath = import.meta.env.VITE_E2E === "1" ? "../config/e2e.toml" : "../config/example.toml";
+
 const TERMINAL_STATUSES = new Set<JobState["status"]>(["completed", "failed", "cancelled"]);
 const RECONNECT_BASE_DELAY_MS = 1000;
 const RECONNECT_MAX_DELAY_MS = 30000;
@@ -29,7 +34,7 @@ export class JobStore {
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   private reconnectAttempt = 0;
   private closed = false;
-  private configPath = "config/example.toml";
+  private configPath = defaultConfigPath;
   private snapshot: JobStoreSnapshot = {
     connection: { status: "starting" },
     jobs: [],

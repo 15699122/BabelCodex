@@ -30,3 +30,10 @@ context/*
 
 # generated test fixtures
 tests/fixtures/*.pdf
+
+# GUI E2E: workspace, sidecar placeholder, and build artifacts
+gui/src-tauri/binaries/babelcodex-service-*
+gui/src-tauri/capabilities/e2e.json
+gui/src-tauri/capabilities/mcp-debug.json
+gui/build/
+gui/wdio-error-screenshots/

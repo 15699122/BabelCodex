@@ -29,6 +29,78 @@
 2. 任何会建立真实 Codex 连接的测试必须显式标记且默认跳过；
 3. `tests/test_e2e_mock.py` 属于 `integration`：真实子进程 + BabelDOC 管线 + scripted translator，不付费。
 
+## GUI 自动化测试矩阵（WebdriverIO）
+
+| 模式 | 命令 | 需要 | 覆盖范围 |
+|---|---|---|---|
+| Vitest | `cd gui && npm test -- --run` | Node | 组件、状态、协议、错误处理 |
+| WDIO Browser | `cd gui && npm run e2e:browser` | Chrome/Chromium + Vite dev server | renderer 用户流程、mock sidecar |
+| WDIO Native | `cd gui && npm run e2e:native` | 桌面会话 + 真实 sidecar binary | Tauri WebView、plugin-shell、sidecar 生命周期 |
+| WDIO External | `cd gui && npm run e2e:external` | WebKitWebDriver (Linux) / Edge WebDriver (Windows) | driver 诊断 fallback |
+
+### Linux Phase 15 基线记录（基础设施实现阶段）
+
+| 检查项 | 状态 | 说明 |
+|---|---:|---|
+| Vitest 28 tests | ✅ | `npm test -- --run` 通过 |
+| TypeScript 编译 | ✅ | `npx tsc --noEmit` 无错误 |
+| Cargo check (default) | ✅ | 正常 GUI 构建 |
+| Cargo check (mcp-dev) | ✅ | MCP Debug Bridge feature |
+| Cargo check (e2e) | ✅ | WDIO plugin feature |
+| MCP-dev + E2E 互斥 | ✅ | 编译期 `compile_error!` 生效 |
+| WDIO 配置文件 | ✅ | shared/browser/native/external 四配置 |
+| WDIO E2E specs | ✅ | browser smoke/navigation + native smoke + windows paths |
+| 前端条件加载 `@wdio/tauri-plugin` | ✅ | `VITE_E2E=1` 控制 |
+| `config/e2e.toml` | ✅ | `translator = "mock"`，无付费 |
+| Capability flavor 注入 | ✅ | `scripts/prepare-e2e-rust.mjs` 管理 |
+| WDIO Browser mode | ❌ BLOCKED | 缺少 Chrome/Chromium |
+| WDIO Native smoke | ✅ | `npm run e2e:native:smoke`：4 tests passed；真实 Tauri WebView + embedded WebDriver 已在当前 Linux 桌面执行 |
+| WDIO Native mock lifecycle | ✅ | `npm run e2e:native:mock`：4 tests passed；mock job/cancel/restart 流程通过 |
+| WDIO Native full suite | ✅ | `npm run e2e:native`：4 spec files、15 tests 全部通过；包含 smoke、handshake、path rejection 和 mock lifecycle |
+
+## Windows WDIO 回传与 Linux 后续（2026-09-15）
+
+Windows 配置复核确认 Phase 15 的 Linux 实现可以完成原生构建和 @wdio/tauri-service 启动链路：cross-env、target-triple sidecar 选择、隔离 build/e2e 工作区、../config/e2e.toml 路径、真实 React 输入事件 helper 与 TauriServiceAPI 类型均已对齐。详细 Windows 命令、哈希、日志和逐项状态不在本文件重复，见 [docs/validation/windows.md](../validation/windows.md)。
+
+Windows 本轮通过了 npm 重建、GUI Vitest 27/27、生产构建、E2E prepare/build、mock lifecycle、embedded handshake/smoke 和 Windows lifecycle。标准 native 的路径负向断言曾暴露确定性 mock transport 缺少 allowlist 校验；Linux 端已补上 E2E-only contract 并在 Linux 全套 native 中验证通过，Windows 需要重新同步后复跑相关 specs。冻结 sidecar 的直接 JSONL probe 已正确返回 CONFIG_INVALID。所以：
+
+- Linux Native mode 已在当前桌面会话实际执行并通过；该结果只证明 Linux E2E flavor、embedded WebDriver 和确定性 mock contract，不替代 Windows 原生验证。
+- 这也不是 GUI→真实 sidecar 的 Windows 路径安全通过证据；需要 Windows 同步本次测试 contract 修复后重跑相关 specs，并保留冻结 sidecar JSONL probe 作为独立证据。
+- 所有 GUI WDIO 运行继续使用 mock translator，禁止接入真实 Codex；外部 provider 仅用于 driver 诊断，不替代 embedded @wdio/tauri-service 主路径。
+
+### Linux 端后续执行清单
+
+| 操作 | 状态 | 完成条件 |
+|---|---:|---|
+| 为 E2E mock/contract 增加 outside-path 拒绝断言 | DONE | E2E-only persistent mock transport 校验 `build/e2e/incoming`; Vitest regression added |
+| Linux 桌面 preflight + npm run e2e:native:mock | PASS | 当前 Linux display/embedded driver 可用，4 tests passed |
+| Linux npm run e2e:native | PASS | allowlist 修复后 4 spec files、15 tests 全部通过；无 native spec 失败 |
+| Linux browser mode | BLOCKED（若仍无 Chrome/Chromium） | 安装并确认 Chrome/Chromium 与 Vite dev server 后再执行 |
+| Linux regression/document inventory | PASS | npm test 28/28、npm run build、Ruff、docs inventory 17/17 和 git diff --check 均通过 |
+| 下一轮 Windows revalidation | PENDING | 单向同步本次 allowlist contract 修复，重跑 native 路径负向 specs、冻结 sidecar probe 与相关 package gates |
+
+该清单只描述 Linux 端后续动作；总体 Windows 状态继续按 WINDOWS_VERIFICATION_PENDING 管理。
+
+### E2E 构建与运行
+
+```bash
+cd gui
+npm run e2e:prepare   # 准备 capabilities + build/e2e workspace
+npm run e2e:build     # 构建带 e2e feature 的 Tauri binary
+npm run e2e:browser   # 运行 browser mode（需要 Chrome/Chromium）
+npm run e2e:native    # 运行 native embedded mode（需要真实 sidecar）
+npm run e2e:external  # 运行 external provider 诊断（需要 WebKitWebDriver）
+npm run e2e           # browser + native
+```
+
+### E2E 安全边界
+
+- E2E 构建使用独立 Cargo feature `e2e`，包含 `tauri-plugin-wdio` 和 `tauri-plugin-wdio-webdriver`
+- MCP Debug Bridge 使用独立 feature `mcp-dev`，两者互斥（编译期检查）
+- E2E capability 通过 `scripts/capabilities/e2e.json` 模板管理，不进入生产构建
+- E2E 运行使用 `config/e2e.toml`（`translator = "mock"`），不访问真实 Codex
+- 前端通过 `import.meta.env.VITE_E2E` 在 build time 选择配置文件
+
 ## 打包与 GUI 附加检查
 
 - 打包 sidecar：`uv run --extra runtime --with pyinstaller pyinstaller --clean --noconfirm scripts/babelcodex-service.spec`

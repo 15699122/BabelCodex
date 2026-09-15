@@ -1,11 +1,11 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
-  "identifier": "main-capability",
-  "description": "Minimal capability for the BabelCodex main window",
+  "identifier": "e2e-capability",
+  "description": "WebdriverIO E2E testing capability; only included in --features e2e builds via tauri.e2e.conf.json",
   "windows": ["main"],
   "permissions": [
-    "core:default",
-    "dialog:allow-open",
+    "wdio:default",
+    "wdio-webdriver:default",
     {
       "identifier": "shell:allow-spawn",
       "allow": [
@@ -15,7 +15,7 @@
           "args": [
             "--config",
             {
-              "validator": "\\.\\./config/example\\.toml"
+              "validator": "\\.\\./config/e2e\\.toml"
             }
           ]
         }

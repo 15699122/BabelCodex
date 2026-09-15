@@ -1,0 +1,11 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "app": {
+    "security": {
+      "capabilities": ["main-capability", "mcp-debug-capability"]
+    }
+  },
+  "bundle": {
+    "active": false
+  }
+}

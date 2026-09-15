@@ -28,6 +28,14 @@ export const createFilePicker = (): FilePicker => ({
 
   fromBrowserFile(file: File): PickedPdf | null {
     if (!isPdfPath(file.name)) return null;
-    return { path: file.name, displayName: file.name };
+    // Chromium exposes only the basename for a WebDriver-assigned file. The
+    // E2E build supplies the selected absolute path through localStorage so
+    // native tests can exercise the same input/change path without opening a
+    // real OS picker. This branch is absent from normal builds.
+    const e2ePath =
+      import.meta.env.VITE_E2E === "1" && typeof window !== "undefined"
+        ? window.localStorage.getItem("babelcodex:e2e:selected-path")
+        : null;
+    return { path: e2ePath || file.name, displayName: file.name };
   },
 });

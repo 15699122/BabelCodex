@@ -93,7 +93,7 @@
 | `scripts/generate_windows_icon.py` | Generate the Windows ``.ico`` application icon from the PNG source icon | `main` | build | — | — |
 | `scripts/sidecar_entry.py` | Controlled top-level entry point for the PyInstaller-packaged sidecar | — | build | — | — |
 
-## gui/src — GUI 前端模块（Tauri webview 渲染进程）
+## gui/src — GUI 前端模块（Tauri webview 渲染进程，含 E2E 入口与类型）
 
 | 文件 | 职责 | 入口/公共符号 | 运行位置 | 主要依赖 | 测试 |
 |---|---|---|---|---|---|
@@ -101,14 +101,70 @@
 | `gui/src/filePicker.ts` | PDF file picker abstraction: Tauri dialog vs browser fallback with PDF-only filter | `PickedPdf`; `FilePicker`; `isTauriRuntime`; `isPdfPath`; `createFilePicker` | gui | — | — |
 | `gui/src/jobStore.test.ts` | Tests for the centralized GUI job state store with sidecar lifecycle | — | gui | — | — |
 | `gui/src/jobStore.ts` | Centralized GUI state: sidecar lifecycle, job list sync, event cursor, polling, reconnect | `ConnectionState`; `JobStoreSnapshot`; `JobStore`; `isActiveJob`; `GlossaryEntry`; `GlossaryResult` | gui | — | — |
+| `gui/src/main.tsx` | Entry point: conditional `@wdio/tauri-plugin` load (VITE_E2E=1), React mount | — | gui | `react`, `react-dom` | — |
 | `gui/src/protocol.test.ts` | Tests for the JSONL sidecar protocol types and (de)serialization | — | gui | — | — |
 | `gui/src/protocol.ts` | JSONL sidecar protocol types: requests, responses, events, server info, compatibility assertion | `PROTOCOL_VERSION`; `JobStatus`; `JobStage`; `Artifact`; `JobState`; `JobEvent` | gui | — | — |
 | `gui/src/sidecar.ts` | Sidecar transport abstraction: Tauri subprocess and mock transport for tests | `MockSidecarTransport`; `createSidecarTransport` | gui | — | — |
 | `gui/src/test-setup.ts` | Vitest/React Testing Library global test setup with auto-cleanup | — | gui | — | — |
+| `gui/src/vite-env.d.ts` | Vite/WebdriverIO ambient type declarations; conditional `@wdio/tauri-plugin` module shim | — | gui | — | — |
+
+## gui/tests/e2e — WebdriverIO GUI 自动化测试（test 进程）
+
+| 文件 | 职责 | 入口/公共符号 | 运行位置 | 主要依赖 | 测试 |
+|---|---|---|---|---|---|
+| `gui/tests/e2e/browser/smoke.spec.ts` | Browser-mode smoke: renderer boots, mock sidecar connects, shell states render | — | test | `@wdio/globals` | — |
+| `gui/tests/e2e/browser/navigation.spec.ts` | Browser-mode navigation: switching views updates heading and nav state | — | test | `@wdio/globals` | — |
+| `gui/tests/e2e/native/smoke.spec.ts` | Native embedded smoke: real Tauri WebView boots, WDIO plugin available, backend logs captured | — | test | `@wdio/globals`, `@wdio/tauri-service` | — |
+| `gui/tests/e2e/native/sidecar-handshake.spec.ts` | Native handshake and diagnostic UI contract using deterministic E2E transport | — | test | `@wdio/globals`, `@wdio/tauri-service` | — |
+| `gui/tests/e2e/native/path-rejection.spec.ts` | E2E input-directory allowlist rejection, ready-state preservation and no-job invariant | — | test | `@wdio/globals`, `@wdio/tauri-service` | — |
+| `gui/tests/e2e/native/mock-lifecycle.spec.ts` | Mock translation start, details, cancellation and GUI restart recovery | — | test | `@wdio/globals`, `@wdio/tauri-service` | — |
+| `gui/tests/e2e/windows/paths.spec.ts` | Windows-only specs: `.exe` path resolution, Windows path allowlist, packaged-binary behavior | — | test | `@wdio/globals` | — |
+| `gui/tests/e2e/windows/lifecycle.spec.ts` | Windows-only native launch and job lifecycle smoke | — | test | `@wdio/globals` | — |
+| `gui/tests/e2e/wdio.d.ts` | Type declarations for `browser.tauri.*` methods used by native E2E specs | — | test | — | — |
+
+## gui/wdio.*.conf.ts — WebdriverIO 配置文件（test 进程）
+
+| 文件 | 职责 | 入口/公共符号 | 运行位置 | 主要依赖 | 测试 |
+|---|---|---|---|---|---|
+| `gui/wdio.shared.conf.ts` | Shared WDIO config: framework, reporter, timeout, artifact settings | `sharedConfig` | test | — | — |
+| `gui/wdio.browser.conf.ts` | Browser mode: renderer in Chrome against Vite dev server; no Tauri binary | `config` | test | `@wdio/tauri-service` | — |
+| `gui/wdio.native.conf.ts` | Native embedded mode: real Tauri WebView via embedded WebDriver server | `config` | test | `@wdio/tauri-service` | — |
+| `gui/wdio.external.conf.ts` | External provider mode: diagnostic fallback for driver-layer failures | `config` | test | `@wdio/tauri-service` | — |
+
+## gui/scripts — GUI 构建与 E2E 准备脚本（build/test 进程）
+
+| 文件 | 职责 | 入口/公共符号 | 运行位置 | 主要依赖 | 测试 |
+|---|---|---|---|---|---|
+| `gui/scripts/prepare-e2e.mjs` | Prepare deterministic E2E workspace under `gui/build/e2e`; conservative path validation | — | build | — | — |
+| `gui/scripts/prepare-e2e-rust.mjs` | Prepare flavor-specific capabilities in `src-tauri/capabilities/`; manages MCP/E2E capability templates | — | build | — | — |
+| `gui/scripts/capabilities/e2e.json` | E2E capability template: `wdio:default` + sidecar allowlist for `config/e2e.toml` | — | build | — | — |
+| `gui/scripts/capabilities/mcp-debug.json` | MCP debug capability template: `mcp-bridge:default` for `tauri.mcp.conf.json` | — | build | — | — |
+
+## config — 项目配置（service/gui 进程）
+
+| 文件 | 职责 | 入口/公共符号 | 运行位置 | 主要依赖 | 测试 |
+|---|---|---|---|---|---|
+| `config/example.toml` | User-facing example config; normal runtime uses `translator = "codex-sdk"` | — | service | — | — |
+| `config/e2e.toml` | E2E config: `translator = "mock"`, all state under `gui/build/e2e/`; never touches real Codex | — | service | — | — |
+
+## src-tauri/capabilities — 运行时能力（gui 进程，flavor 注入）
+
+| 文件 | 职责 | 入口/公共符号 | 运行位置 | 主要依赖 | 测试 |
+|---|---|---|---|---|---|
+| `gui/src-tauri/capabilities/default.json` | Main capability: dialog + fixed sidecar allowlist for `config/example.toml` | `main-capability` | gui | `tauri-plugin-shell` | — |
+
+## src-tauri — Tauri 配置与源码（gui 进程）
+
+| 文件 | 职责 | 入口/公共符号 | 运行位置 | 主要依赖 | 测试 |
+|---|---|---|---|---|---|
+| `gui/src-tauri/tauri.conf.json` | Production Tauri config: explicitly lists `main-capability` only | — | gui | — | — |
+| `gui/src-tauri/tauri.mcp.conf.json` | MCP debug flavor: adds `mcp-debug-capability` for `--features mcp-dev` builds | — | gui | `tauri-plugin-mcp-bridge` | — |
+| `gui/src-tauri/tauri.e2e.conf.json` | E2E flavor: adds `e2e-capability` for `--features e2e` builds | — | gui | `tauri-plugin-wdio`, `tauri-plugin-wdio-webdriver` | — |
 
 ## 维护规则
 
 1. 表格覆盖范围与 `scripts/check_docs_inventory.py` 的 tracked 集合一致：`src/**.py`、`tests/**.py`、`scripts/**.py`、`gui/src/**.ts`。
+2. WDIO configs (`gui/wdio.*.conf.ts`)、E2E specs (`gui/tests/e2e/**`)、E2E scripts (`gui/scripts/*.mjs`)、flavor capabilities (`gui/scripts/capabilities/*.json`)、以及 Tauri flavor configs (`gui/src-tauri/tauri.*.conf.json`) 为基础设施文件，不进入 `check_docs_inventory.py` 的 tracked 集合，以避免 CI 文档库存对测试基础设施产生不必要的耦合。
 2. 文件必须以反引号路径出现（如 `` `src/codex_babeldoc/cli.py` ``），否则库存检查会判为 missing。
 3. 不要引用 `.tsx` 路径——tracked 集合只含 `.py` 与 `.ts`。
 4. 自动生成的“描述待补”条目应在下次修改该文件时补全。

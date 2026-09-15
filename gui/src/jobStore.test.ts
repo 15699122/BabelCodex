@@ -67,6 +67,21 @@ describe("JobStore", () => {
     await store.close();
   });
 
+  it("enforces the E2E mock input-directory contract", async () => {
+    const transport = new MockSidecarTransport(undefined, true);
+
+    await expect(
+      transport.request("start_translation", {
+        source_path: "/workspace/build/e2e/outside/outside.pdf",
+      }),
+    ).rejects.toThrow(/outside the configured input directory/);
+
+    const result = await transport.request<{ job_id: string }>("start_translation", {
+      source_path: "/workspace/build/e2e/incoming/sample.pdf",
+    });
+    expect(result.job_id).toBe("mock-job-1");
+  });
+
   it("routes retry, artifact validation and QA through the sidecar contract", async () => {
     const state = {
       sequence: 0,

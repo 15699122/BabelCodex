@@ -41,6 +41,37 @@ Release packaging must place a platform-specific sidecar binary in
 `src-tauri/binaries/` using Tauri's target-triple naming convention. Generated
 sidecar binaries are intentionally excluded from version control.
 
+## WebdriverIO E2E
+
+The GUI uses `@wdio/tauri-service` as its desktop E2E infrastructure. Three
+modes are provided:
+
+| Mode | Command | Needs | Coverage |
+|---|---|---|---|
+| Vitest | `npm test -- --run` | Node | components, state, protocol, error handling |
+| WDIO Browser | `npm run e2e:browser` | Chrome/Chromium + Vite dev server | renderer user flows, mock sidecar |
+| WDIO Native | `npm run e2e:native` | desktop session + real sidecar binary | Tauri WebView, plugin-shell, sidecar lifecycle |
+| WDIO External | `npm run e2e:external` | WebKitWebDriver (Linux) / Edge WebDriver (Windows) | driver diagnostic fallback |
+
+```bash
+npm run e2e:prepare   # prepare capabilities + build/e2e workspace
+npm run e2e:build     # build Tauri binary with e2e feature
+npm run e2e:browser   # run browser mode (needs Chrome/Chromium)
+npm run e2e:native    # run native embedded mode (needs real sidecar)
+npm run e2e:external  # run external provider diagnostic (needs WebKitWebDriver)
+npm run e2e           # browser + native
+```
+
+The E2E build uses a dedicated Cargo feature `e2e` that includes
+`tauri-plugin-wdio` and `tauri-plugin-wdio-webdriver`. The MCP Debug Bridge
+uses a separate feature `mcp-dev`; the two are mutually exclusive (enforced
+at compile time). E2E capabilities are managed via `scripts/capabilities/`
+templates and never enter production builds. The E2E sidecar runs against
+`config/e2e.toml` (`translator = "mock"`) and never touches real Codex.
+
+The frontend loads `@wdio/tauri-plugin` only when `VITE_E2E=1` is set at build
+time, so normal builds never include the WDIO frontend plugin.
+
 ## Cross-platform bundle audit
 
 After copying a built GUI and its target-triple sidecar into a staging

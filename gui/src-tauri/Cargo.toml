@@ -15,8 +15,26 @@ tauri-build = { version = "2.4", features = [] }
 [dependencies]
 tauri = { version = "2.8", features = [] }
 tauri-plugin-dialog = "2.3"
-tauri-plugin-mcp-bridge = "0.12"
+tauri-plugin-mcp-bridge = { version = "0.12", optional = true }
 tauri-plugin-shell = "2.3"
+# WebdriverIO E2E testing plugins. They are optional and only compiled into
+# the build when the `e2e` feature is enabled; normal debug/release builds
+# never include them.
+tauri-plugin-wdio = { version = "1.4", optional = true }
+tauri-plugin-wdio-webdriver = { version = "1.4", optional = true }
+
+[features]
+default = []
+# MCP development bridge: debug-only control surface for AI agents. Mutually
+# exclusive with the e2e feature to avoid two dev control planes in one binary.
+mcp-dev = ["dep:tauri-plugin-mcp-bridge"]
+# WebdriverIO E2E control surface (in-app execute/mock/log APIs plus the
+# embedded WebDriver HTTP server). Mutually exclusive with mcp-dev.
+e2e = [
+    "dep:tauri-plugin-wdio",
+    "dep:tauri-plugin-wdio-webdriver",
+    "tauri-plugin-wdio/custom-protocol",
+]
 
 [profile.release]
 panic = "abort"

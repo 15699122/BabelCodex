@@ -150,6 +150,7 @@ Add new items while Linux development continues. Do not mark an item `PASS` unti
 | `WVQ-014` | Windows worker environment allowlist revalidation | `worker_environment()` allowlist now retains the Windows runtime/profile keys (`SystemRoot`, `USERPROFILE`, `TEMP`, `TMP`, `APPDATA`, `LOCALAPPDATA`, `PROGRAMDATA`) beside the POSIX keys; Linux unit regression `TestWorkerEnvironment` pins the allowlist and non-inheritance of unrelated variables | `src/codex_babeldoc/backends/worker_client.py`, `tests/test_worker.py` | The 2026-09-12 incremental run reproduced `WinError 10106` with the smaller allowlist; the fix is designed on Linux and needs the native subprocess path confirmed | Run the subprocess mock integration and a worker-based mock job with a Windows-size allowlist; verify the worker starts, translates, completes, supports cancellation/reconnection and does not inherit unrelated parent variables (`SECRET`-style keys) | Current Windows source; fresh PyInstaller sidecar or dev worker; mock translator | Subprocess mock integration passes and no `WinError 10106`-class runtime failure appears | `P0` | `WINDOWS_VERIFICATION_PENDING` | No; Linux unit and integration checks pass |
 | `WVQ-015` | QA CLI stdout JSON contract revalidation | Production QA/pipeline imports now use the official `pymupdf` package name; regression `test_qa_cli_stdout_is_machine_readable_in_clean_subprocess` launches the CLI in a clean interpreter and asserts stdout is one JSON document | `src/codex_babeldoc/qa/*.py`, `src/codex_babeldoc/core/pipeline_meta.py`, `src/codex_babeldoc/translation/context.py`, `tests/test_cli.py` | The PyMuPDF `fitz` shim printed its deprecation notice to stdout (reproduced as `JSONDecodeError` on Windows); only a clean native run proves a machine consumer can parse the QA JSON | Run `cbpdf qa` positive/tamper cases and `cbpdf doctor`/`validate` in a clean Windows interpreter subprocess and assert every stdout payload parses as JSON with dependency notices absent | Current Windows source; frozen sidecar or dev CLI; mock job | QA/doctor/validate stdout remains machine-readable with no PyMuPDF deprecation noise | `P0` | `WINDOWS_VERIFICATION_PENDING` | No; Linux clean-subprocess regression passes |
 | `WVQ-016` | Tauri MCP Bridge Debug-only localhost configuration | Add `tauri-plugin-mcp-bridge`, register only in Debug, bind the WebSocket Bridge to localhost, and keep the external MCP server out of the project package | `gui/src-tauri/Cargo.toml`, `gui/src-tauri/src/lib.rs`, `gui/src-tauri/capabilities/default.json`, `gui/src-tauri/tauri.conf.json` | Native Tauri Debug startup, WebSocket reachability and capability behavior require a target desktop; Linux Rust/config checks do not prove the desktop Bridge | On a current native Windows Debug run, start `npm run tauri dev`, verify the Bridge is reachable only on `127.0.0.1`, use the external `npx.cmd -y @hypothesi/tauri-mcp-server`, and verify a Release build does not start the Bridge | Windows desktop; Node/npm; current Debug build; external MCP server; no Release credentials | Debug Bridge is localhost-only and usable by the external MCP server; Release has no Bridge listener; no project npm dependency is added | `P1` | `WINDOWS_VERIFICATION_PENDING` | No; Linux Rust/config/schema checks can continue |
+| `WVQ-017` | WebdriverIO native desktop E2E | `@wdio/tauri-service` embedded provider, real Tauri WebView, Python sidecar lifecycle, Windows-only specs (`tests/e2e/windows/*`) | Phase 15 WDIO E2E infrastructure | In the Windows workspace: `npm.cmd --prefix gui ci`, `npm.cmd --prefix gui run build`, `npm.cmd --prefix gui run e2e:native`. On failure: `npm.cmd --prefix gui run e2e:native:debug` then `npm.cmd --prefix gui run e2e:external` to separate driver-layer failures from product failures. Record results separately for embedded and external providers. | Windows desktop; WebView2; Node/npm; packaged or debug `babelcodex-gui.exe`; fixed Python sidecar binary | All common native specs pass; Windows-only specs (`.exe` path resolution, Windows path allowlist, packaged-binary behavior) pass; no GUI/sidecar/worker residue after run; failure artifacts (screenshots, frontend/backend logs) captured | `P0` | `WINDOWS_VERIFICATION_PENDING` | No; Linux infrastructure work and Rust/config checks can continue |
 
 
 ### Windows Validation Preparation and final handoff
@@ -3550,3 +3551,155 @@ healthy `ready` state, with GUI regressions. The repaired source remains
 Overall file-selection/path status: the selection and path-safety checks
 passed. Error-notice persistence and the connection-state transition after
 path rejection remain open GUI lifecycle issues.
+
+## WVQ-017 — WebdriverIO native desktop E2E
+
+- **状态**: `WINDOWS_VERIFICATION_PENDING`
+- **类型**: 自动化 GUI 桌面 E2E
+- **添加日期**: 2026-09-14
+- **相关变更**:
+  - 新增 `@wdio/tauri-service` 作为 GUI 桌面 E2E 基础设施
+  - 新增 `gui/wdio.shared.conf.ts`、`gui/wdio.browser.conf.ts`、`gui/wdio.native.conf.ts`、`gui/wdio.external.conf.ts`
+  - 新增 `gui/tests/e2e/browser/*.spec.ts`、`gui/tests/e2e/native/*.spec.ts`、`gui/tests/e2e/windows/*.spec.ts`
+  - 新增 `gui/scripts/prepare-e2e.mjs`、`gui/scripts/prepare-e2e-rust.mjs`、`gui/scripts/capabilities/*.json`
+  - 新增 `config/e2e.toml`（`translator = "mock"`，无付费）
+  - 新增 `gui/src-tauri/tauri.e2e.conf.json`、`gui/src-tauri/tauri.mcp.conf.json`
+  - Cargo features: `e2e`（WDIO 插件）、`mcp-dev`（MCP Bridge），两者互斥
+  - 前端条件加载 `@wdio/tauri-plugin`（`VITE_E2E=1` 控制）
+
+### 验证目标
+
+1. Windows 上运行仓库标准 `npm run e2e:native`，不单独配置测试体系
+2. 通用 native specs（`gui/tests/e2e/native/*.spec.ts`）在 Windows 上全部通过
+3. Windows-only specs（`gui/tests/e2e/windows/*.spec.ts`）自动执行
+4. Linux specs 在 Windows 上自动 skip
+5. embedded provider 作为默认结论路径
+6. external provider 仅用于 driver 层诊断
+7. E2E binary 不包含 MCP Bridge 或生产权限以外的能力
+8. 测试不访问真实 Codex，不消耗计划用量
+9. 测试结束后无 GUI/sidecar/worker 残留进程
+
+### Windows 标准命令
+
+```powershell
+cd gui
+npm ci
+npm test -- --run
+npm run build
+npm run e2e:native
+```
+
+失败时诊断：
+
+```powershell
+npm run e2e:native:debug
+npm run e2e:external
+```
+
+### 通用 native specs（全部平台）
+
+| Spec | 覆盖 |
+|---|---|
+| `native/smoke.spec.ts` | WebView 启动、main window 通过 Tauri API 可见、连接状态 ready |
+| `native/sidecar-handshake.spec.ts` | 真实 sidecar 启动、get_server_info、GUI 显示"本地服务已连接" |
+| `native/path-rejection.spec.ts` | 允许列表外路径被拒绝、连接保持 ready、错误 notice 不被轮询覆盖 |
+| `native/mock-lifecycle.spec.ts` | 提交 fixture、观察阶段变化、取消/完成、重启后 job state 恢复 |
+
+### Windows-only specs
+
+| Spec | 覆盖 |
+|---|---|
+| `windows/paths.spec.ts` | `.exe` 路径解析、Windows 路径 allowlist 拒绝系统目录 |
+| `windows/lifecycle.spec.ts` | packaged binary 启动、WebView2 运行时、Windows 文件锁 |
+
+### 结果记录要求
+
+WDIO 失败时必须保存：
+- spec 名称与 provider（embedded/external）
+- 完整 WDIO 日志（`--logLevel debug`）
+- service-captured frontend/backend logs under `gui/logs`; @wdio/tauri-service 1.4.0 does not expose getFrontendLogs/getBackendLogs as browser.tauri methods
+- failure screenshot
+- 进程残留列表
+- failure category：`PRODUCT` / `TEST` / `DRIVER` / `ENVIRONMENT` / `FLAKY` / `BLOCKED`
+
+### 已知风险
+
+- `@wdio/tauri-service` 1.x 仍在快速成熟中；embedded provider 在某些 `invoke()` 场景下可能有 session 卡住的风险
+- Windows 上若 embedded 失败，使用 external provider + service 自动管理的 Edge WebDriver 作为诊断对照
+- BabelCodex 当前主要通过 plugin-shell sidecar 完成任务，而非自定义 `invoke()`，因此受该风险影响的可能性较低，但仍需记录
+
+### Computer Use 补充边界
+
+WDIO 无法覆盖的场景留给 Computer Use 或人工验收：
+
+| 场景 | WDIO | Computer Use |
+|---|---|---:|
+| WebView 按钮/表单/菜单 | ✅ | 可选 |
+| Tauri IPC / sidecar 生命周期 | ✅ | ❌ |
+| Windows 文件选择器原生对话框 | 有限 | ✅ |
+| DPI / 多显示器 | 部分 | ✅ |
+| 安装器 / 托盘 / 通知 | 不适合 | ✅ |
+| 视觉布局检查 | 部分 | ✅ |
+
+### 验证完成标准
+
+- [ ] Windows 上 `npm run e2e:native` 执行成功
+- [ ] 通用 specs 全部通过
+- [ ] Windows-only specs 自动执行（非 skip）
+- [ ] Linux specs 在 Windows 上 skip
+- [ ] 普通 Release 构建不包含 WDIO 插件
+- [ ] 普通 Release 构建不包含 MCP Bridge listener
+- [ ] E2E 构建与 MCP-dev 构建不能同时启用（互斥）
+- [ ] 测试结束后无 GUI/sidecar/worker 残留
+- [ ] 测试不访问真实 Codex
+- [ ] 文档 inventory 通过
+
+
+## Windows WDIO revalidation: 2026-09-15
+
+### Source, synchronization and scope
+
+- Source of truth: WSL branch dev, HEAD f6d3fd02322052b34ad92bb0dbd6aa8885f9b2c3, dirty tree containing the current Linux GUI/WDIO development changes. This is not a clean-commit validation.
+- Synchronization: W:\home\shiraishi\VSCode Workspace\Codex_Translator to E:\Shiraishi\VSCode Workspace\Codex_Translator, one-way, controlled robocopy excluding dependencies, caches, state, user data, logs and build artifacts, with the pre-existing E: sidecar preserved. The Windows validation tree was not synchronized back to WSL.
+- Runtime: Node v24.19.0, npm 11.17.0, Windows WebView2/Edge 152.0.4191.66; @wdio/cli 9.31.9; @wdio/tauri-service 1.4.0; @wdio/tauri-plugin 1.4.0; Tauri CLI 2.11.4; Python frozen sidecar package 0.1.0.
+- Scope: the standard embedded provider path from WVQ-017, VITE_E2E=1, deterministic mock translator, real Tauri WebView and Windows-only specs. No live Codex request was made.
+
+### Results
+
+| Check | Status | Evidence |
+|---|---|---|
+| npm ci | PASS | Dependencies rebuilt in the Windows GUI workspace; npm audit --omit=dev reported 0 production vulnerabilities. npm emitted the existing dev-tree advisory warning and pending optional build-script notices; no audit fix was run. |
+| npm test -- --run | PASS | 4 files, 27 tests passed. |
+| npm run build | PASS | TypeScript and Vite production bundle completed. |
+| npm run e2e:prepare | PASS | Target-aware E2E workspace and e2e capability generation completed; Windows target required the existing x86_64-pc-windows-msvc sidecar. |
+| npm run e2e:build | PASS | Tauri debug E2E binary built with the e2e feature; linker emitted only the known linker_messages warning. |
+| npm run e2e:native:mock | PASS | mock-lifecycle.spec.ts: 4 passing; WebDriver/WebView2 startup succeeded. |
+| native handshake and embedded smoke | PASS | sidecar-handshake.spec.ts: 3 passing; smoke.spec.ts: 4 passing; these use the deterministic E2E transport, not a GUI-to-real-sidecar claim. |
+| Windows lifecycle | PASS | windows/lifecycle.spec.ts: 2 passing; Windows .exe launch and native job submission completed. |
+| standard npm run e2e:native | FAIL | 4 spec files passed and 2 failed. native/path-rejection.spec.ts and windows/paths.spec.ts failed because the E2E mock transport accepted an outside path and the UI showed the queue notice. This is an E2E transport coverage gap, not evidence that the production sidecar allowlist is broken. |
+| frozen sidecar protocol and allowlist | PASS | Target-triple sidecar SHA-256 C1D1503FB34595133F8B7E314AD4E16A1B4DE20C3C3F8CA7227B528C793747B6. With --config ..\config\e2e.toml, get_server_info returned protocol 1/package 0.1.0; outside start returned ok=false, CONFIG_INVALID and source_path is outside the configured input directory; shutdown returned ok=true and process exit was 0. |
+| validation process cleanup | PASS | After the run, no BabelCodex, sidecar, tauri-driver or msedgedriver process remained. Two stale validation helpers from an earlier run were identified by their exact 4444/56711 command lines and stopped; no unrelated process was touched. |
+| Linux GUI re-run in this Windows turn | NOT RUN | This turn validated the Windows E: tree. Existing Linux results remain historical evidence; no Linux result is promoted from the Windows environment. |
+| external-provider diagnostic | NOT RUN | Embedded provider is the WVQ-017 conclusion path; external provider is reserved for driver-layer diagnosis after a reproducible embedded failure. |
+
+### Warnings and follow-up
+
+- The service diagnostics reported 5 checks passed and one disk-space warning. Captured frontend logs also contain the known tauri-service/tauri-plugin messages about invoke interception fallback, postMessage IPC fallback and null u32 diagnostic payloads; they did not prevent the passing WebView/spec checks.
+- WVQ-017 remains WINDOWS_VERIFICATION_PENDING. The two failed GUI allowlist specs must be split into a contract-compatible deterministic negative transport test or a separately controlled real-sidecar GUI path on the Linux development side; this was not implemented during Windows validation because the project rules prohibit changing production business code merely to make a validation run pass.
+- Native GUI real file-picker, DPI/accessibility, clean-user package, release security, live Codex and long-document acceptance remain unexecuted or separately queued.
+
+### Linux follow-up after this Windows run: 2026-09-15
+
+- Linux source-only follow-up completed after the Windows E2E path-allowlist result:
+  - `gui/src/sidecar.ts` now applies the configured `build/e2e/incoming` allowlist only to the persistent E2E mock transport; production transport/allowlist code was not weakened.
+  - `gui/src/jobStore.test.ts` adds a regression for accepted/rejected E2E mock paths.
+  - Native path specs clear persistent mock state between cases so one job cannot contaminate the next case.
+- Linux verification:
+  - GUI Vitest: `28/28` passed;
+  - Linux native embedded WDIO: `4 spec files, 15 tests passed` via `npm run e2e:native`;
+  - TypeScript/Vite build, Ruff, docs inventory `17/17`, and `git diff --check`: passed;
+  - Browser mode: `BLOCKED` because Chrome/Chromedriver was not available; the service dev server startup worked, but WDIO browser setup could not download the required browser binaries in this environment.
+- Windows disposition:
+  - The historical 2026-09-15 Windows `standard npm run e2e:native` failure remains preserved as history.
+  - WVQ-017 stays `WINDOWS_VERIFICATION_PENDING`; after one-way synchronization of the Linux fix, rerun `npm.cmd --prefix gui run e2e:native`, especially `native/path-rejection.spec.ts` and `windows/paths.spec.ts`, then rerun the frozen sidecar allowlist probe.
+  - Do not mark Windows path safety `PASS` from the Linux native result or from the previous frozen-sidecar-only result; the GUI-to-Windows-native result needs fresh evidence.
