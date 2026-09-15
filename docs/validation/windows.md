@@ -154,6 +154,171 @@ Add new items while Linux development continues. Do not mark an item `PASS` unti
 | `WVQ-018` | Inline flavor capability packaging on Windows | Refactor capability injection to `CapabilityEntry::Inlined` inside `tauri.e2e.conf.json`/`tauri.mcp.conf.json`; delete generated `gui/src-tauri/capabilities/{e2e,mcp-debug}.json` and `gui/scripts/prepare-e2e-rust.mjs` | `gui/src-tauri/tauri.e2e.conf.json`; `gui/src-tauri/tauri.mcp.conf.json`; `gui/src-tauri/src/lib.rs`; `gui/src-tauri/Cargo.toml`; `gui/package.json`; `.gitignore` | Tauri build script validates every file in `gui/src-tauri/capabilities/`; Windows packaging can only prove that default/mcp-dev/e2e binaries each load only their own capability set and that no flavor capability file leaks into a release | Run `npm.cmd --prefix gui ci` + `npm.cmd --prefix gui run build`; confirm `gui/src-tauri/capabilities/` contains only `default.json`; run `npm.cmd --prefix gui run e2e:native` and assert WVQ-017 standard native scope passes (incl. `native/path-rejection.spec.ts` and `windows/paths.spec.ts`) with inlined capabilities and no capability-permission errors; clean residue | Windows desktop; Node/npm; packaged or debug `babelcodex-gui.exe`; fixed Python sidecar | `gui/src-tauri/capabilities/` holds only `default.json` in every build flavor; default/mcp-dev/e2e binaries start with the correct capability set and full WVQ-017 native scope passes | `P0` | `WINDOWS_VERIFICATION_PENDING` | No; Linux already verified (cargo check default/mcp-dev/e2e + native WDIO 15 tests pass) |
 
 
+### Current Windows handoff for commit `6ae5258` (2026-09-15)
+
+本节是当前开发状态的可执行 Windows handoff。它只描述从 WSL/Linux
+同步到 Windows 后需要执行的工作；具体结果必须在 Windows 实际执行后写回本文件。
+当前提交已推送到 `origin/dev`，Windows 工作区不得使用旧的 `8763193`
+或更早副本作为验证源。
+
+#### Phase A — Source and workspace preparation
+
+1. 在 WSL 源目录记录：`git branch --show-current`、`git rev-parse HEAD`、
+   `git status --short --branch`、工作树是否包含未提交变更，以及同步日期。
+   本轮预期基线是 branch `dev`、commit `6ae52586ae0960808a83ca5246d89319333d13c3`。
+2. 在 Windows 目标目录检查并记录现有本地文件。不得盲目删除未知的
+   `.env`、凭据、用户数据、`node_modules`、sidecar、日志、缓存或个人配置。
+3. 只从 WSL 向 Windows 同步源代码、配置、测试和指定文档；禁止同步
+   `.git`、`node_modules`、`.venv`、Rust `target`、`gui/build`、sidecar
+   二进制、日志、state、cache、用户 PDF 和凭据。
+4. 同步后核对关键文件存在且内容来自目标 commit：
+   `gui/package.json`、`gui/package-lock.json`、`gui/wdio.*.conf.ts`、
+   `gui/tests/e2e/`、`gui/scripts/prepare-e2e.mjs`、
+   `gui/src-tauri/tauri.e2e.conf.json`、`gui/src-tauri/tauri.mcp.conf.json`、
+   `gui/src-tauri/capabilities/default.json`、`config/e2e.toml`。
+5. Windows 验证目录必须是 disposable workspace。所有产物、临时 fixture、
+   screenshots 和日志都写入该目录或其明确的 artifact 子目录，不回写 WSL。
+
+#### Phase B — Toolchain and clean configuration checks
+
+在 Windows workspace 根目录执行，并记录版本和完整命令：
+
+```powershell
+node --version
+npm --version
+python --version
+uv --version
+rustc --version
+cargo --version
+npm.cmd --prefix gui ci
+npm.cmd --prefix gui test -- --run
+npm.cmd --prefix gui run build
+```
+
+预期：依赖安装、Vitest、TypeScript/Vite production build 均成功；任何
+版本不符、WebView2 缺失、MSVC/Rust target 缺失或 npm lock 不一致都单独记为
+`FAIL` 或 `BLOCKED`，不得用 Linux 结果替代。
+
+#### Phase C — Capability inline regression (`WVQ-018`)
+
+此阶段必须在 E2E build 前执行一次，并在 E2E build 后再次执行：
+
+```powershell
+Get-ChildItem gui/src-tauri/capabilities -File | Select-Object Name
+Test-Path gui/src-tauri/capabilities/e2e.json
+Test-Path gui/src-tauri/capabilities/mcp-debug.json
+npm.cmd --prefix gui run e2e:prepare
+Get-ChildItem gui/src-tauri/capabilities -File | Select-Object Name
+npm.cmd --prefix gui run e2e:build
+Get-ChildItem gui/src-tauri/capabilities -File | Select-Object Name
+```
+
+验收条件：
+
+- `gui/src-tauri/capabilities/` 始终只有 `default.json`；
+- `e2e.json`、`mcp-debug.json` 不存在；
+- `npm run e2e:prepare` 不创建 flavor capability 文件；
+- E2E build 不出现 `wdio:default not found`、`mcp-bridge:default not found`
+  或其他 capability permission 错误；
+- 删除/重建 `gui/build/e2e` 后结果一致；
+- E2E 构建完成后没有残留 WebDriver、sidecar 或监听端口。
+
+如需额外证明 flavor 隔离，分别运行默认、MCP Debug 和 E2E 的构建/检查：
+
+```powershell
+npm.cmd --prefix gui run tauri -- info
+npm.cmd --prefix gui run mcp:build
+npm.cmd --prefix gui run e2e:build
+```
+
+`mcp:build` 与 `e2e:build` 不得同时启用；若测试互斥 feature，预期应获得
+明确的 compile-time rejection，并将其记录为 `PASS`。
+
+#### Phase D — WVQ-017 native WDIO regression
+
+```powershell
+npm.cmd --prefix gui run e2e:native
+```
+
+必须核对标准 native 范围包含：
+
+- native smoke；
+- sidecar handshake；
+- mock lifecycle（启动、进度、取消、终止/重启和状态恢复）；
+- `native/path-rejection.spec.ts`；
+- `windows/paths.spec.ts`；
+- 其他当前 `wdio.native.conf.ts` 默认加载的 specs。
+
+E2E 使用 `config/e2e.toml` 的 mock translator，不允许接入真实 Codex、用户
+配置、用户 PDF 或付费模型。路径负向用例必须通过 GUI→真实 Windows sidecar
+链路返回结构化拒绝；仅直接 JSONL probe 成功不足以完成 GUI 原生验收。
+
+如果标准命令失败：保留最小错误片段、spec、Windows path、sidecar 日志和
+构建 commit；不得直接修改业务代码重跑。独立的 spec 仍应继续执行，依赖失败的
+项目标为 `BLOCKED`。
+
+#### Phase E — Native GUI and filesystem behavior
+
+使用 disposable fixture 和不含用户数据的 mock PDF，至少覆盖：
+
+1. 允许路径：普通盘符、空格路径、Unicode 路径、长但受支持的路径；
+2. 拒绝路径：输入目录外、缺失文件、目录伪装文件、Windows 风格 traversal；
+3. 原生 picker：选择、取消、重复选择、非 PDF、权限不足；
+4. job flow：创建、进度、取消、sidecar 重启、重连、状态校准；
+5. artifact：删除或篡改输出后重新打开 Job Details，确认 manifest/QA 报错，
+   不会被错误地当作已完成任务安全跳过；
+6. 关闭/重开 GUI：没有遗留 sidecar、锁文件、错误的 active 状态或僵尸 WebDriver。
+
+需要屏幕自动化时，记录桌面会话、显示缩放、自动化工具和重试结果。若
+Computer Use/GUI automation 不可用，按本文件的 `COMPUTER_USE_UNAVAILABLE`
+格式标记 `BLOCKED`，继续执行独立的 CLI、filesystem、protocol 和 process 检查。
+
+#### Phase F — Packaged, clean-user and release-facing checks
+
+在不使用开发用户配置的条件下，按当前 `docs/release.md` 和本文件的既有
+打包步骤执行：
+
+1. 构建 target-triple sidecar，并确认 `binaries/babelcodex-service-<target>`
+   命名与 Tauri externalBin 资源一致；
+2. 构建 unsigned NSIS/MSI/portable 产物；
+3. 在全新的 Windows 用户目录或隔离 profile 中安装/解包并首次启动；
+4. 验证 sidecar handshake、mock job、取消、重连和错误展示；
+5. 运行 `scripts/check_gui_bundle.py`，确认没有用户 state、凭据、cache、
+   开发目录或机器绝对路径，并生成 SHA-256 manifest；
+6. 检查卸载/重装、升级覆盖、临时目录清理和失败安装后的回滚行为；
+7. 记录 unsigned 限制，不将开发产物当作发布安全通过。
+
+签名、SBOM、Defender/SmartScreen、依赖 advisory 和正式发布审批仍是独立
+的 P1/P2 队列，必须有对应证据后才能从 `NOT RUN` 转为 `PASS`。
+
+#### Phase G — MCP Debug and authorized live integration
+
+这些项目不能由 Linux Cargo check 替代：
+
+- Debug build 的 MCP Bridge 仅监听 `127.0.0.1`；Release build 不启动 bridge；
+- 外部 `@hypothesi/tauri-mcp-server` 可连接，但不加入项目 npm 依赖；
+- 真实 Codex/ChatGPT-plan 认证仅在明确授权、专用测试账户和无用户 PDF 的
+  条件下执行；不得把真实服务测试混入 mock E2E；
+- 真实 PDF 翻译必须记录脱敏输入、错误分类、费用/计划边界和清理结果。
+
+#### Required Windows result record
+
+每一轮 Windows 运行必须记录：
+
+- WSL branch、commit、工作树状态、同步日期和 Windows workspace 路径；
+- Windows OS/build、CPU 架构、WebView2、Node/npm、Python/uv、Rust/MSVC
+  版本；
+- 每项精确命令、工作目录、状态（`PASS`/`FAIL`/`BLOCKED`/`NOT RUN`/
+  `NOT APPLICABLE`）；
+- 失败/阻塞的原始关键错误、日志路径、分类、是否阻塞后续检查和建议修复位置；
+- sidecar、GUI、installer、bundle manifest 的 SHA-256（若生成）；
+- 尚未执行项目的具体原因，不得只写“未测试”；
+- 本轮是否修改了 Windows 工作区源码；预期必须为“未修改业务代码”。
+
+只有在所有适用 P0 项有明确结果、所有失败/阻塞/未执行项有原因、且 WSL
+最终 diff 只包含预期验证文档后，才能关闭本轮 Windows run。
+
+
 ### Windows Validation Preparation and final handoff
 
 At the end of the Linux Development Phase, consolidate this queue against the final diff, current Plan, changed modules, CI/build configuration, Windows code paths and historical validation evidence. Merge duplicate scenarios and organize the handoff as Build / Toolchain, Runtime, Filesystem, Integration, Packaging and Regression.

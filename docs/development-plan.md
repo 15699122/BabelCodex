@@ -1,5 +1,24 @@
 # BabelCodex Development Plan
 
+## Current handoff baseline (2026-09-15)
+
+- 当前开发基线为 `dev` / commit `6ae52586ae0960808a83ca5246d89319333d13c3`，已推送并与 `origin/dev` 同步；本地工作树干净。
+- Tauri WDIO 基础设施、确定性 mock contract、E2E-only allowlist、flavor capability 内联化和 7 项 capability regression Guard 已在 Linux 完成验证；GUI Vitest、Vite build、Ruff、docs inventory、Cargo default/mcp-dev/e2e checks 均通过。
+- Windows 后续工作不再是 capability 生成代码开发，而是对当前提交执行集中式平台验收：同步源状态、重跑 `WVQ-018` capability 生命周期、重跑 `WVQ-017` native WDIO、完成原生路径/picker/取消/重连/DPI/accessibility、clean-user/installer、MCP bridge、发布安全和经授权的 live Codex/PDF 阶段。
+- Windows 结果必须写入 `docs/validation/windows.md`；不得把 Linux native 15/15 或直接 sidecar JSONL probe 记录为 Windows GUI 原生 PASS。详细顺序、命令和记录字段见该文档的 “Current Windows handoff for commit `6ae5258`”。
+
+### Windows-only completion order
+
+1. **Source/workspace preparation**：只从 WSL 同步源代码、配置、测试和指定文档；记录 branch/commit/dirty state；排除 `.git`、依赖、target、build、sidecar、state、日志、缓存、凭据和用户 PDF。
+2. **Toolchain/build baseline**：Windows 上重新安装 npm 依赖，运行 GUI Vitest、production build，并记录 Node/npm/Python/uv/Rust/MSVC/WebView2 版本。
+3. **WVQ-018 capability lifecycle**：确认 `gui/src-tauri/capabilities/` 只有 `default.json`，`e2e.json`/`mcp-debug.json` 永不生成；分别确认 default、mcp-dev、e2e flavor 的权限边界和互斥 feature。
+4. **WVQ-017 native WDIO**：运行 `npm.cmd --prefix gui run e2e:native`，必须包含 smoke、handshake、mock lifecycle、path rejection 和 Windows path specs；失败时保留 spec、sidecar 日志和最小错误片段。
+5. **Native desktop behavior**：验证 Windows picker、盘符/Unicode/空格/traversal/权限、取消、重连、artifact tamper、关闭重开和进程清理。
+6. **Packaged/clean-user**：验证 target-triple sidecar、NSIS/MSI/portable、隔离用户首次启动、卸载/重装/升级、bundle audit 和 manifest；unsigned 限制单独记录。
+7. **MCP/live/release**：验证 Debug-only localhost MCP Bridge；经授权后再执行真实 Codex/PDF；最后处理 Defender/SmartScreen、签名、SBOM、依赖 advisory 和发布审批。
+
+上述顺序中，前一阶段失败时仍应继续执行不依赖它的独立检查；依赖失败的项目必须标记 `BLOCKED`，不得静默跳过。
+
 ## Windows WDIO configuration revalidation before Linux allowlist follow-up (2026-09-15)
 
 - Linux/WSL remains the source of truth: branch dev, HEAD f6d3fd02322052b34ad92bb0dbd6aa8885f9b2c3, with the existing GUI/WDIO development tree dirty. Phase 15 infrastructure is present; the Windows run used a one-way WSL-to-E: sync and did not write business code back.

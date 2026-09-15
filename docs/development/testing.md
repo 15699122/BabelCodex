@@ -122,3 +122,29 @@ Windows WVQ-017 复核外化了 `npm run e2e:prepare` 生成的 `gui/src-tauri/c
 | Windows 原生 GUI/DPI/picker/Codex/PDF | WINDOWS_VERIFICATION_PENDING | WVQ-001～016 + WVQ-018，Linux 仅验证契约/夹具/回归 |
 
 Windows 原生 GUI 与打包需复验 WVQ-018；Linux 原生 WDIO 结果保持 LINUX_VERIFIED，浏览器模式仍为 BLOCKED。
+
+## Windows 后续执行边界（当前基线：`6ae5258`）
+
+Windows 验证应从 `docs/validation/windows.md` 的 Current Windows handoff 开始，按
+`Source/workspace → Toolchain → WVQ-018 → WVQ-017 native → native filesystem/UI →
+packaged clean-user → MCP/live/release` 顺序集中执行。Windows 端至少需要运行：
+
+```powershell
+npm.cmd --prefix gui ci
+npm.cmd --prefix gui test -- --run
+npm.cmd --prefix gui run build
+npm.cmd --prefix gui run e2e:prepare
+npm.cmd --prefix gui run e2e:build
+npm.cmd --prefix gui run e2e:native
+```
+
+其中 `e2e:prepare`/`e2e:build` 后必须确认 `gui/src-tauri/capabilities/` 仍只有
+`default.json`；`e2e.json` 和 `mcp-debug.json` 不得重新出现。`e2e:native` 必须在
+Windows 真实桌面会话中覆盖 path rejection 和 Windows paths specs，不能用 Linux
+native 结果或冻结 sidecar 的直接 JSONL probe 替代 GUI→sidecar 原生链路。
+
+Windows-only 的 picker、drive-letter/Unicode/space/traversal、权限、取消/重连、
+DPI/NVDA、clean-user、NSIS/MSI/portable、MCP localhost、Defender/SmartScreen、
+签名/SBOM、真实 Codex/PDF 均不能由 Linux 测试关闭。缺少桌面自动化能力时，按
+`COMPUTER_USE_UNAVAILABLE` 记录为 `BLOCKED`，继续执行独立的命令、文件系统、协议、
+进程和打包检查；每个 `FAIL`/`BLOCKED`/`NOT RUN` 必须写明原因和后续动作。
