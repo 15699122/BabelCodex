@@ -526,7 +526,7 @@ BabelCodex GUI 需要可重复、可进入 CI 的桌面自动化测试。Tauri �
 
 1. 采用 `@wdio/tauri-service` 的 embedded provider 作为默认测试路径，不需要单独运行 `tauri-driver`。
 2. MCP Debug Bridge 与 WDIO E2E 使用互斥的 Cargo feature（`mcp-dev` vs `e2e`），编译期拒绝同时启用。
-3. E2E capability 通过 `scripts/capabilities/` 模板管理，不进入生产构建。
+3. E2E capability 作为 `CapabilityEntry::Inlined` 直接内联于 `tauri.e2e.conf.json`（通过 `--config` 合并），从不写入 `src-tauri/capabilities/`，因而不会污染默认 / mcp-dev 的 `cargo check`；回归 Guard 位于 `tests/test_gui_flavor_capabilities.py`。
 4. E2E 运行使用 `config/e2e.toml`（`translator = "mock"`），不访问真实 Codex。
 5. 前端通过 `import.meta.env.VITE_E2E` 在 build time 条件加载 `@wdio/tauri-plugin`。
 6. 测试分为三层：Vitest（组件/状态）、WDIO Browser（renderer 用户旅程）、WDIO Native（真实 Tauri WebView + sidecar）。

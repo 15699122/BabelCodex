@@ -2,7 +2,17 @@
   "$schema": "https://schema.tauri.app/config/2",
   "app": {
     "security": {
-      "capabilities": ["main-capability", "mcp-debug-capability"]
+      "capabilities": [
+        "main-capability",
+        {
+          "identifier": "mcp-debug-capability",
+          "description": "MCP development bridge; inlined so it is loaded only by --features mcp-dev builds via tauri.mcp.conf.json. It is never written to src-tauri/capabilities/ and so is never seen by default or e2e Cargo checks.",
+          "windows": ["main"],
+          "permissions": [
+            "mcp-bridge:default"
+          ]
+        }
+      ]
     }
   },
   "bundle": {

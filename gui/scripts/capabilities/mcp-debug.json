@@ -1,9 +1,0 @@
-{
-  "$schema": "../../src-tauri/gen/schemas/desktop-schema.json",
-  "identifier": "mcp-debug-capability",
-  "description": "MCP development bridge; only included in --features mcp-dev builds via tauri.mcp.conf.json",
-  "windows": ["main"],
-  "permissions": [
-    "mcp-bridge:default"
-  ]
-}

@@ -8,9 +8,8 @@
     "build": "tsc && vite build",
     "test": "vitest run",
     "tauri": "tauri",
-    "tauri:prepare": "node ./scripts/prepare-e2e-rust.mjs",
-    "e2e:prepare": "cross-env BABELCODEX_TAURI_FLAVOR=e2e node ./scripts/prepare-e2e.mjs && cross-env BABELCODEX_TAURI_FLAVOR=e2e node ./scripts/prepare-e2e-rust.mjs",
-    "e2e:build": "cross-env BABELCODEX_TAURI_FLAVOR=e2e node ./scripts/prepare-e2e-rust.mjs && cross-env VITE_E2E=1 tauri build --debug --no-bundle --features e2e --config src-tauri/tauri.e2e.conf.json",
+    "e2e:prepare": "node ./scripts/prepare-e2e.mjs",
+    "e2e:build": "cross-env VITE_E2E=1 tauri build --debug --no-bundle --features e2e --config src-tauri/tauri.e2e.conf.json",
     "e2e:browser": "wdio run ./wdio.browser.conf.ts",
     "e2e:native": "npm run e2e:prepare && npm run e2e:build && cross-env VITE_E2E=1 wdio run ./wdio.native.conf.ts",
     "e2e:native:smoke": "npm run e2e:prepare && npm run e2e:build && cross-env VITE_E2E=1 wdio run ./wdio.native.conf.ts --spec tests/e2e/native/smoke.spec.ts",
@@ -18,7 +17,6 @@
     "e2e:native:debug": "cross-env WDIO_LOG_LEVEL=debug npm run e2e:native",
     "e2e:external": "npm run e2e:prepare && npm run e2e:build && cross-env VITE_E2E=1 wdio run ./wdio.external.conf.ts",
     "e2e": "npm run e2e:browser && npm run e2e:native",
-    "mcp:prepare": "cross-env BABELCODEX_TAURI_FLAVOR=mcp-dev node ./scripts/prepare-e2e-rust.mjs",
     "mcp:build": "tauri build --debug --no-bundle --features mcp-dev --config src-tauri/tauri.mcp.conf.json"
   },
   "dependencies": {

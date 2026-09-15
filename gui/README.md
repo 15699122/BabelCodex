@@ -65,8 +65,11 @@ npm run e2e           # browser + native
 The E2E build uses a dedicated Cargo feature `e2e` that includes
 `tauri-plugin-wdio` and `tauri-plugin-wdio-webdriver`. The MCP Debug Bridge
 uses a separate feature `mcp-dev`; the two are mutually exclusive (enforced
-at compile time). E2E capabilities are managed via `scripts/capabilities/`
-templates and never enter production builds. The E2E sidecar runs against
+at compile time). E2E capabilities are inlined as `CapabilityEntry::Inlined` objects directly in
+`tauri.e2e.conf.json` (merged via `--config`); no capability file is ever
+written into `src-tauri/capabilities/`, so default/mcp-dev Cargo checks are
+never exposed to `wdio:default`. They never enter production builds. The E2E
+sidecar runs against
 `config/e2e.toml` (`translator = "mock"`) and never touches real Codex.
 
 The frontend loads `@wdio/tauri-plugin` only when `VITE_E2E=1` is set at build

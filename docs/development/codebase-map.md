@@ -82,6 +82,8 @@
 | `tests/test_validation.py` | Output cleanliness validation tests | `test_validate_translation`; `test_error_codes_are_specific`; `test_clean_output_has_no_errors` | test | — | — |
 | `tests/test_workdir.py` | Working-directory retention sweep and path-safe removal helpers | `test_sweep_removes_old_terminal_workdir`; `test_sweep_keeps_fresh_terminal_workdir_within_retention`; `test_sweep_keeps_active_job_workdir`; `test_sweep_dry_run_removes_nothing`; `test_sweep_refuses_symlinked_job_directory`; `test_resolve_work_dir_rejects_outside_root_and_root_itself` | test | — | — |
 | `tests/test_worker.py` | Tests for the BabelDOC worker process protocol and subprocess client | `TestProtocolRoundTrip`; `TestWorkerEntry`; `TestRunWorker`; `TestWorkerEnvironment`; `TestWorkerCommand` | test | — | — |
+| `tests/test_gui_flavor_capabilities.py` | Regression guard that flavor capabilities are inlined in `tauri.*.conf.json` and never generated into `src-tauri/capabilities/`, and that `mcp-dev`/`e2e` stay mutually exclusive | `test_shared_capabilities_directory_contains_only_default`; `test_default_capability_has_no_flavor_permissions`; `test_e2e_flavor_capability_is_inlined_and_allowlisted`; `test_mcp_flavor_capability_is_inlined`; `test_package_json_scripts_no_longer_generate_capability_files`; `test_mcp_dev_and_e2e_features_remain_mutually_exclusive`; `test_gitignore_does_not_list_generated_flavor_capabilities` | test | — | — |
+
 
 ## scripts — 构建与维护脚本（build/维护环境）
 
@@ -136,9 +138,7 @@
 | 文件 | 职责 | 入口/公共符号 | 运行位置 | 主要依赖 | 测试 |
 |---|---|---|---|---|---|
 | `gui/scripts/prepare-e2e.mjs` | Prepare deterministic E2E workspace under `gui/build/e2e`; conservative path validation | — | build | — | — |
-| `gui/scripts/prepare-e2e-rust.mjs` | Prepare flavor-specific capabilities in `src-tauri/capabilities/`; manages MCP/E2E capability templates | — | build | — | — |
-| `gui/scripts/capabilities/e2e.json` | E2E capability template: `wdio:default` + sidecar allowlist for `config/e2e.toml` | — | build | — | — |
-| `gui/scripts/capabilities/mcp-debug.json` | MCP debug capability template: `mcp-bridge:default` for `tauri.mcp.conf.json` | — | build | — | — |
+
 
 ## config — 项目配置（service/gui 进程）
 
@@ -147,19 +147,21 @@
 | `config/example.toml` | User-facing example config; normal runtime uses `translator = "codex-sdk"` | — | service | — | — |
 | `config/e2e.toml` | E2E config: `translator = "mock"`, all state under `gui/build/e2e/`; never touches real Codex | — | service | — | — |
 
-## src-tauri/capabilities — 运行时能力（gui 进程，flavor 注入）
+## src-tauri/capabilities — 运行时能力（gui 进程，生产 + flavor 注入）
 
 | 文件 | 职责 | 入口/公共符号 | 运行位置 | 主要依赖 | 测试 |
 |---|---|---|---|---|---|
-| `gui/src-tauri/capabilities/default.json` | Main capability: dialog + fixed sidecar allowlist for `config/example.toml` | `main-capability` | gui | `tauri-plugin-shell` | — |
+| `gui/src-tauri/capabilities/default.json` | Main capability: dialog + fixed sidecar allowlist for `config/example.toml`; the only file in this directory — flavor capabilities are inlined, never generated here | `main-capability` | gui | `tauri-plugin-shell` | `tests/test_gui_flavor_capabilities.py` |
+
 
 ## src-tauri — Tauri 配置与源码（gui 进程）
 
 | 文件 | 职责 | 入口/公共符号 | 运行位置 | 主要依赖 | 测试 |
 |---|---|---|---|---|---|
 | `gui/src-tauri/tauri.conf.json` | Production Tauri config: explicitly lists `main-capability` only | — | gui | — | — |
-| `gui/src-tauri/tauri.mcp.conf.json` | MCP debug flavor: adds `mcp-debug-capability` for `--features mcp-dev` builds | — | gui | `tauri-plugin-mcp-bridge` | — |
-| `gui/src-tauri/tauri.e2e.conf.json` | E2E flavor: adds `e2e-capability` for `--features e2e` builds | — | gui | `tauri-plugin-wdio`, `tauri-plugin-wdio-webdriver` | — |
+| `gui/src-tauri/tauri.mcp.conf.json` | MCP debug flavor: inlines `mcp-debug-capability` (`mcp-bridge:default`) as `CapabilityEntry::Inlined` for `--features mcp-dev` builds via `--config` merge | — | gui | `tauri-plugin-mcp-bridge` | `tests/test_gui_flavor_capabilities.py` |
+| `gui/src-tauri/tauri.e2e.conf.json` | E2E flavor: inlines `e2e-capability` (`wdio:default` + fixed sidecar allowlist for `config/e2e.toml`) for `--features e2e` builds via `--config` merge | — | gui | `tauri-plugin-wdio`, `tauri-plugin-wdio-webdriver` | `tests/test_gui_flavor_capabilities.py` |
+
 
 ## 维护规则
 
@@ -168,3 +170,4 @@
 2. 文件必须以反引号路径出现（如 `` `src/codex_babeldoc/cli.py` ``），否则库存检查会判为 missing。
 3. 不要引用 `.tsx` 路径——tracked 集合只含 `.py` 与 `.ts`。
 4. 自动生成的“描述待补”条目应在下次修改该文件时补全。
+5. Flavor capability 边界：`src-tauri/capabilities/` 仅容纳 `default.json`；`e2e`/`mcp-dev` capability 必做为 `CapabilityEntry::Inlined` 嵌入 `tauri.e2e.conf.json` / `tauri.mcp.conf.json`，任何生成写入该目录都会导致 `cargo check` 污染（详见 `tests/test_gui_flavor_capabilities.py`）。

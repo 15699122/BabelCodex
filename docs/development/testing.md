@@ -52,7 +52,7 @@
 | WDIO E2E specs | ✅ | browser smoke/navigation + native smoke + windows paths |
 | 前端条件加载 `@wdio/tauri-plugin` | ✅ | `VITE_E2E=1` 控制 |
 | `config/e2e.toml` | ✅ | `translator = "mock"`，无付费 |
-| Capability flavor 注入 | ✅ | `scripts/prepare-e2e-rust.mjs` 管理 |
+| Capability flavor 注入 | ✅ | flavor capability 内联于 `tauri.*.conf.json`（`CapabilityEntry::Inlined`），不再生成文件；回归 Guard `tests/test_gui_flavor_capabilities.py` |
 | WDIO Browser mode | ❌ BLOCKED | 缺少 Chrome/Chromium |
 | WDIO Native smoke | ✅ | `npm run e2e:native:smoke`：4 tests passed；真实 Tauri WebView + embedded WebDriver 已在当前 Linux 桌面执行 |
 | WDIO Native mock lifecycle | ✅ | `npm run e2e:native:mock`：4 tests passed；mock job/cancel/restart 流程通过 |
@@ -77,7 +77,7 @@ Windows 本轮通过了 npm 重建、GUI Vitest 27/27、生产构建、E2E prepa
 | Linux npm run e2e:native | PASS | allowlist 修复后 4 spec files、15 tests 全部通过；无 native spec 失败 |
 | Linux browser mode | BLOCKED（若仍无 Chrome/Chromium） | 安装并确认 Chrome/Chromium 与 Vite dev server 后再执行 |
 | Linux regression/document inventory | PASS | npm test 28/28、npm run build、Ruff、docs inventory 17/17 和 git diff --check 均通过 |
-| 下一轮 Windows revalidation | PENDING | 单向同步本次 allowlist contract 修复，重跑 native 路径负向 specs、冻结 sidecar probe 与相关 package gates |
+| Windows revalidation after Linux allowlist fix | PASS | 6 native spec files、20 tests passed；详细结果见 docs/validation/windows.md |
 
 该清单只描述 Linux 端后续动作；总体 Windows 状态继续按 WINDOWS_VERIFICATION_PENDING 管理。
 
@@ -85,7 +85,7 @@ Windows 本轮通过了 npm 重建、GUI Vitest 27/27、生产构建、E2E prepa
 
 ```bash
 cd gui
-npm run e2e:prepare   # 准备 capabilities + build/e2e workspace
+npm run e2e:prepare   # 准备 build/e2e workspace（flavor capability 已内联，无文件生成）
 npm run e2e:build     # 构建带 e2e feature 的 Tauri binary
 npm run e2e:browser   # 运行 browser mode（需要 Chrome/Chromium）
 npm run e2e:native    # 运行 native embedded mode（需要真实 sidecar）
@@ -97,7 +97,7 @@ npm run e2e           # browser + native
 
 - E2E 构建使用独立 Cargo feature `e2e`，包含 `tauri-plugin-wdio` 和 `tauri-plugin-wdio-webdriver`
 - MCP Debug Bridge 使用独立 feature `mcp-dev`，两者互斥（编译期检查）
-- E2E capability 通过 `scripts/capabilities/e2e.json` 模板管理，不进入生产构建
+- E2E capability 作为 `CapabilityEntry::Inlined` 内联于 `tauri.e2e.conf.json`，通过 `--config` 合并进入 `--features e2e` 构建；不进入生产构建，且 `gui/src-tauri/capabilities/` 仅含 `default.json`，不会污染默认 / mcp-dev 的 `cargo check`（详见 `tests/test_gui_flavor_capabilities.py`）
 - E2E 运行使用 `config/e2e.toml`（`translator = "mock"`），不访问真实 Codex
 - 前端通过 `import.meta.env.VITE_E2E` 在 build time 选择配置文件
 
@@ -106,3 +106,19 @@ npm run e2e           # browser + native
 - 打包 sidecar：`uv run --extra runtime --with pyinstaller pyinstaller --clean --noconfirm scripts/babelcodex-service.spec`
 - 打包产物校验：`uv run python scripts/check_gui_bundle.py <bundle-dir>`
 - GUI E2E（WebdriverIO）、Windows 打包与人工验证见 `gui/README.md` 与 `docs/validation/windows.md`。
+
+## Linux follow-up completion after Windows WDIO revalidation (2026-09-15)
+
+Windows WVQ-017 复核外化了 `npm run e2e:prepare` 生成的 `gui/src-tauri/capabilities/e2e.json` 残留污染默认 / mcp-dev `cargo check`（`Permission wdio:default not found`）。Linux 端通过**内联 capability**彻底修复（flavor capability 直接嵌入 `tauri.*.conf.json`，不再向共享 `capabilities/` 写入任何文件）。本节为结果表；动因与清单参见 `docs/development-plan.md`（Linux follow-up completion）；Windows 复验仍排队于 `docs/validation/windows.md` WVQ-018。
+
+| 项目 | 状态 | 证据 |
+|---|---|---|
+| E2E capability 生成/清理生命周期 | ✅ RESOLVED | `gui/src-tauri/capabilities/` 仅含 `default.json`；回归 Guard `tests/test_gui_flavor_capabilities.py`（7 tests） |
+| 默认 / mcp-dev / e2e Cargo checks | ✅ PASS | `cargo check --locked` / `--features mcp-dev` / `--features e2e` 均 `Finished`，无 `wdio:default not found` |
+| E2E prepare/build/native WDIO | ✅ PASS | `npm run e2e:native` — 4 spec files、15 tests 全部通过；结束后无残留 capability/driver/WebDriver 进程或监听端口 |
+| Python / Rust / frontend / docs 门禁 | ✅ PASS (env-scoped) | `uv run pytest` 231 passed, 5 deselected；`ruff` clean；GUI `npm test` 28 passed、`tsc --noEmit`/`vite build` clean；docs inventory passed |
+| frozen sidecar/protocol probe | NOT RUN (not required) | 变更未触及 sidecar 协议/工作目录/allowlist/错误分类 |
+| Linux browser WDIO | BLOCKED | 缺少 Chrome/Chromium + 匹配 driver |
+| Windows 原生 GUI/DPI/picker/Codex/PDF | WINDOWS_VERIFICATION_PENDING | WVQ-001～016 + WVQ-018，Linux 仅验证契约/夹具/回归 |
+
+Windows 原生 GUI 与打包需复验 WVQ-018；Linux 原生 WDIO 结果保持 LINUX_VERIFIED，浏览器模式仍为 BLOCKED。

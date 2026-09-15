@@ -1,6 +1,6 @@
 # BabelCodex Development Plan
 
-## Windows WDIO configuration revalidation (2026-09-15)
+## Windows WDIO configuration revalidation before Linux allowlist follow-up (2026-09-15)
 
 - Linux/WSL remains the source of truth: branch dev, HEAD f6d3fd02322052b34ad92bb0dbd6aa8885f9b2c3, with the existing GUI/WDIO development tree dirty. Phase 15 infrastructure is present; the Windows run used a one-way WSL-to-E: sync and did not write business code back.
 - Windows-side configuration is now aligned with the current plan: cross-env propagates VITE_E2E into the Tauri build and worker; e2e preparation selects the target-triple sidecar and fixture workspace; GUI and sidecar config paths resolve from the Tauri working directory as ../config/e2e.toml; E2E input helpers trigger the real React input/change path without enabling the branch in production builds; and the WDIO type surface matches @wdio/tauri-service 1.4.0.
@@ -31,6 +31,37 @@
 2. **Browser mode 继续 BLOCKED**：当前 Linux 未提供 Chrome/Chromedriver；安装并确认浏览器与 Vite dev server 后再执行 `npm run e2e:browser`，不得用 native 结果替代 browser 覆盖。
 3. **回传下一轮 Windows 验证**：Linux regression 通过后再次单向 WSL→E 同步，仅同步源代码/配置/测试和指定文档，不反向带回 node_modules、sidecar、日志、缓存或 build/e2e 产物；重跑标准 native、路径负向用例和冻结 sidecar protocol probe。
 4. 保留 WVQ-017 及 live Codex/PDF、clean-user、原生 picker、DPI/NVDA、安装器与发布安全队列为 WINDOWS_VERIFICATION_PENDING，直到对应平台证据实际取得。
+
+## Linux follow-up completion after Windows WDIO revalidation (2026-09-15)
+
+Windows WVQ-017 复核外化了 `npm run e2e:prepare`/`e2e:build` 生成的 `gui/src-tauri/capabilities/e2e.json` 可能残留，从而污染默认与 mcp-dev 的 `cargo check`（`Permission wdio:default not found`）。Linux 端已通过**内联 capability**彻底修复；Windows 复验见 WVQ-018。完整 Linux 验证结果见 `docs/development/testing.md`（Linux follow-up completion）；Windows 运行明细与历史记录仍以 `docs/validation/windows.md` 为准。
+
+根因：Tauri build script 用 `parse_capabilities("./capabilities/**/*")` + `validate_capabilities` 校验目录中**所有** capability 文件。
+
+修复：
+- 把 `e2e`/`mcp-dev` capability 作为 `CapabilityEntry::Inlined` 直接嵌入 `tauri.e2e.conf.json`/`tauri.mcp.conf.json`（通过 `--config` 合并）；
+- 删除 `gui/scripts/prepare-e2e-rust.mjs` 与 `gui/scripts/capabilities/{e2e,mcp-debug}.json` 模板；
+- 从 `package.json` 移除 `tauri:prepare`/`mcp:prepare` 及 `e2e:prepare`/`e2e:build` 中的能力注入步骤；
+- 删除 `.gitignore` 中 flavor capability 条目；
+- 新增回归 Guard `tests/test_gui_flavor_capabilities.py`（7 tests）断言共享 `capabilities/` 仅含 `default.json` 且 `mcp-dev`/`e2e` 互斥约束保留。
+
+| 项目 | 状态 | 证据 |
+|---|---|---|
+| E2E capability 生成/清理生命周期 | ✅ RESOLVED | flavor capability 内联于 tauri.*.conf.json；`gui/src-tauri/capabilities/` 仅含 `default.json`，无生成痕迹。 |
+| 默认 / mcp-dev / e2e Cargo checks | ✅ PASS | `cd gui/src-tauri && cargo check --locked` / `--features mcp-dev` / `--features e2e` 均 `Finished`，无 `wdio:default not found`。 |
+| E2E prepare/build/native WDIO | ✅ PASS | `npm run e2e:prepare && npm run e2e:build && npm run e2e:native` — 4 spec files、15 tests 全部通过；结束后 `capabilities/` 仅 `default.json`，无 tauri/wdio/WebDriver 进程与监听端口。 |
+| Linux 全量回归 | ✅ PASS（env-scoped） | `uv run pytest` 231 passed, 5 deselected；`ruff check`/`ruff format --check` clean；GUI `npm test` 28 passed、`tsc --noEmit`/`vite build` clean；docs inventory passed。（3 个预存 `pymupdf`/doctor-runtime 环境失败，`git stash` 后仍 fail，与改动无关。） |
+| frozen sidecar/protocol probe | NOT RUN (not required) | 变更未触及 sidecar 协议/工作目录/allowlist/错误分类。 |
+| Linux browser WDIO | BLOCKED | 未安装 Chrome/Chromium + 匹配 driver。 |
+| Windows 原生 GUI/DPI/picker/Codex/PDF | WINDOWS_VERIFICATION_PENDING | WVQ-001～016 + WVQ-018 不变，Linux 仅验证契约/夹具/回归。 |
+
+## Latest Windows WDIO revalidation after Linux allowlist contract (2026-09-15)
+
+- The clean Linux dev HEAD 8763193b19bb1ddedd332c423087896236ce92b9 was synchronized one-way to E:/Shiraishi/VSCode Workspace/Codex_Translator. Robocopy copied 123 files with 0 failures and preserved the Windows dependency, cache, state, log, build and sidecar extras.
+- Windows configuration gates passed: npm ci, production dependency audit, GUI Vitest 28/28, production build, E2E prepare/build, default and mcp-dev Cargo checks after generated-capability cleanup, E2E feature compilation and the mutual-exclusion compile guard.
+- The standard embedded npm run e2e:native now passes 6 spec files and 20 tests, including the Linux-added E2E mock allowlist contract, native path rejection and Windows path rejection. The frozen target-triple sidecar independently returned the required structured CONFIG_INVALID rejection for an outside input path.
+- A transient validation configuration failure was recorded: the generated E2E capability remained visible to default/mcp-dev Cargo checks after preparation. Removing the exact target-local generated file restored both checks; Linux should make this cleanup boundary idempotent or explicit.
+- Automated WVQ-017 native scope is WINDOWS_PASS. Overall project state remains WINDOWS_VERIFICATION_PENDING for native picker, DPI/accessibility, clean-user, installer/release security and authorized live Codex/PDF acceptance. Full evidence is in [docs/validation/windows.md](validation/windows.md).
 
 ## Windows manual GUI basic-interaction result (2026-09-14)
 
@@ -997,8 +1028,8 @@ MCP 与 GUI 共用 Python Application Service、JobState、事件和错误码；
 4. 拆分 capability：`main-capability`（生产）、`mcp-debug-capability`（MCP 开发）、`e2e-capability`（WDIO E2E）
 5. 新增 `tauri.e2e.conf.json` 和 `tauri.mcp.conf.json` flavor 配置
 6. 新增 `config/e2e.toml`（`translator = "mock"`），所有运行数据进入 `gui/build/e2e/`
-7. 新增 `scripts/prepare-e2e.mjs`（workspace 准备）和 `scripts/prepare-e2e-rust.mjs`（capability flavor 注入）
-8. 新增 `scripts/capabilities/e2e.json` 和 `scripts/capabilities/mcp-debug.json` 模板
+7. 新增 `scripts/prepare-e2e.mjs`（workspace 准备）；capability flavor 注入改为内联于 `tauri.*.conf.json`，不再使用 `prepare-e2e-rust.mjs`
+8. ~~新增 `scripts/capabilities/e2e.json` 和 `scripts/capabilities/mcp-debug.json` 模板~~ 未采用：flavor capability 直接内联于 `tauri.*.conf.json`（`CapabilityEntry::Inlined`）
 9. 新增 `wdio.shared.conf.ts`、`wdio.browser.conf.ts`、`wdio.native.conf.ts`、`wdio.external.conf.ts`
 10. 新增 `tests/e2e/browser/smoke.spec.ts`、`tests/e2e/browser/navigation.spec.ts`
 11. 新增 `tests/e2e/native/smoke.spec.ts`
@@ -1033,7 +1064,7 @@ MCP 与 GUI 共用 Python Application Service、JobState、事件和错误码；
 - 前端条件加载：`import.meta.env.VITE_E2E === "1"` 时动态 import `@wdio/tauri-plugin`
 - WDIO configs：`wdio.shared.conf.ts`、`wdio.browser.conf.ts`、`wdio.native.conf.ts`、`wdio.external.conf.ts`
 - E2E specs：`tests/e2e/browser/smoke.spec.ts`、`tests/e2e/browser/navigation.spec.ts`、`tests/e2e/native/smoke.spec.ts`、`tests/e2e/windows/paths.spec.ts`
-- npm 脚本：`e2e:prepare`、`e2e:build`、`e2e:browser`、`e2e:native`、`e2e:external`、`e2e`、`mcp:prepare`、`mcp:build`
+- npm 脚本：`e2e:prepare`、`e2e:build`、`e2e:browser`、`e2e:native`、`e2e:external`、`e2e`、`mcp:build`（移除 `tauri:prepare`/`mcp:prepare`，flavor capability 已内联）
 - Linux 验证：
   - ✅ Vitest 28 tests 通过
   - ✅ TypeScript 编译通过
@@ -1042,7 +1073,7 @@ MCP 与 GUI 共用 Python Application Service、JobState、事件和错误码；
   - ✅ WDIO 配置文件与 E2E specs 已创建
   - ✅ 前端条件加载 `@wdio/tauri-plugin` 已实现
   - ✅ `config/e2e.toml` 无付费 mock 配置已创建
-  - ✅ Capability flavor 注入机制已验证
+    - ✅ Capability flavor 注入机制已验证（`CapabilityEntry::Inlined` 直接嵌入 `tauri.*.conf.json`，不生成文件）
   - ❌ WDIO Browser mode BLOCKED：缺少 Chrome/Chromium
   - ✅ WDIO Native mode：4 spec files、15 tests 通过（embedded WebDriver + Linux desktop）
 
@@ -1503,7 +1534,7 @@ peak memory
 6. **标准 npm 命令**
    - `npm run e2e:prepare` / `npm run e2e:build` / `npm run e2e:browser` / `npm run e2e:native` / `npm run e2e`
    - `npm run e2e:native:debug` / `npm run e2e:external`：诊断模式
-   - `npm run mcp:prepare` / `npm run mcp:build`：MCP debug flavor
+    - `npm run mcp:build`：MCP debug flavor（`mcp:prepare` 已移除，capability 已内联）
 
 7. **测试 specs**
    - `tests/e2e/browser/smoke.spec.ts`：renderer 启动 + mock sidecar 连接
