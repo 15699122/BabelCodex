@@ -121,13 +121,14 @@ Windows WVQ-017 复核外化了 `npm run e2e:prepare` 生成的 `gui/src-tauri/c
 | Linux browser WDIO | BLOCKED | 缺少 Chrome/Chromium + 匹配 driver |
 | Windows 原生 GUI/DPI/picker/Codex/PDF | WINDOWS_VERIFICATION_PENDING | WVQ-001～016，Linux 仅验证契约/夹具/回归 |
 
-Windows WVQ-018 inline capability 与 WVQ-017 automated native scope 已通过；Windows 原生 GUI、打包/clean-user、DPI/picker、真实 Codex/PDF 等仍按 WVQ-001～016 保持 WINDOWS_VERIFICATION_PENDING。Linux 原生 WDIO 结果保持 LINUX_VERIFIED，浏览器模式仍为 BLOCKED。
+Windows WVQ-018 inline capability 与 WVQ-017 automated native scope 已通过；Windows 原生 GUI、完整 work-dir recovery、打包/clean-user、DPI/picker、发布安全、MCP localhost 和真实 Codex/PDF 等仍按 WVQ-001～016 保持 WINDOWS_VERIFICATION_PENDING。Linux 原生 WDIO 结果保持 LINUX_VERIFIED，浏览器模式仍为 BLOCKED。
 
-## Windows 后续执行边界（当前基线：`6ae5258`）
+## Windows 后续执行边界（当前基线：`518f835`）
 
-Windows 验证应从 `docs/validation/windows.md` 的 Current Windows handoff 开始，按
-`Source/workspace → Toolchain → WVQ-018 → WVQ-017 native → native filesystem/UI →
-packaged clean-user → MCP/live/release` 顺序集中执行。Windows 端至少需要运行：
+Windows 验证应从 `docs/validation/windows.md` 的下一轮 handoff 开始，按
+`Source/workspace → Toolchain regression → native GUI/recovery → stale package/QA →
+filesystem/runtime → clean-user/package → MCP/live/release` 顺序集中执行。`WVQ-018`
+与自动化 `WVQ-017` 已有 Windows PASS，不需要重复作为未完成项目登记，但仍可作为每轮构建的回归门禁。Windows 端至少需要运行：
 
 ```powershell
 npm.cmd --prefix gui ci
@@ -136,6 +137,7 @@ npm.cmd --prefix gui run build
 npm.cmd --prefix gui run e2e:prepare
 npm.cmd --prefix gui run e2e:build
 npm.cmd --prefix gui run e2e:native
+npm.cmd --prefix gui run mcp:build
 ```
 
 其中 `e2e:prepare`/`e2e:build` 后必须确认 `gui/src-tauri/capabilities/` 仍只有
@@ -144,7 +146,7 @@ Windows 真实桌面会话中覆盖 path rejection 和 Windows paths specs，不
 native 结果或冻结 sidecar 的直接 JSONL probe 替代 GUI→sidecar 原生链路。
 
 Windows-only 的 picker、drive-letter/Unicode/space/traversal、权限、取消/重连、
-DPI/NVDA、clean-user、NSIS/MSI/portable、MCP localhost、Defender/SmartScreen、
-签名/SBOM、真实 Codex/PDF 均不能由 Linux 测试关闭。缺少桌面自动化能力时，按
+work-dir/file-lock、DPI/NVDA、clean-user、NSIS/MSI/portable、stale-GUI、MCP localhost、
+Defender/SmartScreen、签名/SBOM、真实 Codex/PDF 均不能由 Linux 测试关闭。缺少桌面自动化能力时，按
 `COMPUTER_USE_UNAVAILABLE` 记录为 `BLOCKED`，继续执行独立的命令、文件系统、协议、
 进程和打包检查；每个 `FAIL`/`BLOCKED`/`NOT RUN` 必须写明原因和后续动作。

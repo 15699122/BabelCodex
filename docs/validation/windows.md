@@ -154,7 +154,7 @@ Add new items while Linux development continues. Do not mark an item `PASS` unti
 | `WVQ-018` | Inline flavor capability packaging on Windows | Refactor capability injection to `CapabilityEntry::Inlined` inside `tauri.e2e.conf.json`/`tauri.mcp.conf.json`; delete generated `gui/src-tauri/capabilities/{e2e,mcp-debug}.json` and `gui/scripts/prepare-e2e-rust.mjs` | `gui/src-tauri/tauri.e2e.conf.json`; `gui/src-tauri/tauri.mcp.conf.json`; `gui/src-tauri/src/lib.rs`; `gui/src-tauri/Cargo.toml`; `gui/package.json`; `.gitignore` | Tauri build script validates every file in `gui/src-tauri/capabilities/`; Windows packaging can only prove that default/mcp-dev/e2e binaries each load only their own capability set and that no flavor capability file leaks into a release | Run `npm.cmd --prefix gui ci` + `npm.cmd --prefix gui run build`; confirm `gui/src-tauri/capabilities/` contains only `default.json`; run `npm.cmd --prefix gui run e2e:native` and assert WVQ-017 standard native scope passes (incl. `native/path-rejection.spec.ts` and `windows/paths.spec.ts`) with inlined capabilities and no capability-permission errors; clean residue | Windows desktop; Node/npm; packaged or debug `babelcodex-gui.exe`; fixed Python sidecar | `gui/src-tauri/capabilities/` holds only `default.json` in every build flavor; default/mcp-dev/e2e binaries start with the correct capability set and full WVQ-017 native scope passes | `P0` | `WINDOWS_PASS` | No; Linux already verified (cargo check default/mcp-dev/e2e + native WDIO 15 tests pass) |
 
 
-### Current Windows handoff for commit `6ae5258` (2026-09-15)
+### Current Windows handoff for commit `518f835` (2026-09-15)
 
 本节是当前开发状态的可执行 Windows handoff。它只描述从 WSL/Linux
 同步到 Windows 后需要执行的工作；具体结果必须在 Windows 实际执行后写回本文件。
@@ -317,6 +317,166 @@ Computer Use/GUI automation 不可用，按本文件的 `COMPUTER_USE_UNAVAILABL
 
 只有在所有适用 P0 项有明确结果、所有失败/阻塞/未执行项有原因、且 WSL
 最终 diff 只包含预期验证文档后，才能关闭本轮 Windows run。
+
+### Next Windows handoff after WVQ-017/WVQ-018 PASS (baseline `518f835`)
+
+`WVQ-017` 的自动化 native scope 和 `WVQ-018` 的 inline capability packaging
+已经有 Windows PASS 证据。下一轮不得重复把它们作为未完成配置；应将它们作为
+每轮构建的回归门禁，并集中完成下列仍为 `WINDOWS_VERIFICATION_PENDING` 的项目。
+
+#### 1. Synchronize the exact source state
+
+源状态必须固定为：
+
+```text
+Branch: dev
+Commit: 518f835509aa6181a85c837e3a8db06a04ed627a
+Remote: origin/dev
+```
+
+Windows 操作员应先记录：
+
+```powershell
+git status --short --branch
+git rev-parse HEAD
+git log -1 --oneline
+```
+
+然后将 WSL 源目录单向同步到 disposable Windows workspace。同步前检查并保留
+Windows 本地的 `node_modules`、Python/uv cache、sidecar、日志、state 和其他
+未知文件；不得反向同步，也不得把这些机器本地内容提交到 Git。同步后核对
+`gui/package-lock.json`、`gui/src-tauri/tauri*.conf.json`、
+`gui/src-tauri/capabilities/default.json`、`gui/tests/e2e/`、
+`src/codex_babeldoc/` 和 `config/e2e.toml` 的来源状态。
+
+#### 2. Repeat the build and flavor regression gate
+
+在 Windows workspace 根目录执行：
+
+```powershell
+node --version
+npm --version
+python --version
+uv --version
+rustc --version
+cargo --version
+npm.cmd --prefix gui ci
+npm.cmd --prefix gui test -- --run
+npm.cmd --prefix gui run build
+npm.cmd --prefix gui run e2e:prepare
+npm.cmd --prefix gui run e2e:build
+npm.cmd --prefix gui run mcp:build
+npm.cmd --prefix gui run e2e:native
+```
+
+每次 `e2e:prepare`、`e2e:build` 和 `e2e:native` 前后都检查：
+
+```powershell
+Get-ChildItem gui/src-tauri/capabilities -File | Select-Object Name
+Test-Path gui/src-tauri/capabilities/e2e.json
+Test-Path gui/src-tauri/capabilities/mcp-debug.json
+```
+
+预期是只存在 `default.json`，两个 flavor 文件均为 `False`；不存在
+`wdio:default not found`、`mcp-bridge:default not found` 或权限错误。`mcp-dev`
+与 `e2e` 的同时启用检查仍应得到预期的 compile-time rejection。该门禁通过后，
+再进入下面的原生/打包检查；失败时仍继续不依赖它的独立检查。
+
+#### 3. P0 native GUI, picker and recovery (`WVQ-001`, `WVQ-003`, `WVQ-004`)
+
+使用隔离的 mock fixture 和临时 Windows 用户目录，依次验证：
+
+1. 中文界面、状态文本、焦点顺序、键盘操作、窗口缩放和关闭；
+2. 原生 picker 的选择、取消、重复选择、非 PDF 过滤和权限不足；
+3. 允许路径：盘符、空格、Unicode 和受支持的长路径；
+4. 拒绝路径：输入目录外、缺失文件、目录伪装文件、Windows traversal；
+5. mock job 的启动、进度、取消、sidecar 重启、重连和状态恢复；
+6. 完成后删除或篡改 output/manifest，确认 QA/validate 报错且不会错误跳过；
+7. 运行第二个 service 实例，确认活跃 PID 不会被误判为可回收；
+8. 在 clean-user profile 中安装/解包、首次启动、退出、重开和显式 retry。
+
+验收标准：GUI 与 sidecar 的 allowlist 一致，错误 notice 不被轮询/重连状态
+覆盖，失败 job 不自动重跑，显式 retry 才产生新 attempt，且结束后没有 GUI、
+sidecar、worker、锁文件或 WebDriver 残留。
+
+#### 4. Fresh/stale package and QA (`WVQ-008`, `WVQ-009`, `WVQ-015`)
+
+在 Windows 目标目录执行 fresh package 验收，并保留 package、sidecar 和 manifest
+SHA-256：
+
+1. 构建 target-triple sidecar，确认 externalBin 文件名和架构正确；
+2. 对 fresh bundle 运行 `check_gui_bundle.py`、source-freshness audit 和
+   `get_server_info` handshake；
+3. 使用旧 sidecar 构造 stale bundle，分别记录 audit 拒绝和 GUI 启动后的可读错误；
+4. 对 mock job 执行正向 QA、篡改 output、删除 output、blank-page/overflow
+   检查；
+5. 在 clean Windows interpreter 中运行 `cbpdf qa`、`cbpdf doctor` 和 `validate`，
+   确认 stdout 始终是单一 JSON，不能出现 PyMuPDF/dependency notice；
+6. fresh 与 stale 两种情形都验证退出码、日志路径和临时目录清理。
+
+stale bundle 的负向 audit 通过不等于 stale-GUI 错误展示通过；两者必须分别记录。
+
+#### 5. Runtime, work-dir and environment matrix (`WVQ-007`, `WVQ-010`～`WVQ-014`)
+
+完成完整的 Windows worker 生命周期，而不是只重复 QA harness cleanup：
+
+- 在 retention window 内执行 `cleanup --dry-run`，确认 terminal job 目录不被提前删除；
+- 将 terminal 目录老化后确认 cleanup 删除，`RUNNING`/`RETRY_PENDING` 目录保留；
+- 保持文件句柄打开，验证 bounded retry、错误分类和最终清理结果；
+- 注入 AUTH、INPUT、CONFIG、TRANSLATION、WORKER_CRASHED 等错误，核对 retry policy
+  和 attempt 次数，AUTH/input 不得自动循环；
+- 验证 cancel、reconnect、worker crash、显式 retry 和跨进程 active PID 判断；
+- 使用 Windows 环境 allowlist，确认 `SystemRoot`、`USERPROFILE`、`TEMP`、`TMP`、
+  `APPDATA`、`LOCALAPPDATA`、`PROGRAMDATA` 保留，`SECRET` 类父进程变量不继承；
+- 记录 socket/process/timeout/locked-file 的 Windows 原始错误和分类。
+
+此前 QA 临时目录 cleanup 通过只能关闭该子路径，不能关闭完整 `WVQ-007`。
+
+#### 6. DPI, accessibility, installer and clean-user (`WVQ-002`, `WVQ-004`)
+
+在 Windows 原生桌面执行 125%、150%、200% DPI，必要时覆盖多显示器和窗口缩放；
+使用 NVDA 检查标题、状态、错误 notice、按钮和焦点顺序。随后分别验证 NSIS、MSI
+和 portable：安装/解包、首次启动、sidecar handshake、mock job、取消、升级覆盖、
+卸载、临时目录清理、失败安装回滚，以及 MSI administrative extraction 与 payload
+parity。清洁用户测试不得依赖仓库、开发依赖、旧 state 或旧凭据。
+
+若 NVDA、trusted GUI RPC 或 MSI admin extraction 不可用，必须保留为
+`BLOCKED`/`NOT RUN`，记录具体原因和替代的 CLI/process/bundle 证据，不能标记 PASS。
+
+#### 7. MCP localhost, release security and authorized live use (`WVQ-005`, `WVQ-006`, `WVQ-016`)
+
+- `mcp-dev` Debug build：确认 Bridge 仅监听 `127.0.0.1`，外部
+  `npx.cmd -y @hypothesi/tauri-mcp-server` 可连接；Release build 不启动 listener，
+  且外部 MCP 包不进入项目 npm dependencies。
+- Release security：检查 Defender/SmartScreen 观察、签名状态、SBOM、checksum、
+  bundle 内容、依赖 advisory 和未签名开发产物限制。任何未执行项目写明原因。
+- Live Codex/PDF：只有在获得明确授权、使用专用测试账户和脱敏 fixture 后执行；
+  记录认证方式、错误分类、模型/计划用量边界、placeholder/output QA、产物清理，
+  不得将 live 调用混入默认或 mock E2E。
+
+#### 8. Required result matrix for the next run
+
+下一轮至少包含以下项目，每项填写精确命令、工作目录、状态和证据路径：
+
+| Scope | Required status |
+|---|---|
+| Source sync and toolchain snapshot | `PASS` / `FAIL` |
+| Default/mcp-dev/e2e regression gate | `PASS` / `FAIL` |
+| WVQ-001/WVQ-003 native GUI and picker | `PASS` / `FAIL` / `BLOCKED` |
+| WVQ-004 clean-user and recovery | `PASS` / `FAIL` / `BLOCKED` / `NOT RUN` |
+| WVQ-007 full work-dir/lock/retry matrix | `PASS` / `FAIL` / `BLOCKED` / `NOT RUN` |
+| WVQ-008 QA/render behavior | `PASS` / `FAIL` / `NOT RUN` |
+| WVQ-009 fresh/stale GUI behavior | `PASS` / `FAIL` / `BLOCKED` |
+| WVQ-010～014 worker/runtime checks | `PASS` / `FAIL` / `BLOCKED` / `NOT RUN` |
+| WVQ-002 DPI/NVDA/window interaction | `PASS` / `BLOCKED` / `NOT RUN` |
+| WVQ-005 release security | `PASS` / `NOT RUN` |
+| WVQ-016 MCP localhost | `PASS` / `BLOCKED` / `NOT RUN` |
+| WVQ-006 authorized live Codex/PDF | `PASS` / `FAIL` / `NOT RUN` |
+| Process/port/file cleanup | `PASS` / `FAIL` |
+
+Windows run 完成前必须确认：所有适用 P0 项有明确状态，所有 `FAIL`、`BLOCKED`、
+`NOT RUN` 有具体原因，未修改 Windows 业务代码，且 WSL 最终 diff 只有预期文档
+变更。历史失败记录不得改写。
 
 
 ### Windows Validation Preparation and final handoff

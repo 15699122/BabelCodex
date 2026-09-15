@@ -2,10 +2,31 @@
 
 ## Current handoff baseline (2026-09-15)
 
-- 当前开发基线为 `dev` / commit `6ae52586ae0960808a83ca5246d89319333d13c3`，已推送并与 `origin/dev` 同步；本地工作树干净。
+- 当前开发基线为 `dev` / commit `518f835509aa6181a85c837e3a8db06a04ed627a`，已推送并与 `origin/dev` 同步；本地工作树干净。
 - Tauri WDIO 基础设施、确定性 mock contract、E2E-only allowlist、flavor capability 内联化和 7 项 capability regression Guard 已在 Linux 完成验证；GUI Vitest、Vite build、Ruff、docs inventory、Cargo default/mcp-dev/e2e checks 均通过。
-- Windows 后续工作不再是 capability 生成代码开发，而是对当前提交执行集中式平台验收：同步源状态、重跑 `WVQ-018` capability 生命周期、重跑 `WVQ-017` native WDIO、完成原生路径/picker/取消/重连/DPI/accessibility、clean-user/installer、MCP bridge、发布安全和经授权的 live Codex/PDF 阶段。
-- Windows 结果必须写入 `docs/validation/windows.md`；不得把 Linux native 15/15 或直接 sidecar JSONL probe 记录为 Windows GUI 原生 PASS。详细顺序、命令和记录字段见该文档的 “Current Windows handoff for commit `6ae5258`”。
+- Windows 已直接验证 `WVQ-018` 与自动化 `WVQ-017` native scope；后续工作不再是 capability 生成代码开发，而是对当前提交执行剩余 Windows-only 验收：原生 GUI/path/picker、DPI/accessibility、完整 work-dir recovery、clean-user/installer、stale bundle GUI、MCP localhost、发布安全和经授权的 live Codex/PDF 阶段。
+- Windows 结果必须写入 `docs/validation/windows.md`；不得把 Linux native 15/15 或直接 sidecar JSONL probe 记录为 Windows GUI 原生 PASS。详细顺序、命令和记录字段见该文档的 “Next Windows handoff after WVQ-017/WVQ-018 PASS (baseline `518f835`)”。
+
+## Next Windows validation scope after WVQ-018/WVQ-017 (2026-09-15)
+
+本轮 Windows 已完成 flavor capability 与自动化 native E2E 验收；下一轮只处理尚未取得充分 Windows 证据的项目。总体状态继续为 `WINDOWS_VERIFICATION_PENDING`，不得因为 `WVQ-017`/`WVQ-018` 通过而提前宣称 GUI、安装器或发布验收完成。
+
+### Windows 执行顺序
+
+1. **同步与工具链快照**：从 WSL 的 `518f835` 单向同步到 disposable Windows workspace；记录 branch、commit、工作树状态、同步日期、Windows build、WebView2、Node/npm、Python/uv、Rust/MSVC 版本。保留 Windows 本地依赖、缓存和 sidecar，禁止把它们反向同步回 WSL。
+2. **回归构建门禁**：执行 `npm.cmd --prefix gui ci`、GUI Vitest、`npm.cmd --prefix gui run build`、默认/mcp-dev/e2e Cargo check，并再次确认 capability 目录仅有 `default.json`。这一步是后续 packaged/native 检查的前置条件。
+3. **P0 原生 GUI 与恢复**：在干净 fixture 下完成 WVQ-001、WVQ-003、WVQ-004；先验证中文布局/键盘和 picker/path allowlist，再执行 mock job 取消、sidecar 重启、worker crash、显式 retry、artifact tamper 和 active PID 不误回收。
+4. **P0 stale package 与 QA**：完成 WVQ-009 的 fresh package handshake、source freshness audit 和 stale-GUI 错误展示；执行 WVQ-015 的 clean Windows CLI/sidecar JSON stdout 检查，确认 PyMuPDF/dependency notice 不污染机器可读输出。
+5. **P1 运行时与文件系统**：完成 WVQ-007 全部 work-dir retention、锁文件、长路径/ junction、retry category、cancel/reconnect 矩阵；完成 WVQ-010～014 的 Windows worker、路径、环境变量、超时和恢复证据。
+6. **P1 打包与桌面可用性**：完成 WVQ-002 的 125%/150%/200% DPI、NVDA、resize/close/focus 检查；完成 WVQ-004 clean-user 首次启动、卸载/重装/升级、MSI admin extraction 与 payload parity。
+7. **P1/P2 安全与授权集成**：完成 WVQ-005 Defender/SmartScreen、签名、SBOM、checksum、依赖 advisory；完成 WVQ-016 Debug-only localhost MCP bridge 的 Windows 原生观察；只有获得明确授权后才执行 WVQ-006 live Codex/PDF。
+
+### 失败与阻塞处理
+
+- 独立的 CLI、协议、文件系统、构建和 bundle audit 检查必须在 GUI automation 或 Computer Use 阻塞后继续执行。
+- MSI extraction、native GUI trusted RPC、NVDA 或外部 MCP 不可用时，分别标记 `BLOCKED` 或 `NOT RUN`，记录具体原因、重试情况和替代证据，不得标记为 PASS。
+- `WVQ-007` 的完整 Windows 句柄生命周期仍需独立证据；一次 QA harness cleanup PASS 不能替代 work-dir/lock/retry/cancel/reconnect 全矩阵。
+- `WVQ-009` 的 stale bundle negative audit PASS 不能替代 stale-GUI 原生错误展示；freshness、runtime handshake 和 GUI 错误呈现需要分别记录。
 
 ## Latest Windows validation after Linux inline capability configuration (2026-09-15)
 
