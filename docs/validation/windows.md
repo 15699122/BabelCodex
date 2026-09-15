@@ -154,7 +154,7 @@ Add new items while Linux development continues. Do not mark an item `PASS` unti
 | `WVQ-018` | Inline flavor capability packaging on Windows | Refactor capability injection to `CapabilityEntry::Inlined` inside `tauri.e2e.conf.json`/`tauri.mcp.conf.json`; delete generated `gui/src-tauri/capabilities/{e2e,mcp-debug}.json` and `gui/scripts/prepare-e2e-rust.mjs` | `gui/src-tauri/tauri.e2e.conf.json`; `gui/src-tauri/tauri.mcp.conf.json`; `gui/src-tauri/src/lib.rs`; `gui/src-tauri/Cargo.toml`; `gui/package.json`; `.gitignore` | Tauri build script validates every file in `gui/src-tauri/capabilities/`; Windows packaging can only prove that default/mcp-dev/e2e binaries each load only their own capability set and that no flavor capability file leaks into a release | Run `npm.cmd --prefix gui ci` + `npm.cmd --prefix gui run build`; confirm `gui/src-tauri/capabilities/` contains only `default.json`; run `npm.cmd --prefix gui run e2e:native` and assert WVQ-017 standard native scope passes (incl. `native/path-rejection.spec.ts` and `windows/paths.spec.ts`) with inlined capabilities and no capability-permission errors; clean residue | Windows desktop; Node/npm; packaged or debug `babelcodex-gui.exe`; fixed Python sidecar | `gui/src-tauri/capabilities/` holds only `default.json` in every build flavor; default/mcp-dev/e2e binaries start with the correct capability set and full WVQ-017 native scope passes | `P0` | `WINDOWS_PASS` | No; Linux already verified (cargo check default/mcp-dev/e2e + native WDIO 15 tests pass) |
 
 
-### Current Windows handoff for commit `518f835` (2026-09-15)
+### Current Windows handoff for current-head commit `8f046ef` (2026-09-15)
 
 本节是当前开发状态的可执行 Windows handoff。它只描述从 WSL/Linux
 同步到 Windows 后需要执行的工作；具体结果必须在 Windows 实际执行后写回本文件。
@@ -165,7 +165,7 @@ Add new items while Linux development continues. Do not mark an item `PASS` unti
 
 1. 在 WSL 源目录记录：`git branch --show-current`、`git rev-parse HEAD`、
    `git status --short --branch`、工作树是否包含未提交变更，以及同步日期。
-   本轮预期基线是 branch `dev`、commit `6ae52586ae0960808a83ca5246d89319333d13c3`。
+   本轮当前验证基线是 branch `dev`、commit `8f046ef12ab9a9e8d82c260673a303892202ec21`。
 2. 在 Windows 目标目录检查并记录现有本地文件。不得盲目删除未知的
    `.env`、凭据、用户数据、`node_modules`、sidecar、日志、缓存或个人配置。
 3. 只从 WSL 向 Windows 同步源代码、配置、测试和指定文档；禁止同步
@@ -318,7 +318,7 @@ Computer Use/GUI automation 不可用，按本文件的 `COMPUTER_USE_UNAVAILABL
 只有在所有适用 P0 项有明确结果、所有失败/阻塞/未执行项有原因、且 WSL
 最终 diff 只包含预期验证文档后，才能关闭本轮 Windows run。
 
-### Next Windows handoff after WVQ-017/WVQ-018 PASS (baseline `518f835`)
+### Next Windows handoff after current-head validation (baseline `8f046ef`)
 
 `WVQ-017` 的自动化 native scope 和 `WVQ-018` 的 inline capability packaging
 已经有 Windows PASS 证据。下一轮不得重复把它们作为未完成配置；应将它们作为
@@ -330,9 +330,14 @@ Computer Use/GUI automation 不可用，按本文件的 `COMPUTER_USE_UNAVAILABL
 
 ```text
 Branch: dev
-Commit: 518f835509aa6181a85c837e3a8db06a04ed627a
+Commit: 8f046ef12ab9a9e8d82c260673a303892202ec21
 Remote: origin/dev
 ```
+
+上一轮 `WVQ-017`/`WVQ-018` 的 PASS 仍保留为历史/回归参考；本轮
+`8f046ef` 的 native WDIO 在 spec 加载前因 `uv_os_get_passwd ... ENOMEM`
+失败，不能将上一轮 PASS 直接转移到当前提交。当前源的冻结 worker 与 MSI
+也分别有 FAIL；下一轮必须先完成本节的环境恢复配置。
 
 Windows 操作员应先记录：
 
@@ -348,6 +353,190 @@ Windows 本地的 `node_modules`、Python/uv cache、sidecar、日志、state �
 `gui/package-lock.json`、`gui/src-tauri/tauri*.conf.json`、
 `gui/src-tauri/capabilities/default.json`、`gui/tests/e2e/`、
 `src/codex_babeldoc/` 和 `config/e2e.toml` 的来源状态。
+
+#### 1A. Current-head environment recovery before rerun
+
+针对本轮已记录的 Windows 环境问题，先执行并记录：
+
+```powershell
+$env:BC_VALIDATION_ROOT = 'E:\BabelCodex-validation-current'
+$env:TEMP = "$env:BC_VALIDATION_ROOT\temp"
+$env:TMP = "$env:BC_VALIDATION_ROOT\temp"
+$env:npm_config_cache = "$env:BC_VALIDATION_ROOT\npm-cache"
+$env:UV_CACHE_DIR = "$env:BC_VALIDATION_ROOT\uv-cache"
+New-Item -ItemType Directory -Force "$env:TEMP", $env:npm_config_cache, $env:UV_CACHE_DIR | Out-Null
+Test-Path $env:TEMP
+Test-Path $env:npm_config_cache
+Test-Path $env:UV_CACHE_DIR
+python --version
+.venv\Scripts\python.exe --version
+uv run python --version
+```
+
+若任一 Python/uv 命令因 `os error 5`、`os error 183` 或权限问题失败，
+将 Python/uv 标为 `BLOCKED`，先修复 Windows 安装/ACL；不得使用旧 sidecar
+或旧 MSI 代替当前源构建。确认 Python 可用后执行：
+
+```powershell
+uv sync --locked --extra runtime --extra dev
+uv run --extra runtime --with pyinstaller pyinstaller --clean --noconfirm scripts/babelcodex-service.spec
+```
+
+新 sidecar 必须在全新的 E: 本地 fixture、state、work、artifact、TEMP/TMP
+目录中执行 worker request，并保留 stderr、JSONL、数据库路径及目录权限证据。
+WiX 方面必须确认 `candle.exe` 与 `light.exe` 来自同一可用 toolset，再重新
+生成 MSI；旧 MSI 不得作为当前 parity 证据。
+
+#### 1B. Recovery decision table
+
+按以下顺序记录恢复结果；不要把后一步的成功倒推为前一步成功：
+
+| Gate | Minimum evidence | If it fails | Allowed disposition |
+|---|---|---|---|
+| Writable validation root | `Test-Path`、`Get-Acl`、创建/删除临时文件成功 | 先修复当前用户 ACL 或换本地 E: 目录 | `BLOCKED`，不得重用旧产物 |
+| Python/uv runtime | `python --version`、`.venv\\Scripts\\python.exe --version`、`uv run python --version` | 修复 Python/uv 安装或 cache；保留原始错误 | `BLOCKED` |
+| Locked dependency sync | `uv sync --locked --extra runtime --extra dev` | 分离 cache、解释器和网络/权限原因 | `BLOCKED` 或 `FAIL` |
+| Fresh sidecar build | 新 `.exe` 时间戳/hash，PyInstaller 无致命错误 | 不执行 frozen worker PASS 结论 | `FAIL` 或 `BLOCKED` |
+| Frozen worker | exit code、JSON response、stderr、fresh state/work/artifact 目录 | 检查数据库父目录、工作目录和 ACL | `FAIL`，直到当前源新包成功 |
+| WDIO loader | 最小 `tsx`/WDIO 命令能加载配置并进入 spec | 记录 Node/tsx/WDIO 版本和 `uv_os_get_passwd` 错误 | `FAIL` 或 `BLOCKED` |
+| MSI toolchain | `candle.exe`/`light.exe` 路径、版本和同源性 | 修复 WiX 安装/PATH，再重建 MSI | `FAIL`，旧 MSI 不可复用 |
+
+#### 1C. Frozen sidecar minimum revalidation
+
+只有 Python/uv gate 通过后，才执行当前源 sidecar 的最小协议和 worker
+复验。以下命令中的路径应替换为本轮实际 validation root；不得指向旧的
+`dist` 或 Windows 本地未知 sidecar：
+
+```powershell
+$root = $env:BC_VALIDATION_ROOT
+$sidecar = Join-Path $PWD 'gui\src-tauri\binaries\babelcodex-service-x86_64-pc-windows-msvc.exe'
+$cfg = Join-Path $PWD 'config\e2e.toml'
+$request = Join-Path $root 'worker-request.jsonl'
+$response = Join-Path $root 'worker-response.jsonl'
+$stderr = Join-Path $root 'worker-stderr.log'
+
+Get-Item $sidecar | Select-Object FullName, Length, LastWriteTime, @{n='SHA256';e={(Get-FileHash $_.FullName -Algorithm SHA256).Hash}}
+Get-Acl $root | Format-List
+Get-Acl (Split-Path $sidecar) | Format-List
+
+@'
+{"protocol_version":1,"request_id":"windows-current-head-info","method":"get_server_info"}
+{"protocol_version":1,"request_id":"windows-current-head-invalid","method":"start_translation","source_path":"..\\outside\\outside.pdf"}
+{"protocol_version":1,"request_id":"windows-current-head-list","method":"list_jobs"}
+{"protocol_version":1,"request_id":"windows-current-head-shutdown","method":"shutdown"}
+'@ | Set-Content -LiteralPath $request -Encoding utf8
+
+& $sidecar --config $cfg < $request > $response 2> $stderr
+$exitCode = $LASTEXITCODE
+$exitCode
+Get-Content $response
+Get-Content $stderr
+```
+
+预期：protocol version 为 1；outside path 返回结构化 `CONFIG_INVALID`；
+shutdown 返回 `closing=true`；进程 exit code 为 0；stderr 不包含未分类的
+Python/worker traceback。该协议 probe 只能证明 sidecar 合约，不能替代 GUI
+原生验收。
+
+然后使用全新的输入、state、work、artifact 目录发送一个 mock worker request：
+
+```powershell
+New-Item -ItemType Directory -Force "$root\incoming", "$root\translated", "$root\state", "$root\work", "$root\artifacts" | Out-Null
+Copy-Item 'tests\fixtures\fixture_two_column.pdf' "$root\incoming\sample.pdf"
+# 使用项目当前 worker request fixture/命令，显式传入 $root 下的 config、state、work 和 artifact 路径。
+# 记录 exit code、JSON response、stderr、生成文件、文件大小和 SHA-256。
+```
+
+如果再次出现 `unable to open database file`，必须记录实际 database 路径、
+所有父目录的 `Get-Acl`、sidecar 运行用户、`TEMP`/`TMP` 和完整 stderr，并将
+当前 frozen worker 保持 `FAIL`；不能用直接 JSONL handshake 或旧 sidecar
+替代 worker 结果。
+
+#### 1D. WDIO loader and native E2E diagnosis
+
+先不要重复完整套件，执行最小配置加载诊断：
+
+```powershell
+$env:VITE_E2E = '1'
+$env:BABELCODEX_E2E_MODE = 'native'
+$env:WDIO_LOG_LEVEL = 'debug'
+node --version
+npm --version
+node -e "console.log({cwd:process.cwd(),tmp:process.env.TEMP,uv:process.env.UV_CACHE_DIR,node:process.version})"
+npx.cmd tsx --version
+npx.cmd wdio --version
+npx.cmd wdio config --help
+```
+
+若最小命令或完整 `npm.cmd --prefix gui run e2e:native:debug` 仍在 spec
+加载前报告 `uv_os_get_passwd ... ENOMEM`，保存 Node/npm/tsx/WDIO 版本、
+环境变量摘要、错误 stderr 和重试次数，标记 native WDIO 为 `FAIL` 或
+`BLOCKED`；不能记录任何 spec PASS。只有 loader 正常进入 spec 后，才运行：
+
+```powershell
+npm.cmd --prefix gui run e2e:native
+npm.cmd --prefix gui run e2e:external
+```
+
+External provider 仅用于区分 embedded driver 与产品问题；embedded 未进入
+spec 时，external 结果不得覆盖 embedded 的失败结论。
+
+#### 1E. MSI/WiX recovery and package parity
+
+在 MSI 重建前记录 WiX 工具链来源，确认 `candle.exe` 和 `light.exe` 不是
+来自不同安装目录或混合版本：
+
+```powershell
+Get-Command candle.exe, light.exe | Select-Object Name, Source, Version
+(Get-Command candle.exe).Source
+(Get-Command light.exe).Source
+```
+
+若 `light.exe` 失败，保留完整命令、日志路径、exit code 和 WiX 版本；先修复
+PATH/安装，再运行当前项目的 NSIS/MSI 构建命令。MSI 成功后必须继续：
+
+1. 记录 MSI SHA-256 和文件时间戳；
+2. 以 administrator extraction 解包到新的目录；
+3. 对 extracted sidecar 做 `get_server_info`、invalid-path、shutdown probe；
+4. 比较 MSI payload 与 target-triple sidecar/GUI 版本和 hash；
+5. 运行 `scripts/check_gui_bundle.py`，确认无 state、日志、凭据、用户 PDF、
+   cache 和开发机绝对路径；
+6. 将 MSI admin extraction 或 payload parity 失败标为 `BLOCKED`/`FAIL`，
+   不得因为 NSIS 成功而关闭 MSI 队列。
+
+#### 1F. Native GUI, clean-user and release order
+
+只有 build/flavor、fresh sidecar 和 WDIO 诊断结果已记录后，才进行桌面验收：
+
+1. `WVQ-001`：中文渲染、键盘焦点、状态/错误文本、窗口 resize/close；
+2. `WVQ-003`：picker 选择/取消、盘符、Unicode、空格、长路径、外部路径、
+   缺失文件、权限错误、artifact tamper；
+3. `WVQ-004`/`WVQ-007`：新用户目录首次启动、sidecar restart、worker crash、
+   persisted state、显式 retry、cancel/reconnect、active PID 不误回收；
+4. `WVQ-002`：125%/150%/200% DPI、NVDA、resize/close/focus；NVDA 不可用时
+   记录 `NOT RUN`，不得用 DOM 测试替代；
+5. `WVQ-016`：Debug 只监听 `127.0.0.1`，外部 MCP 可连接，Release 不监听；
+6. `WVQ-005`：Defender/SmartScreen、签名、SBOM、checksum、依赖 advisory；
+7. 获得明确授权后才执行 live Codex/PDF；记录认证边界、脱敏输入、费用/计划
+   边界和清理结果。
+
+任何 Computer Use、NVDA、clean-user、MSI admin extraction、外部 MCP 或真实
+Codex 不可用时，分别记录 `BLOCKED` 或 `NOT RUN` 及原因；Linux 结果不能代替。
+
+#### 1G. Required Windows write-back
+
+Windows 轮次结束前必须回写：
+
+- 源 branch/commit、是否 dirty、同步路径和日期；
+- Windows build、WebView2、Node/npm、Python/uv、Rust/MSVC、WiX 版本；
+- 每条命令、工作目录、状态和关键错误；
+- sidecar、GUI、NSIS、MSI、extracted payload 的 SHA-256（若存在）；
+- `FAIL`、`BLOCKED`、`NOT RUN` 的分类、阻塞范围和下一步；
+- Windows 工作区是否修改业务代码（正常应为“未修改”）；
+- 进程/端口清理结果，以及是否保留了 Windows 本地未知文件。
+
+结果只能追加到本文件；历史 FAIL 不得改写，Linux 端只处理真正的项目代码
+问题和文档状态，不把 Windows 证据反向伪造成 Linux 或 Windows PASS。
 
 #### 2. Repeat the build and flavor regression gate
 
@@ -4114,3 +4303,64 @@ WDIO 无法覆盖的场景留给 Computer Use 或人工验收：
 - Automated WVQ-017 native scope is WINDOWS_PASS.
 - WVQ-001 through WVQ-016 remain WINDOWS_VERIFICATION_PENDING for the platform-specific or authorized checks listed in the active queue.
 - Overall project state remains WINDOWS_VERIFICATION_PENDING until the remaining Windows desktop, packaging/security and authorized live-usage evidence is complete.
+
+## Windows platform validation of current Linux HEAD 8f046ef: 2026-09-15
+
+### Source, synchronization and scope
+
+- Linux source of truth: branch `dev`, HEAD `8f046ef12ab9a9e8d82c260673a303892202ec21`, subject `docs: detail remaining Windows validation`; the working tree was clean before synchronization (`git status --short --branch`, `git diff --stat` and untracked-file check were clean).
+- Synchronization: `\\wsl.localhost\Ubuntu\home\shiraishi\VSCode Workspace\Codex_Translator` to `E:\Shiraishi\VSCode Workspace\Codex_Translator`, one-way Robocopy with `/E /XJ /FFT /IS /IT /COPY:DAT /DCOPY:DAT /R:1 /W:1`. Dependencies, `.git`, caches, state, logs, user data, build/dist artifacts, PDFs, databases and the existing target-triple sidecar were excluded. The run returned Robocopy exit code 3 with zero failed files; a selected 19-file SHA-256 comparison had zero mismatches. Existing E: extras were preserved.
+- Windows environment: Windows 10 build 29667, AMD64; Node `v24.19.0`, npm `11.17.0`, uv `0.12.10`, Rust/Cargo `1.98.0`, stable `x86_64-pc-windows-msvc`, WebView2/Edge `152.0.4191.66`. No usable system Python was available: `python`, `py` and `python3` were not found, and the project `.venv\Scripts\python.exe` uv trampoline failed with `permission denied (os error 5)`.
+- Scope derived from the current plan, Windows queue and package/build configuration: GUI unit/build checks, Tauri capability flavors, embedded and MCP debug builds, native WDIO, frozen worker/sidecar protocol, release build/package checks, release process boundary, and the remaining Windows desktop/manual acceptance boundary. No live Codex request or user PDF was used.
+
+### Results
+
+| Check | Exact command / working directory | Status | Evidence and reason |
+|---|---|---|---|
+| Python/uv runtime prerequisite | `python --version`; `.venv\\Scripts\\python.exe --version`; `uv run python --version` / repo root | BLOCKED | No system Python; uv trampoline/cache initialization failed with `os error 5`/`os error 183`. This prevented rebuilding the Python sidecar or running Python pytest on Windows. Environment configuration, not product code. |
+| Python dependency sync | `uv sync --locked --extra runtime --extra dev` / repo root | BLOCKED | Default uv cache failed with `os error 183`; an E:-cache retry still could not query a Python interpreter due access denied. |
+| npm dependency installation using default cache | `npm.cmd --prefix gui ci` / repo root | BLOCKED | npm cache/log access failed with `EPERM`; this was recovered by the E:-cache retry below. |
+| npm dependency installation using validation cache | `npm.cmd --prefix gui ci --cache E:\Shiraishi\VSCode Workspace\Codex_Translator\build\npm-cache-validation-20260915 --foreground-scripts=false` / repo root | PASS | 617 packages added, 618 audited. Development tree reported 18 vulnerabilities (3 moderate, 15 high); no audit fix was run. |
+| Production npm audit | `npm.cmd --prefix gui audit --omit=dev --cache E:\Shiraishi\VSCode Workspace\Codex_Translator\build\npm-cache-validation-20260915` / repo root | PASS | 0 production vulnerabilities. |
+| GUI Vitest | `npm.cmd --prefix gui test -- --run` / repo root | PASS | 4 files and 28 tests passed. |
+| GUI production build | `npm.cmd --prefix gui run build` / repo root | PASS | TypeScript and Vite build completed; production assets had no `wdio`, `tauri-plugin-wdio` or `mcp-bridge` strings. |
+| E2E preparation and capability separation | `npm.cmd --prefix gui run e2e:prepare` / repo root; inspect `gui\\src-tauri\\capabilities` | PASS | Preparation completed and only `default.json` was present afterward; `e2e.json` and `mcp-debug.json` were absent. |
+| Rust formatting | `cargo fmt --manifest-path gui\\src-tauri\\Cargo.toml --all -- --check` / repo root | PASS | Formatting check passed. |
+| Cargo default | `cargo check --manifest-path gui\\src-tauri\\Cargo.toml --locked` / repo root | PASS | Compiled successfully; only the existing `unused_mut` warning in `src\\lib.rs:10`. |
+| Cargo mcp-dev | `cargo check --manifest-path gui\\src-tauri\\Cargo.toml --locked --features mcp-dev` / repo root | PASS | MCP Debug feature compiled successfully. |
+| Cargo e2e | `cargo check --manifest-path gui\\src-tauri\\Cargo.toml --locked --features e2e` / repo root | PASS | E2E feature compiled successfully. |
+| Feature isolation | `cargo check --manifest-path gui\\src-tauri\\Cargo.toml --locked --features mcp-dev,e2e` / repo root | PASS | Expected compile-time rejection: `features mcp-dev and e2e are mutually exclusive`. |
+| Tauri E2E build | `npm.cmd --prefix gui run e2e:build` / repo root | PASS | Windows debug E2E binary built successfully; only the known linker stdout warning appeared. |
+| Tauri MCP Debug build | `npm.cmd --prefix gui run mcp:build` / repo root | PASS | Debug MCP binary built successfully; only the known linker stdout warning appeared. |
+| Native embedded WDIO | `npm.cmd --prefix gui run e2e:native` / repo root | FAIL | E2E prepare/build completed, but WDIO loaded no spec: `tsx` failed with `uv_os_get_passwd returned ENOMEM (not enough memory)` and `syscall uv_os_get_passwd`. An exact retry reproduced the error. No native spec result can be inferred. |
+| Native WDIO debug retry | `npm.cmd --prefix gui run e2e:native:debug` / repo root | FAIL | Same pre-spec `uv_os_get_passwd ... ENOMEM` failure; debug logging did not reach test execution. |
+| External WDIO provider | `npm.cmd --prefix gui run e2e:external` / repo root | NOT RUN | Embedded WDIO failed before configuration/spec execution; external provider is diagnostic-only and was not needed to classify this environment failure. |
+| Frozen worker fixture | `dist\\babelcodex-service.exe --worker-request <fresh validation request>` / repo root | FAIL | Fresh E:-local output/work/temp directories and a no-cache rerun both returned exit 3 with JSON `BABELDOC_RUNTIME_ERROR`, safe message `The BabelDOC PDF pipeline failed.` and technical error `unable to open database file`. The existing frozen binary was not rebuilt because Python was unavailable. Category remains packaging/runtime or environment unknown; this is not a passing worker acceptance result. |
+| Frozen sidecar JSONL protocol and path allowlist | `gui\\src-tauri\\binaries\\babelcodex-service-x86_64-pc-windows-msvc.exe --config config\\e2e.toml` with `get_server_info`, outside-path `start_translation`, `list_jobs`, `shutdown` / repo root | PASS | Protocol version 1 and package 0.1.0 reported; outside path returned `CONFIG_INVALID` with `source_path is outside the configured input directory`; jobs were empty; shutdown returned closing true and process exited 0 with empty stderr. |
+| Release compile and GUI executable | `npm.cmd --prefix gui run tauri -- build --bundles nsis,msi` / repo root | PASS (narrow) | Release GUI executable compiled. Current `target\\release\\babelcodex-gui.exe` was produced (SHA-256 `00619AC83402E805C389223CF26BE2E40C06C757D1E54580EB59CC5E3EFDE24E`). |
+| NSIS package generation | Same release command / repo root | PASS (narrow) | Current NSIS setup executable was produced (SHA-256 `323EE314F217F3A99342744B90E61B35F0DE591CC45A9A4C3F22B3AD99F3B209`). |
+| MSI package generation | Same release command / repo root | FAIL | WiX `candle` ran, but `light.exe` failed and the combined command exited 1. The MSI present afterward was older (mtime 2026-09-14) and was not counted as a current artifact. Category: Windows packaging/toolchain; MSI admin extraction/parity is consequently blocked. |
+| Release process smoke | Start current release executable, observe 8 seconds, stop exact PID / repo root | PASS | GUI process remained alive/responding for the observation window; exact validation PID was stopped and no validation GUI process remained. |
+| Release no-bridge boundary | Start current release executable and inspect TCP listeners / repo root | PASS (narrow) | Release process stayed alive and no MCP bridge listener was observed; exact process cleanup completed. This is process smoke, not full GUI acceptance. |
+| MCP Debug listener | `tauri dev --features mcp-dev --config gui\\src-tauri\\tauri.mcp.conf.json` / repo root | PASS (narrow) | Dev log recorded MCP bridge initialization and WebSocket listening on `127.0.0.1:9223`; exact validation processes were stopped and no listener remained. External GUI control was not completed. |
+| Native GUI picker/path/DPI/accessibility/manual acceptance | Computer-use native desktop session | BLOCKED | Computer-use transport returned `Transport closed` on initial state and one retry. No native window, picker, DPI or accessibility conclusion was recorded. |
+| Clean-user installer/admin extraction and release security | Windows desktop/package acceptance | BLOCKED | MSI generation failed; native desktop control was unavailable. No clean-user or installer-security claim is made. |
+| Process/port cleanup | Inspect validation PIDs and ports 9223/4444/4445/50558/50559 / repo root | PASS | No validation `babelcodex-gui`, `babelcodex-service`, `tauri-driver` or `msedgedriver` process remained and the checked ports were released. Older unrelated processes were preserved. |
+| Live Codex, real PDF and paid-usage acceptance | Not executed | NOT RUN | No live account request or user document was authorized for this validation round. |
+
+### Failure analysis and Linux follow-up
+
+- `uv_os_get_passwd ... ENOMEM` occurred while WDIO/tsx loaded, before any spec ran, and reproduced on the exact retry. Available-memory sampling still showed about 5.9 GB, so the evidence is a Windows/Node runtime or process-environment issue rather than proof of a product memory defect. Linux follow-up: reproduce with a clean Windows run and capture the minimal WDIO/tsx invocation; do not mark WVQ-017 complete from this run.
+- The frozen worker failed independently of the old output directories and default temporary directory: a fresh E:-local validation root and explicit `TEMP`/`TMP` still returned `unable to open database file`. Linux follow-up: rebuild the frozen sidecar/worker from current source when a usable Python environment is available, then reproduce with a controlled fixture and inspect the database path/permissions. Keep this as FAIL until a fresh successful worker result exists.
+- WiX `light.exe` prevented current MSI generation while NSIS and the release executable were produced. Linux follow-up: track the Windows WiX failure and rerun MSI generation/admin extraction/parity after the toolchain issue is resolved; do not use the older MSI as current evidence.
+- The native GUI/manual boundary is unresolved because computer-use transport was unavailable. Linux follow-up remains the documented native picker, Unicode path, DPI/accessibility, clean-user, installer and lifecycle queue; Linux tests or direct sidecar probes cannot substitute for those checks.
+- Python/uv and default npm-cache permission failures were environment prerequisites. The GUI checks were recovered with the project’s existing npm scripts and E:-local npm cache; no business code, architecture, dependency declaration or configuration was changed.
+- The direct frozen-sidecar probe passed the production allowlist rejection, but that does not establish complete GUI-to-sidecar translation, real Codex/PDF fidelity, or release security. Live Codex/PDF checks remain NOT RUN.
+
+### Current disposition
+
+- PASS: GUI unit/build, capability separation, Rust default/mcp-dev/e2e boundaries, Tauri debug builds, direct sidecar protocol/allowlist, narrow release process/no-bridge smoke, and cleanup.
+- FAIL: native WDIO startup (`uv_os_get_passwd ... ENOMEM`), frozen worker fixture (`unable to open database file`), and current MSI generation (`light.exe`).
+- BLOCKED: Windows Python/uv execution, MSI admin extraction/parity, and native desktop picker/DPI/accessibility/clean-user acceptance.
+- NOT RUN: external-provider diagnostics and authorized live Codex/PDF acceptance.
+- Overall project state remains `WINDOWS_VERIFICATION_PENDING`; this round provides no basis to promote the remaining Windows queue to complete.

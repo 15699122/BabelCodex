@@ -1,5 +1,13 @@
 # Compatibility Baseline
 
+## Latest Windows current-head configuration result (2026-09-15)
+
+- The latest Windows run targeted `dev` commit `8f046ef12ab9a9e8d82c260673a303892202ec21`. GUI unit/build, inline capability separation, Rust default/mcp-dev/e2e boundaries, Tauri debug builds, direct sidecar protocol/allowlist and narrow release process checks passed.
+- The current-head native WDIO regression failed before spec loading with `uv_os_get_passwd ... ENOMEM`; the frozen worker failed with `unable to open database file`; and current MSI generation failed in WiX `light.exe`. These are current FAIL/BLOCKED evidence, not configuration passes.
+- Windows recovery must first restore writable Python/uv, npm/uv cache, `TEMP`/`TMP`, E2E workspace and WiX toolchain paths, then rebuild the target-triple sidecar and rerun the affected gates. Previous artifacts and previous-commit `WVQ-017` PASS evidence do not close the current-head failures.
+- Overall compatibility state remains `WINDOWS_VERIFICATION_PENDING`. Native GUI/picker/path/DPI/accessibility, clean-user installation, release security, MCP localhost observation and authorized live Codex/PDF remain separately pending.
+- The executable Windows follow-up is intentionally centralized in `docs/validation/windows.md`: restore writable local caches and Python/uv, rebuild and probe a fresh sidecar, diagnose WDIO before the full suite, repair the WiX toolchain before MSI parity, then execute native GUI/clean-user/MCP/release/live checks in that order. No prior artifact or Linux result substitutes for current Windows evidence.
+
 ## Linux GUI notice/state lifecycle follow-up (2026-09-14)
 
 - Linux routed App-level notices through a new shared `JobStore.setNotice()`

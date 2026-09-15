@@ -2,10 +2,10 @@
 
 ## Current handoff baseline (2026-09-15)
 
-- 当前开发基线为 `dev` / commit `518f835509aa6181a85c837e3a8db06a04ed627a`，已推送并与 `origin/dev` 同步；本地工作树干净。
+- 当前最新 Windows 验证源为 `dev` / commit `8f046ef12ab9a9e8d82c260673a303892202ec21`；该提交已推送并与 `origin/dev` 同步。最新 Windows 记录追加到 `docs/validation/windows.md`，当前工作树中的验证文档变更尚未作为新的源代码基线提交。
 - Tauri WDIO 基础设施、确定性 mock contract、E2E-only allowlist、flavor capability 内联化和 7 项 capability regression Guard 已在 Linux 完成验证；GUI Vitest、Vite build、Ruff、docs inventory、Cargo default/mcp-dev/e2e checks 均通过。
-- Windows 已直接验证 `WVQ-018` 与自动化 `WVQ-017` native scope；后续工作不再是 capability 生成代码开发，而是对当前提交执行剩余 Windows-only 验收：原生 GUI/path/picker、DPI/accessibility、完整 work-dir recovery、clean-user/installer、stale bundle GUI、MCP localhost、发布安全和经授权的 live Codex/PDF 阶段。
-- Windows 结果必须写入 `docs/validation/windows.md`；不得把 Linux native 15/15 或直接 sidecar JSONL probe 记录为 Windows GUI 原生 PASS。详细顺序、命令和记录字段见该文档的 “Next Windows handoff after WVQ-017/WVQ-018 PASS (baseline `518f835`)”。
+- `WVQ-018` 的 inline capability 配置和上一轮 `WVQ-017` 自动化 native scope 曾有 Windows PASS，但对当前 `8f046ef` 的回归运行在 WDIO 加载阶段因 `uv_os_get_passwd ... ENOMEM` 失败；因此当前提交不得沿用上一轮 native PASS，必须在修复 Windows 运行环境后重新执行。
+- Windows 结果必须写入 `docs/validation/windows.md`；不得把 Linux native 15/15 或直接 sidecar JSONL probe 记录为 Windows GUI 原生 PASS。当前源状态、失败恢复配置和命令见该文档的 “Next Windows handoff after current-head validation (baseline `8f046ef`)”。
 
 ## Next Windows validation scope after WVQ-018/WVQ-017 (2026-09-15)
 
@@ -13,13 +13,28 @@
 
 ### Windows 执行顺序
 
-1. **同步与工具链快照**：从 WSL 的 `518f835` 单向同步到 disposable Windows workspace；记录 branch、commit、工作树状态、同步日期、Windows build、WebView2、Node/npm、Python/uv、Rust/MSVC 版本。保留 Windows 本地依赖、缓存和 sidecar，禁止把它们反向同步回 WSL。
+1. **同步与工具链快照**：从 WSL 的 `8f046ef` 单向同步到 disposable Windows workspace；记录 branch、commit、工作树状态、同步日期、Windows build、WebView2、Node/npm、Python/uv、Rust/MSVC 版本。保留 Windows 本地依赖、缓存和 sidecar，禁止把它们反向同步回 WSL。
 2. **回归构建门禁**：执行 `npm.cmd --prefix gui ci`、GUI Vitest、`npm.cmd --prefix gui run build`、默认/mcp-dev/e2e Cargo check，并再次确认 capability 目录仅有 `default.json`。这一步是后续 packaged/native 检查的前置条件。
 3. **P0 原生 GUI 与恢复**：在干净 fixture 下完成 WVQ-001、WVQ-003、WVQ-004；先验证中文布局/键盘和 picker/path allowlist，再执行 mock job 取消、sidecar 重启、worker crash、显式 retry、artifact tamper 和 active PID 不误回收。
 4. **P0 stale package 与 QA**：完成 WVQ-009 的 fresh package handshake、source freshness audit 和 stale-GUI 错误展示；执行 WVQ-015 的 clean Windows CLI/sidecar JSON stdout 检查，确认 PyMuPDF/dependency notice 不污染机器可读输出。
 5. **P1 运行时与文件系统**：完成 WVQ-007 全部 work-dir retention、锁文件、长路径/ junction、retry category、cancel/reconnect 矩阵；完成 WVQ-010～014 的 Windows worker、路径、环境变量、超时和恢复证据。
 6. **P1 打包与桌面可用性**：完成 WVQ-002 的 125%/150%/200% DPI、NVDA、resize/close/focus 检查；完成 WVQ-004 clean-user 首次启动、卸载/重装/升级、MSI admin extraction 与 payload parity。
 7. **P1/P2 安全与授权集成**：完成 WVQ-005 Defender/SmartScreen、签名、SBOM、checksum、依赖 advisory；完成 WVQ-016 Debug-only localhost MCP bridge 的 Windows 原生观察；只有获得明确授权后才执行 WVQ-006 live Codex/PDF。
+
+### Current-head Windows recovery configuration
+
+本轮 `8f046ef` 的配置门禁大部分通过，但 Windows 环境在 WDIO、Python/uv、冻结 worker 和 WiX MSI 阶段出现独立阻塞。下一轮必须先按以下配置恢复环境，再重跑依赖检查；不得把旧产物当作当前结果：
+
+1. 为 Windows workspace、npm cache、uv cache、`TEMP`/`TMP` 和 E2E workspace 使用当前用户可写的本地路径，优先使用 E: 盘验证目录；记录实际路径和 ACL 检查结果。
+2. 安装或修复可执行的 Windows Python/uv 环境，确认 `python --version`、`.venv\\Scripts\\python.exe --version`、`uv run python --version` 和 `uv sync --locked --extra runtime --extra dev` 均可运行；若默认 cache 失败，使用显式 E: cache 并记录错误，不得复用不可执行的旧 `.venv` trampoline。
+3. 在可用 Python 环境中重新构建 target-triple sidecar：`uv run --extra runtime --with pyinstaller pyinstaller --clean --noconfirm scripts/babelcodex-service.spec`。构建后使用新 sidecar、全新的 E2E state/work/artifact 目录执行 worker request，并保留 JSONL、stderr、数据库路径和目录 ACL 证据。
+4. 对 `uv_os_get_passwd ... ENOMEM` 先执行最小 WDIO/tsx 启动诊断，再执行 `npm.cmd --prefix gui run e2e:native:debug`；不要把“未进入 spec”记为产品 E2E PASS。若仍失败，保留 Node/tsx/WDIO 版本、环境变量摘要和最小错误日志。
+5. 修复或重装与 Tauri MSI 构建匹配的 WiX toolset，确认 `candle.exe` 和 `light.exe` 来自同一工具链版本，再重跑 MSI 生成、admin extraction 和 payload parity。旧 MSI 只能作为历史产物，不能作为当前证据。
+6. 以上环境恢复仅是 Windows 验证前置配置；native WDIO、冻结 worker、MSI、原生 GUI、clean-user 和发布安全在取得新的 Windows 结果前均保持 `WINDOWS_VERIFICATION_PENDING`、`FAIL` 或 `BLOCKED`，不得由 Linux 结果升级。
+
+Windows 后续步骤的详细命令、证据要求、失败分类和 write-back 格式统一见
+[`docs/validation/windows.md`](validation/windows.md) 的 “Current-head
+environment recovery before rerun” 至 “Required Windows write-back” 小节。
 
 ### 失败与阻塞处理
 
