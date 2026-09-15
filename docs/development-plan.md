@@ -7,6 +7,21 @@
 - Windows 后续工作不再是 capability 生成代码开发，而是对当前提交执行集中式平台验收：同步源状态、重跑 `WVQ-018` capability 生命周期、重跑 `WVQ-017` native WDIO、完成原生路径/picker/取消/重连/DPI/accessibility、clean-user/installer、MCP bridge、发布安全和经授权的 live Codex/PDF 阶段。
 - Windows 结果必须写入 `docs/validation/windows.md`；不得把 Linux native 15/15 或直接 sidecar JSONL probe 记录为 Windows GUI 原生 PASS。详细顺序、命令和记录字段见该文档的 “Current Windows handoff for commit `6ae5258`”。
 
+## Latest Windows validation after Linux inline capability configuration (2026-09-15)
+
+Linux source HEAD 4d26621c1d60431db0f3f9d4e88f8df554aaaa59 is the documentation commit on top of the capability configuration commit 6ae5258. It was synchronized one-way to the E drive with dependencies, caches, state, logs, build artifacts, user data and the existing Windows sidecar excluded. The synchronization copied 15 source files with zero failures; three confirmed-obsolete E2E helper files were removed only from the E drive gui/scripts subtree.
+
+Windows configuration and automation results:
+
+- npm ci, production dependency audit, GUI Vitest 28/28 and the production build passed. The development dependency tree still reports 18 vulnerabilities; no automatic audit fix was run.
+- The inline flavor boundary passed: gui/src-tauri/capabilities contains only default.json before and after E2E preparation/build; the obsolete prepare-e2e-rust.mjs and scripts/capabilities templates are absent from the Windows copy.
+- Default Cargo, mcp-dev Cargo and e2e Cargo checks passed. The combined mcp-dev,e2e check produced the expected compile-time mutual-exclusion error.
+- The standard embedded npm run e2e:native passed 6 spec files and 20 tests, including native path rejection and Windows path rejection. WebView2/Edge 152 and the tauri-service embedded provider started successfully.
+- The independent frozen sidecar JSONL probe passed with protocol_version 1: get_server_info succeeded, an outside input path returned CONFIG_INVALID with the safe allowlist message, shutdown returned closing=true, and the process exited 0.
+- MCP Debug Tauri build passed. The only recorded build warning was the known linker stdout message; WDIO service warnings about mock-store cleanup, null u32 diagnostics and disk-space detection remain non-blocking diagnostics.
+
+WVQ-018 and the automated WVQ-017 native scope are now WINDOWS_PASS. Native picker, DPI/accessibility, clean-user, installer/release security, MCP localhost observation and authorized live Codex/PDF acceptance remain WINDOWS_VERIFICATION_PENDING. Full commands and evidence are in docs/validation/windows.md.
+
 ### Windows-only completion order
 
 1. **Source/workspace preparation**：只从 WSL 同步源代码、配置、测试和指定文档；记录 branch/commit/dirty state；排除 `.git`、依赖、target、build、sidecar、state、日志、缓存、凭据和用户 PDF。

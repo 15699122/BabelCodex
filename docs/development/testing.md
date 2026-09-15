@@ -119,9 +119,9 @@ Windows WVQ-017 复核外化了 `npm run e2e:prepare` 生成的 `gui/src-tauri/c
 | Python / Rust / frontend / docs 门禁 | ✅ PASS (env-scoped) | `uv run pytest` 231 passed, 5 deselected；`ruff` clean；GUI `npm test` 28 passed、`tsc --noEmit`/`vite build` clean；docs inventory passed |
 | frozen sidecar/protocol probe | NOT RUN (not required) | 变更未触及 sidecar 协议/工作目录/allowlist/错误分类 |
 | Linux browser WDIO | BLOCKED | 缺少 Chrome/Chromium + 匹配 driver |
-| Windows 原生 GUI/DPI/picker/Codex/PDF | WINDOWS_VERIFICATION_PENDING | WVQ-001～016 + WVQ-018，Linux 仅验证契约/夹具/回归 |
+| Windows 原生 GUI/DPI/picker/Codex/PDF | WINDOWS_VERIFICATION_PENDING | WVQ-001～016，Linux 仅验证契约/夹具/回归 |
 
-Windows 原生 GUI 与打包需复验 WVQ-018；Linux 原生 WDIO 结果保持 LINUX_VERIFIED，浏览器模式仍为 BLOCKED。
+Windows WVQ-018 inline capability 与 WVQ-017 automated native scope 已通过；Windows 原生 GUI、打包/clean-user、DPI/picker、真实 Codex/PDF 等仍按 WVQ-001～016 保持 WINDOWS_VERIFICATION_PENDING。Linux 原生 WDIO 结果保持 LINUX_VERIFIED，浏览器模式仍为 BLOCKED。
 
 ## Windows 后续执行边界（当前基线：`6ae5258`）
 
