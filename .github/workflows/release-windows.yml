@@ -10,6 +10,11 @@ on:
         description: "Existing tag to package, for example v0.1.0"
         required: true
         type: string
+      source_ref:
+        description: "Source ref to build; use main for an existing Release tag"
+        required: false
+        default: main
+        type: string
 
 permissions:
   contents: write
@@ -29,7 +34,7 @@ jobs:
       - name: Check out tagged source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref || github.ref }}
           fetch-depth: 0
 
       - name: Set up Python 3.12
@@ -77,7 +82,7 @@ jobs:
           $source = Join-Path $env:GITHUB_WORKSPACE "dist/babelcodex-service.exe"
           $targetDir = Join-Path $env:GITHUB_WORKSPACE "gui/src-tauri/binaries"
           $target = Join-Path $targetDir "babelcodex-service-x86_64-pc-windows-msvc.exe"
-          if (-not (Test-Path -LiteralPath $source)) { throw "Missing sidecar: $source" }
+          if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "Missing sidecar: $source" }
           New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
           Copy-Item -LiteralPath $source -Destination $target -Force
 
@@ -85,27 +90,68 @@ jobs:
         working-directory: gui
         run: npm.cmd run tauri -- build --no-bundle
 
-      - name: Create and validate the single-file 7z archive
+      - name: Stage and validate the complete Windows portable bundle
         shell: pwsh
         run: |
           $exe = Join-Path $env:GITHUB_WORKSPACE "gui/src-tauri/target/release/babelcodex-gui.exe"
-          if (-not (Test-Path -LiteralPath $exe)) { throw "Missing GUI executable: $exe" }
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "Missing GUI executable: $exe" }
+
+          $portableRoot = Join-Path $env:GITHUB_WORKSPACE "build/windows-portable"
+          & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
+            -File (Join-Path $env:GITHUB_WORKSPACE "scripts/build_windows_portable.ps1") `
+            -Output "build/windows-portable" -SkipSidecar
+          if ($LASTEXITCODE -ne 0) { throw "Portable staging failed with exit code $LASTEXITCODE" }
+
+          $portableExe = Join-Path $portableRoot "BabelCodex.exe"
+          $portableSidecar = Join-Path $portableRoot "resource/bin/babelcodex-service.exe"
+          $builtSidecar = Join-Path $env:GITHUB_WORKSPACE "dist/babelcodex-service.exe"
+          Copy-Item -LiteralPath $exe -Destination $portableExe -Force
+          if (-not (Test-Path -LiteralPath $builtSidecar -PathType Leaf)) { throw "Missing built sidecar: $builtSidecar" }
+          New-Item -ItemType Directory -Force -Path (Split-Path -Parent $portableSidecar) | Out-Null
+          Copy-Item -LiteralPath $builtSidecar -Destination $portableSidecar -Force
+
+          & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
+            -File (Join-Path $env:GITHUB_WORKSPACE "scripts/audit_windows_portable.ps1") `
+            -Bundle $portableRoot
+          if ($LASTEXITCODE -ne 0) { throw "Portable audit failed with exit code $LASTEXITCODE" }
+
+          $required = @(
+            "BabelCodex.exe",
+            "config/config.yaml",
+            "resource/bin/babelcodex-service.exe"
+          )
+          foreach ($relative in $required) {
+            if (-not (Test-Path -LiteralPath (Join-Path $portableRoot $relative) -PathType Leaf)) {
+              throw "Missing required portable file: $relative"
+            }
+          }
+
           $releaseDir = Join-Path $env:GITHUB_WORKSPACE "release-assets"
           $extractDir = Join-Path $env:RUNNER_TEMP "babelcodex-7z-check"
           New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
           if (Test-Path -LiteralPath $extractDir) { Remove-Item -Recurse -Force $extractDir }
           New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
+
           $assetExe = Join-Path $releaseDir "BabelCodex-$env:RELEASE_TAG-windows-x64.exe"
-          $archive = Join-Path $releaseDir "BabelCodex-$env:RELEASE_TAG-windows-x64.7z"
+          $archive = Join-Path $releaseDir "BabelCodex-$env:RELEASE_TAG-windows-x64-portable.7z"
           Copy-Item -LiteralPath $exe -Destination $assetExe -Force
-          & 7z.exe a -t7z -mx=9 $archive $assetExe
-          if ($LASTEXITCODE -ne 0) { throw "7z creation failed with exit code $LASTEXITCODE" }
+
+          Push-Location $portableRoot
+          & 7z.exe a -t7z -mx=9 $archive .\*
+          $archiveExitCode = $LASTEXITCODE
+          Pop-Location
+          if ($archiveExitCode -ne 0) { throw "7z creation failed with exit code $archiveExitCode" }
+
           & 7z.exe x -y "-o$extractDir" $archive
           if ($LASTEXITCODE -ne 0) { throw "7z extraction failed with exit code $LASTEXITCODE" }
-          $files = @(Get-ChildItem -LiteralPath $extractDir -File -Recurse)
-          if ($files.Count -ne 1) { throw "Expected exactly one archived file, found $($files.Count)" }
-          if ($files[0].Name -ne $assetExe.Split('\')[-1]) { throw "Unexpected archived filename: $($files[0].Name)" }
-          Write-Host "Validated single-file archive: $archive"
+          $files = @(Get-ChildItem -LiteralPath $extractDir -File -Recurse | ForEach-Object {
+            $_.FullName.Substring($extractDir.Length).TrimStart('\\', '/') -replace '\\', '/'
+          } | Sort-Object)
+          $expected = @($required | Sort-Object)
+          if (($files -join "`n") -ne ($expected -join "`n")) {
+            throw "Unexpected portable archive files. Expected: $($expected -join ', '); found: $($files -join ', ')"
+          }
+          Write-Host "Validated complete portable archive: $archive"
 
       - name: Create or update GitHub Release and upload assets
         shell: pwsh
@@ -113,12 +159,31 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $releaseDir = Join-Path $env:GITHUB_WORKSPACE "release-assets"
-          $assets = @(Get-ChildItem -LiteralPath $releaseDir -File)
+          $assets = @(Get-ChildItem -LiteralPath $releaseDir -File | Sort-Object Name)
           if ($assets.Count -ne 2) { throw "Expected exactly two release assets, found $($assets.Count)" }
+
           gh release view $env:RELEASE_TAG *> $null
           if ($LASTEXITCODE -ne 0) {
             gh release create $env:RELEASE_TAG --title "BabelCodex $env:RELEASE_TAG" --notes-file docs/releases/v0.1.0.md
             if ($LASTEXITCODE -ne 0) { throw "Failed to create GitHub Release" }
           }
+
+          $release = gh release view $env:RELEASE_TAG --json assets | ConvertFrom-Json
+          $legacyAsset = "BabelCodex-$env:RELEASE_TAG-windows-x64.7z"
+          if (@($release.assets | Where-Object { $_.name -eq $legacyAsset }).Count -gt 0) {
+            gh release delete-asset $env:RELEASE_TAG $legacyAsset --yes
+            if ($LASTEXITCODE -ne 0) { throw "Failed to remove legacy release asset: $legacyAsset" }
+          }
+
           gh release upload $env:RELEASE_TAG $assets.FullName --clobber
           if ($LASTEXITCODE -ne 0) { throw "Failed to upload GitHub Release assets" }
+
+          $final = gh release view $env:RELEASE_TAG --json assets | ConvertFrom-Json
+          $finalNames = @($final.assets | ForEach-Object name | Sort-Object)
+          $expectedNames = @(
+            "BabelCodex-$env:RELEASE_TAG-windows-x64-portable.7z",
+            "BabelCodex-$env:RELEASE_TAG-windows-x64.exe"
+          ) | Sort-Object
+          if (($finalNames -join "`n") -ne ($expectedNames -join "`n")) {
+            throw "Unexpected final release assets. Expected: $($expectedNames -join ', '); found: $($finalNames -join ', ')"
+          }
