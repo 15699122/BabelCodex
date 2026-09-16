@@ -158,7 +158,10 @@ src/codex_babeldoc/
 │   ├── state.py
 │   ├── errors.py
 │   ├── events.py
-│   └── artifacts.py
+│   ├── artifacts.py
+│   ├── artifact_manifest.py
+│   ├── pipeline_meta.py
+│   └── workdir.py
 ├── translation/
 │   ├── models.py
 │   ├── gateway.py
@@ -179,6 +182,7 @@ src/codex_babeldoc/
     ├── pdf_sanity.py
     ├── text_checks.py
     ├── layout_checks.py
+    ├── resource_checks.py
     └── report.py
 ```
 
@@ -186,13 +190,19 @@ src/codex_babeldoc/
 
 ### `application/`
 
-CLI、GUI 和 MCP 共用的应用服务层。提供任务启动、查询、取消、校验和清理等操作，屏蔽底层 Orchestrator、Worker 和状态存储。
+CLI、GUI 和 MCP 共用的应用服务层。提供任务启动、查询、取消、校验、重试和 cleanup（按 `work_retention_days` 清扫终态 job 工作目录）等操作，屏蔽底层 Orchestrator、Worker 和状态存储。
 
 ### `interfaces/`
 
 - `cli/`：命令行入口，兼容保留 `cbpdf`。
 - `gui/`：Windows/Linux 桌面 UI，不直接导入 BabelDOC。
 - `mcp/`：本地 stdio MCP Server，仅暴露受限的翻译和任务管理工具。
+
+GUI host 技术验证位于仓库根目录的 `gui/`：Tauri 2 只启动固定的
+`babelcodex-service` sidecar，React/TypeScript 前端通过版本化 JSONL 协议
+调用 Application Service。Vite 浏览器开发模式使用 mock transport，不连接
+系统 Python；打包后的 Tauri capability 只允许固定 sidecar、受控 TOML 配置
+参数、stdin 写入和 sidecar kill。
 
 ### `backends/`
 
@@ -208,9 +218,12 @@ CLI、GUI 和 MCP 共用的应用服务层。提供任务启动、查询、取�
 
 不依赖 BabelDOC 或 Codex 具体实现。
 
-- `orchestrator.py`：discover / run one / run all / 任务状态迁移 / backend 选择 / retry 决策 / 产物保存。
-- `state.py`：原子状态写入 / schema version / job fingerprint / config fingerprint / 错误类别 / artifact 索引。
-- `errors.py`：稳定错误分类。
+- `orchestrator.py`：discover / run one / run all / 任务状态迁移 / backend 选择 / 按错误类别的 retry 决策（`retry_limit_for`，`max_retries` 为全局上限）/ 产物保存；完成任务只在 artifact manifest 仍完整有效时安全跳过，缺失或被篡改的输出会重置为可执行恢复尝试。真实执行会写入 owning runner PID 与 `pipeline_meta`；初始化时仅将 dead/unknown PID 的遗留 active state 终止为 `WORKER_CRASHED`，不会自动重试。
+- `state.py`：原子状态写入 / schema version / job fingerprint / config fingerprint / 错误类别 / artifact 索引 / runner PID / pipeline 元数据。PID 仍存活的 active state 不会被另一入口回收，避免 CLI、GUI 和 MCP 之间互相误判。
+- `artifact_manifest.py`：对持久化 job artifact 执行 output-root allowlist、存在性、大小、流式 SHA-256 和 PDF magic-header 校验；已记录 digest 不匹配时报告完整性失败，而不是更新旧 digest。
+- `pipeline_meta.py`：记录 backend、BabelDOC 版本、源 PDF 页数与 part-resume 评估（当前单遍高层流水线 `part_resume_supported=False`），供 `inspect` 展示。
+- `workdir.py`：终态 job 工作目录保留清扫与路径安全删除（拒绝根目录/符号链接/越界路径，Windows 瞬时锁有界重试）；CLI cleanup 与 MCP per-job cleanup 共用。
+- `errors.py`：稳定错误分类 + `DEFAULT_RETRY_LIMITS` / `retry_policy` 解析（认证/输入/验证类不自动循环）。
 - `events.py`：统一事件模型。
 
 ### `translation/`
@@ -224,17 +237,33 @@ CLI、GUI 和 MCP 共用的应用服务层。提供任务启动、查询、取�
 - `validation.py`：检查输出格式和占位符完整性。
 - `retry.py`：根据错误类型决定重试方式。
 - `cache.py`：SQLite 段落缓存。
-- `glossary.py`：用户术语和自动术语。
+- `glossary.py`：读取 `glossary/global.csv` 与 `glossary/documents/<pdf-stem>.csv`，执行文档级覆盖、CSV 管理、稳定版本 hash 和有界 terminology prompt。
+- `context.py`：从 `context/<pdf-stem>.txt` 提取标题/摘要，归一化并限制上下文长度，生成稳定版本 hash。
+
+glossary、context 和 thread state 均属于用户本地数据，不得提交到公开仓库。Orchestrator 按 PDF stem 构造合并 guidance，将 glossary/context 版本写入 `TranslationRequest` 和 cache key，并通过统一 `TranslatorSpec` 传给 in-process 与 subprocess translator。Codex thread prime 只接收已经截断的合并 prompt；thread state 只保存 provider、document ID、thread ID 和 generation，成功 prime 后才落盘。`max_turns_before_compact` 默认为 0；启用后在下一次翻译 turn 前优先调用官方 `Thread.compact()`，若 SDK 不支持或调用失败，则新建 thread、重新 prime 并在成功后原子轮换 state。
+- Codex 翻译 thread 固定使用 `Sandbox.read_only` 与 `ApprovalMode.deny_all`，并运行在每文档专用的隔离 `cwd`。PDF、术语表、元数据和上下文都被视为不可信数据；developer instructions 明确禁止工具、文件、网络、MCP 和 workspace 访问。worker 子进程只继承运行所需的最小环境变量集合。
+- `BabelCodexService.job_view()` 是 CLI/GUI/MCP 的外部 job DTO 边界。外部协议不得直接返回完整 `JobState`，不得暴露绝对路径、runner PID、Codex thread ID 或内部 fingerprint。`job_id` 在 StateStore 和协议边界均验证为 64 位小写十六进制标识。
+- sidecar 事件队列是有界的，poll 响应带 `oldest_sequence`；客户端发现游标落后时通过 `list_jobs` 重同步，而不是无限保留或无限返回历史事件。
+- GUI 的 Glossary 页面不直接读写用户文件，而是通过 sidecar 的 `list_glossary`、`save_glossary`、`get_context` 和 `save_context` scoped methods 调用同一个 Application Service。服务端只接受 global/document scope 和单个 document stem，并负责 CSV、UTF-8 sidecar、版本 hash、布尔值解析和原子保存。
 
 ### `translators/`
 
 仅负责供应商调用。
 
-- `codex_sdk.py`：SDK 初始化、账户认证状态、thread start/resume、turn run、model/effort、SDK 异常转换、thread close。
+- `codex_sdk.py`：SDK 初始化、账户认证状态、thread start/resume、turn run、native compact 与 rotation fallback、model/effort、SDK 异常转换、thread close。
 
 ### `qa/`
 
-对输出 PDF 实施独立检查。
+对输出 PDF 实施独立检查，报告为摘要（不包含文档全文）。
+
+- `models.py`：`QaFinding`（code/severity/page/detail）与 `QaReport`（`ok` = 无 error 级 finding）。
+- `pdf_sanity.py`：L0 文件检查（存在/大小/PDF header）+ L1 结构检查（可打开/加密/页数/逐页文本）。
+- `text_checks.py`：L2 空白页、CJK 目标未翻译比例启发、源文本 verbatim 相似度。
+- `layout_checks.py`：文本 span 越界启发 + 采样页渲染空白（缺字）检查。
+- `resource_checks.py`：磁盘剩余空间与单文件大小上限警告。
+- `report.py`：组合全程检查、人类可读摘要（不渲染段落内容）、原子写 QA JSON。
+
+`babelcodex qa <job-id>`（Application Service `run_qa`）与 MCP `babelcodex_run_qa` 对终态 job 的 mono/dual 产物生成报告并更新 `qa_status`；报告存放在 `output_dir/qa/`，不进入 artifact manifest（避免污染完整性校验）。
 
 ## 6. GUI 设计
 
@@ -478,7 +507,7 @@ BabelCodex 不直接复制 CopyPolish 的 Rust 排版引擎，因为 BabelCodex 
 
 ### 12.2 产品界面定位
 
-BabelCodex GUI 定位为“个人 PDF 翻译工作台”，而不是聊天窗口或在线翻译网站。视觉方向采用暖纸张、墨水蓝、批注琥珀色和完成墨绿色，强调文档处理、进度和人工复核。
+BabelCodex GUI 定位为“个人 PDF 翻译工作台”，而不是聊天窗口或在线翻译网站。视觉方向已调整为白色主色调的 Vercel 风格，并完成简体中文界面重排（Linux/WSL implementation `LINUX_VERIFIED`，Windows packaged interaction 仍为 `WINDOWS_VERIFICATION_PENDING`）：白底、黑白灰层级、黑色主按钮、语义色仅用于状态表达，强调文档处理、进度和人工复核；旧暖纸张/墨水蓝方向不再作为目标。设置页保留暂未启用的 i18n 语言选项，不改变运行时 locale 或 sidecar contract。详细重构范围见 `docs/development-plan.md` Phase 9B。
 
 首期 GUI 使用系统原生窗口装饰，以降低 Windows、Linux、Wayland、DPI 和无边框窗口兼容风险。后续若确有品牌化需求，再评估类似 CopyPolish 的自定义标题栏。
 
@@ -580,6 +609,8 @@ babelcodex-service
 
 GUI 不直接执行系统 Python，也不允许前端传入任意可执行文件或 shell 参数。发布包应包含固定名称的 sidecar，并通过 Tauri capability 限制其可执行范围和参数。
 
+Windows 发布包必须将 Python service 预构建为 Windows sidecar executable，而不是要求用户安装或由 GUI 启动系统 Python。Tauri 的 `externalBin` 逻辑名称保持为 `binaries/babelcodex-service`；实际资源文件必须按 Tauri target triple 命名，并在 Windows bundle 构建前校验 `.exe` 文件、资源清单和 SHA-256。Windows 原生启动、文件选择器、路径 allowlist、输出目录打开、sidecar 终止和干净用户环境运行属于平台验收，不能由 WSL/Linux 的 Rust 编译检查替代。
+
 ### 12.7 Sidecar 通信协议
 
 请求示例：
@@ -622,6 +653,23 @@ GUI 不直接执行系统 Python，也不允许前端传入任意可执行文件
 - 请求和响应使用稳定 `requestId`；
 - 错误只返回安全错误码和可行动提示。
 
+### 12.7.1 启动握手与陈旧 sidecar 防线
+
+GUI 与 sidecar 建立连接后必须先执行 `get_server_info` 握手，再调用任何任务方法：
+
+```json
+{
+  "protocolVersion": 1,
+  "requestId": "req-...",
+  "method": "get_server_info",
+  "params": {}
+}
+```
+
+响应携带 sidecar 的协议版本、包版本和能力列表。GUI 侧校验协议版本与能力兼容性；不兼容时连接进入 `failed` 状态并给出明确错误，而不是让陈旧 sidecar 在运行中以未定义行为失败。该握手把"打包中嵌入了旧版 sidecar"从隐式运行时错误转为显式启动错误。
+
+配套的静态防线是打包审计：`scripts/check_gui_bundle.py --source-tree` 校验打包内 sidecar 的修改时间不早于其嵌入的 Python 源文件、`pyproject.toml` 和 PyInstaller spec，防止把陈旧 sidecar 打进发布包。两层防线结合 ADR-029 的决策共同覆盖发布输入新鲜度。
+
 ### 12.8 GUI 状态模型
 
 ```typescript
@@ -661,11 +709,10 @@ type JobStatus =
 - schema version；
 - 不支持能力自动降级。
 
-建议路径：
-
-- Windows：`%APPDATA%/BabelCodex/config.toml`；
-- Linux：`$XDG_CONFIG_HOME/BabelCodex/config.toml`；
-- 便携模式：显式指定程序目录下的配置。
+当前路径模型：GUI 以 `.exe` 所在目录为 portable root，配置固定为
+`config/config.yaml`；可写数据进入 `cache/`、`logs/`、`output/`，只读资源进入
+`resource/`。Codex 官方登录状态仍位于用户目录，不由 BabelCodex 复制、重定向或伪造。
+GUI 选择的 PDF 必须通过 sidecar `stage_input` 复制到 `cache/incoming/`。
 
 ### 12.10 能力检测
 
@@ -696,7 +743,14 @@ MCP → Python Application Service
 CLI → Python Application Service
 ```
 
+Tauri GUI 的 MCP Bridge 仅用于 Debug 桌面开发/验证：Rust 侧通过
+`tauri-plugin-mcp-bridge` 绑定 `127.0.0.1`，并只在 Debug 构建注册；Release
+构建不启动 Bridge。`@hypothesi/tauri-mcp-server` 属于 Agent 环境工具，不
+作为 GUI 的 npm 依赖，也不进入发布包。Linux/WSL 无目标桌面时不启动该
+Bridge/MCP Server，只执行 Rust、配置、前端和非 GUI 验证。
+
 MCP Server 是 Codex 的自动化入口，GUI 是个人用户的可视化控制入口；二者不共享前端代码，但共享任务协议、状态模型和错误码。
+- 当前 MCP 实现使用标准库 newline-delimited JSON-RPC，工具调用仍限制在 Application Service 的任务、artifact 和诊断边界内；`validate_output` 只读取 job artifact，`cleanup_job` 只删除 job-owned worker 子目录。工具参数严格 allowlist，活动 job 绑定进程内 `cancel_event`，服务关闭时主动发出取消信号；注册示例和剩余平台验证见 `docs/mcp.md`。
 
 ## 14. 测试与发布
 
@@ -717,3 +771,9 @@ Linux: BabelCodex-Linux-x86_64.tar.gz
 ```
 
 首期不优先采用单文件 executable。发布流程应包括依赖检查、sidecar 资源清单、许可证清单、SBOM 和 SHA-256 校验。
+
+平台验证边界：
+
+- Linux/WSL：已验证 React/Vitest、Python contract、JSONL 协议、Rust 编译、bundle audit 和 Linux `.deb`/AppImage 构建；目标 Linux 机器运行 smoke 仍需单独验收；
+- Windows 原生：已验证 Windows `.exe` sidecar、Tauri NSIS/MSI packaged bundle、WebView2 探测、在项目根工作目录并显式传入受控 `--config` 后的 MSI 解包 sidecar JSONL smoke 和 GUI 进程级启动；文件对话框、完整路径语义、权限 allowlist、退出清理和干净用户环境 GUI 交互仍未完成；
+- Windows 当前状态为“原生构建与包内 sidecar smoke 通过”，不是“可发布”；只有目标平台完整 packaged GUI smoke、签名/发布审计和剩余路径矩阵通过后，才能标记对应平台为可发布。具体执行错误、处置方式和未执行原因记录在 docs/compatibility.md。Windows 取消状态持久化修复已在 Linux 侧增加回归覆盖，Windows 原生完整测试仍需复验。

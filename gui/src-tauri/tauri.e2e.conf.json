@@ -1,0 +1,55 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "app": {
+    "security": {
+      "capabilities": [
+        "main-capability",
+        {
+          "identifier": "e2e-capability",
+          "description": "WebdriverIO E2E testing capability; inlined so it is loaded only by --features e2e builds via tauri.e2e.conf.json. It is never written to src-tauri/capabilities/ and so is never seen by default or mcp-dev Cargo checks.",
+          "windows": ["main"],
+          "permissions": [
+            "wdio:default",
+            "wdio-webdriver:default",
+            {
+              "identifier": "shell:allow-spawn",
+              "allow": [
+                {
+                  "name": "binaries/babelcodex-service",
+                  "sidecar": true,
+                  "args": [
+                    "--config",
+                    {
+                      "validator": "\\.\\./config/e2e\\.yaml"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "identifier": "shell:allow-stdin-write",
+              "allow": [
+                {
+                  "name": "binaries/babelcodex-service",
+                  "sidecar": true
+                }
+              ]
+            },
+            {
+              "identifier": "shell:allow-kill",
+              "allow": [
+                {
+                  "name": "binaries/babelcodex-service",
+                  "sidecar": true
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "bundle": {
+    "active": false
+  }
+}

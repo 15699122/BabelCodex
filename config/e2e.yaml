@@ -1,0 +1,58 @@
+schema_version: 1
+
+project:
+  input_dir: gui/build/e2e/incoming
+  output_dir: gui/build/e2e/translated
+  state_dir: gui/build/e2e/state
+  log_dir: gui/build/e2e/logs
+  glossary_dir: gui/build/e2e/glossary
+  context_dir: gui/build/e2e/context
+  cache_dir: gui/build/e2e/cache
+  resource_dir: resource
+
+logging:
+  level: debug
+  max_files: 5
+
+translation:
+  lang_in: en
+  lang_out: zh
+  translator: mock
+  model: ""
+  effort: low
+  qps: 1
+  min_text_length: 5
+  no_mono: false
+  no_dual: false
+  watermark_output_mode: no_watermark
+  auto_extract_glossary: false
+  max_retries: 0
+  retry_policy:
+    auth: 1
+    config: 1
+    input: 1
+    validation: 1
+    output: 1
+  cache_enabled: false
+  cache_store_plaintext: false
+  cache_ttl_seconds: null
+
+babeldoc:
+  backend: python-internal
+  working_dir: gui/build/e2e/state/babeldoc-work
+  cache_dir: gui/build/e2e/cache/babeldoc
+  resource_dir: resource/babeldoc
+  worker_mode: subprocess
+  translate_table_text: false
+  ocr_workaround: false
+  auto_enable_ocr_workaround: false
+  enhance_compatibility: true
+  work_retention_days: 0
+
+codex:
+  thread_mode: per-document
+  sandbox: read_only
+  strict_output: true
+  context_prompt: ""
+  context_max_chars: 0
+  max_turns_before_compact: 0

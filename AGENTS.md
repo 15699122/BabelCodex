@@ -80,12 +80,14 @@ BabelDOC warns that direct Python APIs are internal. Treat every direct import a
 
 ## Planning documents
 
+- Documentation index: `docs/README.md` (read this first to place information in the right document)
 - Overall architecture: `docs/architecture.md`
 - Detailed development plan: `docs/development-plan.md`
 - Architecture decisions and reference-project comparison: `docs/decisions.md`
 - Verified runtime compatibility: `docs/compatibility.md`
+- Per-file responsibility and maintenance map: `docs/development/codebase-map.md`
 
-Phase 0A public GitHub bootstrap is complete. Phase 0B dependency, CI and BabelDOC warmup work is complete, but live Codex authentication is still required. The current implementation order is Phase 1 domain/error model → Phase 2 placeholder/output validation → Phase 3 BabelDOC compatibility layer → Phase 4 worker process → Phase 5 mock/live vertical slice → Phase 6 batching/cache → Phase 8 GUI sidecar spike → Phase 9 GUI Alpha/packaging → Phase 10 Codex MCP Server → Phase 11 glossary/context → Phase 12 recovery → Phase 13 PDF QA. Phase 14 Two-phase remains experimental.
+Phase 0A/0B, the domain/error model, placeholder validation, BabelDOC compatibility layer, worker process, mock vertical slice, Translation Gateway/cache, GUI sidecar foundation, MCP contract, glossary/context, recovery and baseline PDF QA are implemented and Linux-verified to the extent recorded in the development and validation documents. The current implementation order is: (1) Linux-only GUI/application-service contract completion and regression coverage; (2) authorized live Codex and long-document validation; (3) batching/cache and QA benchmark evidence; (4) concentrated Windows lifecycle/path/package validation; (5) release security and target-platform acceptance. Phase 14 Two-phase remains experimental.
 
 ## GUI framework baseline
 
@@ -94,14 +96,26 @@ Phase 0A public GitHub bootstrap is complete. Phase 0B dependency, CI and BabelD
 - Runtime boundary: fixed `babelcodex-service` Python sidecar over a versioned JSONL protocol.
 - UI architecture: New Translation, Jobs, Job Details, Glossary, Diagnostics and Settings pages.
 - GUI E2E: Vitest/React Testing Library for frontend behavior and WebdriverIO for packaged/desktop flows.
+- Tauri MCP development bridge: `tauri-plugin-mcp-bridge` is a committed Rust
+  dependency and is enabled only for Debug builds, bound to `127.0.0.1`; Release
+  builds must not start the bridge. The MCP server package is an external Agent
+  tool and must not be added to the project npm dependencies.
+- Linux Cline development must not start Tauri MCP or pretend to validate a
+  desktop GUI without a targetable desktop. Linux may run Rust/config/schema
+  checks, frontend tests/builds and non-GUI integration tests; Windows/native
+  desktop validation remains concentrated and is recorded as
+  `WINDOWS_VERIFICATION_PENDING` until directly executed.
 
 ## Commands
 
 ```bash
 uv sync --extra runtime --extra dev
 uv run pytest
-uv run cbpdf --config config/example.toml doctor
-uv run cbpdf --config config/example.toml run
+uv run cbpdf --config config/config.yaml doctor
+uv run cbpdf --config config/config.yaml run
+# controlled packaged sidecar build (scripts/babelcodex-service.spec)
+uv run --extra runtime --with pyinstaller pyinstaller \
+    --clean --noconfirm scripts/babelcodex-service.spec
 ```
 
 ## Coding rules
@@ -112,3 +126,73 @@ uv run cbpdf --config config/example.toml run
 - Never log auth tokens or full sensitive document text by default.
 - Prefer small compatibility adapters over widespread version checks.
 - Every bug fix gets a regression test when practical.
+- Default to incremental validation: pick the smallest sufficient test scope for the change, escalate only when evidence requires it, and record which checks were not run. Strategy in `docs/development/testing.md`; Windows minimization and revalidation rules in `docs/development/cross-platform-validation.md`.
+
+## Documentation ownership
+
+Every document has a single responsibility. Do not duplicate the same state across documents; link instead. The authoritative placement table lives in `docs/README.md`.
+
+1. README is user-facing only. It must not record developer machines, branches, commit SHAs, test pass counts, Windows validation rounds, or recommended internal development order.
+2. Current progress and future roadmap go only in `docs/development-plan.md`.
+3. Architecture documents describe the stable structure and runtime logic only — never transient validation status or per-round results.
+4. Windows validation run records go only under `docs/validation/`; current active queue and latest summary in `docs/validation/windows.md`, full historical runs archived in `docs/validation/history/`.
+5. `docs/compatibility.md` records current compatibility conclusions derived from validation, not the validation logs themselves.
+6. ADRs in `docs/decisions.md` record decisions, not work logs. Reference-project research lives in `docs/research/reference-projects.md`.
+7. When you add, delete, rename, or change the responsibility of a module, update `docs/development/codebase-map.md` (and `docs/architecture.md` if the change is structural).
+8. Never copy a status text into multiple docs; link to the single source document.
+9. Historical validation records may only be archived, never silently deleted or rewritten. A historical `FAIL` must never be rewritten as `PASS`.
+10. Commands written in any document must match the registered CLI parser, package scripts, or build script. `scripts/check_docs_inventory.py` enforces this for README CLI commands and codebase-map entries.
+11. The documentation CI check must pass before a merge: `uv run pytest tests/test_docs_inventory.py`.
+
+## Module design
+
+Keep responsibility separable, but never split files mechanically by line count. A module may be refactored into a package or submodules only when the split improves cohesion and keeps public entry points stable.
+
+1. One module has one primary responsibility: protocol definition, transport, task execution, persistence, and UI presentation are distinct concerns.
+2. Public façades stay stable (`BabelCodexService`, `JsonlSidecar`, `McpServer`, `state.StateStore`, `worker_client.run_worker`). Internal implementations may delegate to submodules.
+3. External callers must not reach through the public façade into internals. In particular, MCP/sidecar code must not directly touch `service.orchestrator.state`; route all mutation through `BabelCodexService` methods.
+4. Do not duplicate orchestration logic between CLI, GUI, and MCP.
+5. New modules need a module docstring, type hints on public functions, and matching tests.
+6. Refactors must preserve behavior, wire protocol, and public import paths. Run the full Linux suite plus GUI tests after each refactor batch.
+7. Split tests by the responsibility they cover instead of accumulating one aggregate test file.
+8. Every module entry, its runtime location (which process), its main dependencies, and its tests must be documented in `docs/development/codebase-map.md`.
+
+## Cross-platform development and Windows validation workflow
+
+For Linux ↔ Windows development and validation workflow, follow:
+
+`docs/development/cross-platform-validation.md`
+
+This workflow is mandatory for Windows-specific implementation and validation tasks.
+
+## Windows validation policy
+
+The current WSL project directory is the source of truth for source code, project state, project documentation, and final validation records. A Windows `E:`-drive checkout is only a disposable validation workspace. Windows changes must not be synchronized back to WSL, except for validation results written to the designated WSL validation documentation.
+
+### Deferred Windows validation rule
+
+Linux is the primary development environment. Use **batch development, concentrated validation**:
+
+```text
+Linux Feature A → Linux Feature B → Linux Feature C
+→ Linux verification → Windows Validation Preparation → Windows validation phase
+```
+
+Do not interrupt normal Linux development merely because a completed feature will eventually require Windows verification. After each Linux-implementable change, run its applicable Linux checks, add the Windows-only follow-up to the cumulative Windows Validation Queue in `docs/validation/windows.md`, and continue with the next non-blocked Linux task.
+
+Use `WINDOWS_VERIFICATION_PENDING` by default. Use `WINDOWS_VERIFICATION_BLOCKING` only when a Windows-specific result is a hard prerequisite for reliable further development: for example, a critical Windows API/filesystem/process/installer assumption, a Windows-only reproducible failure that blocks progress, or an explicit user request for immediate Windows validation. See `docs/development/cross-platform-validation.md` for the required queue fields, preparation phase, and final handoff format.
+
+Use `docs/validation/windows.md` for the detailed Windows validation procedure and result format. The procedure is mandatory whenever Windows platform validation is requested:
+
+1. Investigate the current WSL repository before synchronization. Record the branch, commit, working-tree state, repository structure, languages/frameworks, Windows documentation, scripts/configuration, available test/lint/typecheck/build/package commands, compatibility requirements, agent instructions, and external dependencies or credentials.
+2. Before synchronization, inspect both the WSL source and Windows target. Check for uncommitted, manually created, machine-specific, credential, cache, or other files that must be preserved. Do not blindly delete unknown files or overwrite Windows-local configuration.
+3. Synchronize only from WSL to the Windows `E:` validation directory. Prefer existing checkout, worktree, deployment, or synchronization scripts. Do not copy `.git`, `node_modules`, Python virtual environments, Rust `target`, build/dist caches, IDE caches, temporary files, secrets, or machine-specific configuration unless project documentation explicitly requires them.
+4. Verify that the Windows workspace contains the intended source state, including key files and any working-tree modifications. Record the WSL branch, commit, whether uncommitted changes were included, the Windows workspace path, and the synchronization date. Never describe a working-tree validation as a clean commit validation.
+5. Derive the Windows validation scope from this repository's instructions, documentation, CI/build configuration, package scripts, and current implementation. Before execution, classify checks as `Required`, `Applicable`, or `Not applicable`; do not invent requirements that the project does not define.
+6. In the Windows workspace, use the project's existing package managers, commands, and scripts. Do not change business code, architecture, dependencies, or configuration merely to make validation pass. Continue with independent checks after non-fatal failures, and mark dependent checks as `BLOCKED`.
+7. Record every applicable check with its name, exact command, working directory, relevant versions, result, and concise output/error summary. Allowed result states are `PASS`, `FAIL`, `BLOCKED`, `NOT RUN`, and `NOT APPLICABLE`.
+8. For every failure, preserve the key error or relevant stack trace, identify the likely category (`Windows-specific`, project code, environment configuration, missing dependency, external service, test defect, or unknown), state whether it blocks other checks, and document recommended follow-up work. Never mark a skipped or failed check as successful.
+9. After Windows validation, write results back to the WSL repository's existing validation documentation, preferably `docs/validation/windows.md`, while preserving its structure and avoiding large raw logs. Include environment, source-state, synchronization, results, errors, and all not-run/blocked reasons.
+10. Before finishing, confirm that the Windows workspace corresponds to the intended WSL state, every applicable check has a status, all `FAIL`/`BLOCKED`/`NOT RUN` entries have reasons, no validation-scope code changes were made, and the final WSL diff contains only expected documentation changes.
+
+Windows validation is platform verification, not an excuse for opportunistic development. If a code change appears necessary, record the issue and proposed fix location in the validation document instead of implementing it as part of the validation run.

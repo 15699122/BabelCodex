@@ -1,2 +1,2 @@
 $ErrorActionPreference = "Stop"
-uv run cbpdf --config config/example.toml run
+uv run cbpdf --config config/config.yaml run

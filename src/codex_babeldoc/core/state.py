@@ -1,23 +1,196 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+import os
+import re
+import time
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from enum import StrEnum
 from hashlib import sha256
 from pathlib import Path
+from tempfile import NamedTemporaryFile
+from threading import RLock
+
+from codex_babeldoc.core.artifacts import Artifact
+from codex_babeldoc.core.errors import ErrorCategory, ErrorCode
+from codex_babeldoc.core.private_data import ensure_private_dir, restrict_file
+
+SCHEMA_VERSION = 2
+STATE_TRANSIENT_RETRIES = 5
+STATE_TRANSIENT_BACKOFF_SECONDS = 0.02
+JOB_ID_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+
+
+class JobStatus(StrEnum):
+    DISCOVERED = "discovered"
+    RUNNING = "running"
+    RETRY_PENDING = "retry_pending"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class JobStage(StrEnum):
+    DISCOVERED = "discovered"
+    VALIDATING_INPUT = "validating_input"
+    PREPARING_RUNTIME = "preparing_runtime"
+    TRANSLATING = "translating"
+    RENDERING = "rendering"
+    VALIDATING_OUTPUT = "validating_output"
+    COMPLETED = "completed"
 
 
 @dataclass(slots=True)
 class JobState:
-    source: str
-    fingerprint: str
-    status: str = "pending"
+    job_id: str
+    source_path: str
+    source_fingerprint: str
+    config_fingerprint: str
+    schema_version: int = SCHEMA_VERSION
+    status: JobStatus = JobStatus.DISCOVERED
+    stage: JobStage = JobStage.DISCOVERED
     attempts: int = 0
-    last_error: str | None = None
+    error_category: ErrorCategory | None = None
+    error_code: ErrorCode | None = None
+    safe_error_message: str | None = None
+    backend_name: str = ""
+    backend_version: str = ""
+    translator_name: str = ""
+    model: str = ""
+    codex_thread_id: str | None = None
+    runner_pid: int | None = None
+    invocation_source: str = "cli"
+    started_at: str = ""
     updated_at: str = ""
+    completed_at: str = ""
+    artifacts: list[Artifact] = field(default_factory=list)
+    pipeline_meta: dict[str, object] = field(default_factory=dict)
+    qa_status: str = "pending"
+
+    @property
+    def source(self) -> str:
+        return self.source_path
+
+    @property
+    def fingerprint(self) -> str:
+        return self.source_fingerprint
+
+    @property
+    def last_error(self) -> str | None:
+        return self.safe_error_message
+
+    @last_error.setter
+    def last_error(self, value: str | None) -> None:
+        self.safe_error_message = value
 
     def touch(self) -> None:
-        self.updated_at = datetime.now(UTC).isoformat()
+        self.updated_at = _now()
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema_version": self.schema_version,
+            "job_id": self.job_id,
+            "source_path": self.source_path,
+            "source_fingerprint": self.source_fingerprint,
+            "config_fingerprint": self.config_fingerprint,
+            "status": self.status.value if isinstance(self.status, JobStatus) else str(self.status),
+            "stage": self.stage.value if isinstance(self.stage, JobStage) else str(self.stage),
+            "attempts": self.attempts,
+            "error_category": self.error_category.value if self.error_category else None,
+            "error_code": self.error_code.value if self.error_code else None,
+            "safe_error_message": self.safe_error_message,
+            "backend_name": self.backend_name,
+            "backend_version": self.backend_version,
+            "translator_name": self.translator_name,
+            "model": self.model,
+            "codex_thread_id": self.codex_thread_id,
+            "runner_pid": self.runner_pid,
+            "invocation_source": self.invocation_source,
+            "started_at": self.started_at,
+            "updated_at": self.updated_at,
+            "completed_at": self.completed_at,
+            "artifacts": [a.to_dict() for a in self.artifacts],
+            "pipeline_meta": self.pipeline_meta,
+            "qa_status": self.qa_status,
+        }
+
+    @classmethod
+    def from_dict(cls, values: dict[str, object]) -> JobState:
+        if "schema_version" not in values:
+            return cls.from_legacy_dict(values)
+        return cls(
+            schema_version=int(values.get("schema_version", SCHEMA_VERSION)),
+            job_id=str(values["job_id"]),
+            source_path=str(values["source_path"]),
+            source_fingerprint=str(values["source_fingerprint"]),
+            config_fingerprint=str(values.get("config_fingerprint", "")),
+            status=JobStatus(str(values.get("status", JobStatus.DISCOVERED.value))),
+            stage=JobStage(str(values.get("stage", JobStage.DISCOVERED.value))),
+            attempts=int(values.get("attempts", 0)),
+            error_category=(
+                ErrorCategory(str(values["error_category"]))
+                if values.get("error_category")
+                else None
+            ),
+            error_code=ErrorCode(str(values["error_code"])) if values.get("error_code") else None,
+            safe_error_message=(
+                str(values["safe_error_message"])
+                if values.get("safe_error_message") is not None
+                else None
+            ),
+            backend_name=str(values.get("backend_name", "")),
+            backend_version=str(values.get("backend_version", "")),
+            translator_name=str(values.get("translator_name", "")),
+            model=str(values.get("model", "")),
+            codex_thread_id=(
+                str(values["codex_thread_id"]) if values.get("codex_thread_id") else None
+            ),
+            runner_pid=int(values["runner_pid"]) if values.get("runner_pid") is not None else None,
+            invocation_source=str(values.get("invocation_source", "cli")),
+            started_at=str(values.get("started_at", "")),
+            updated_at=str(values.get("updated_at", "")),
+            completed_at=str(values.get("completed_at", "")),
+            artifacts=[
+                Artifact.from_dict(item)
+                for item in values.get("artifacts", [])
+                if isinstance(item, dict)
+            ],
+            qa_status=str(values.get("qa_status", "pending")),
+            pipeline_meta=dict(values.get("pipeline_meta", {})),
+        )
+
+    @classmethod
+    def from_legacy_dict(cls, values: dict[str, object]) -> JobState:
+        source_fingerprint = str(values["fingerprint"])
+        status_value = str(values.get("status", "pending"))
+        status_map = {
+            "pending": JobStatus.DISCOVERED,
+            "running": JobStatus.RUNNING,
+            "completed": JobStatus.COMPLETED,
+            "failed": JobStatus.FAILED,
+        }
+        status = status_map.get(status_value, JobStatus.DISCOVERED)
+        stage = JobStage.COMPLETED if status is JobStatus.COMPLETED else JobStage.DISCOVERED
+        return cls(
+            job_id=job_id_for(source_fingerprint, ""),
+            source_path=str(values["source"]),
+            source_fingerprint=source_fingerprint,
+            config_fingerprint="",
+            status=status,
+            stage=stage,
+            attempts=int(values.get("attempts", 0)),
+            safe_error_message=(
+                str(values["last_error"]) if values.get("last_error") is not None else None
+            ),
+            updated_at=str(values.get("updated_at", "")),
+            completed_at=str(values.get("updated_at", "")) if status is JobStatus.COMPLETED else "",
+        )
+
+
+def _now() -> str:
+    return datetime.now(UTC).isoformat()
 
 
 def file_fingerprint(path: Path) -> str:
@@ -28,25 +201,158 @@ def file_fingerprint(path: Path) -> str:
     return h.hexdigest()
 
 
+def job_id_for(source_fingerprint: str, config_fingerprint: str) -> str:
+    payload = f"{source_fingerprint}:{config_fingerprint}".encode()
+    return sha256(payload).hexdigest()
+
+
+def _read_state_json(path: Path) -> dict:
+    """Read a state JSON file, tolerating transient Windows file-lock errors.
+
+    :meth:`StateStore.save` swaps the state file atomically via ``os.replace``.
+    On Windows, an overlapping read (for example a job-status poll while the
+    async executor persists a terminal status) can fail transiently with
+    ``PermissionError`` even though the state file itself is readable. Retry
+    with the same bounded exponential backoff used by the write path.
+    """
+    last_error: PermissionError | None = None
+    for attempt in range(STATE_TRANSIENT_RETRIES):
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except PermissionError as error:
+            last_error = error
+            if attempt == STATE_TRANSIENT_RETRIES - 1:
+                raise
+            time.sleep(STATE_TRANSIENT_BACKOFF_SECONDS * (2**attempt))
+    raise last_error  # pragma: no cover - the loop always returns or raises
+
+
 class StateStore:
     def __init__(self, root: Path):
         self.root = root
-        self.root.mkdir(parents=True, exist_ok=True)
+        self._save_lock = RLock()
+        ensure_private_dir(self.root)
 
-    def _path(self, fingerprint: str) -> Path:
-        return self.root / f"{fingerprint}.json"
+    def _path(self, job_id: str) -> Path:
+        if not isinstance(job_id, str) or JOB_ID_PATTERN.fullmatch(job_id) is None:
+            raise ValueError("job_id must be a 64-character lowercase hexadecimal identifier")
+        return self.root / f"{job_id}.json"
 
-    def load(self, source: Path) -> JobState:
-        fp = file_fingerprint(source)
-        path = self._path(fp)
+    def load(self, source: Path, *, config_fingerprint: str = "") -> JobState:
+        source = source.resolve()
+        source_fp = file_fingerprint(source)
+        job_id = job_id_for(source_fp, config_fingerprint)
+        path = self._path(job_id)
+        if path.exists():
+            return JobState.from_dict(_read_state_json(path))
+        legacy_path = self.root / f"{source_fp}.json"
+        if legacy_path.exists():
+            legacy = JobState.from_dict(_read_state_json(legacy_path))
+            legacy.job_id = job_id
+            legacy.config_fingerprint = config_fingerprint
+            return legacy
+        job = JobState(
+            job_id=job_id,
+            source_path=str(source),
+            source_fingerprint=source_fp,
+            config_fingerprint=config_fingerprint,
+        )
+        job.touch()
+        return job
+
+    def load_by_job_id(self, job_id: str) -> JobState | None:
+        path = self._path(job_id)
         if not path.exists():
-            job = JobState(source=str(source), fingerprint=fp)
-            job.touch()
-            return job
-        return JobState(**json.loads(path.read_text(encoding="utf-8")))
+            return None
+        return JobState.from_dict(_read_state_json(path))
+
+    def list_jobs(self) -> list[JobState]:
+        jobs: list[JobState] = []
+        for path in sorted(self.root.glob("*.json")):
+            try:
+                jobs.append(JobState.from_dict(_read_state_json(path)))
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+                continue
+        return sorted(jobs, key=lambda job: job.updated_at, reverse=True)
+
+    def recover_interrupted_jobs(
+        self, *, process_alive: Callable[[int], bool] | None = None
+    ) -> list[JobState]:
+        """Terminalize active states left behind by a dead or unknown runner.
+
+        The state store cannot safely resume a BabelDOC subprocess or a Codex
+        thread after its owning process exits. It therefore records a durable,
+        operator-actionable worker crash instead of starting a new translation.
+        A live PID is left untouched so independent CLI, GUI-sidecar and MCP
+        processes do not invalidate each other's active jobs.
+        """
+        is_process_alive = process_alive or _process_is_alive
+        recovered: list[JobState] = []
+        for job in self.list_jobs():
+            if job.status not in {JobStatus.RUNNING, JobStatus.RETRY_PENDING}:
+                continue
+            if job.runner_pid is not None and is_process_alive(job.runner_pid):
+                continue
+            job.status = JobStatus.FAILED
+            job.error_category = ErrorCategory.WORKER
+            job.error_code = ErrorCode.WORKER_CRASHED
+            job.safe_error_message = (
+                "The previous translation runner stopped before the job finished. "
+                "Review the job and retry it explicitly."
+            )
+            job.runner_pid = None
+            self.save(job)
+            recovered.append(job)
+        return recovered
 
     def save(self, job: JobState) -> None:
-        job.touch()
-        self._path(job.fingerprint).write_text(
-            json.dumps(asdict(job), ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        with self._save_lock:
+            job.touch()
+            target = self._path(job.job_id)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with NamedTemporaryFile(
+                "w",
+                encoding="utf-8",
+                dir=target.parent,
+                prefix=f".{job.job_id}.",
+                suffix=".tmp",
+                delete=False,
+            ) as temporary:
+                json.dump(job.to_dict(), temporary, ensure_ascii=False, indent=2)
+                temporary.flush()
+                os.fsync(temporary.fileno())
+                temporary_path = Path(temporary.name)
+            restrict_file(temporary_path)
+            try:
+                for attempt in range(STATE_TRANSIENT_RETRIES):
+                    try:
+                        os.replace(temporary_path, target)
+                        restrict_file(target)
+                        break
+                    except PermissionError:
+                        if attempt == STATE_TRANSIENT_RETRIES - 1:
+                            raise
+                        time.sleep(STATE_TRANSIENT_BACKOFF_SECONDS * (2**attempt))
+            finally:
+                temporary_path.unlink(missing_ok=True)
+
+
+def _process_is_alive(pid: int) -> bool:
+    """Return whether a local PID is alive without assuming a Unix-only API."""
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # A foreign process can be alive even when the current user cannot
+        # signal it; preserving its state is safer than falsely recovering it.
+        return True
+    except OSError:
+        # Windows may report a process-query failure as a generic OSError
+        # (for example, WinError 11). Treat an indeterminate result as alive
+        # so startup recovery never terminalizes a possibly running job.
+        return True
+    else:
+        return True

@@ -1,0 +1,53 @@
+schema_version: 1
+
+project:
+  input_dir: cache/incoming
+  output_dir: output
+  state_dir: cache/state
+  log_dir: logs
+  glossary_dir: config/glossary
+  context_dir: config/context
+  cache_dir: cache
+  resource_dir: resource
+
+logging:
+  level: debug
+  max_files: 5
+
+translation:
+  lang_in: en
+  lang_out: zh
+  translator: codex-sdk
+  model: ""
+  effort: low
+  qps: 1
+  min_text_length: 5
+  no_mono: false
+  no_dual: false
+  watermark_output_mode: no_watermark
+  auto_extract_glossary: false
+  max_retries: 3
+  retry_policy: {}
+  cache_enabled: true
+  cache_store_plaintext: false
+  cache_ttl_seconds: null
+
+babeldoc:
+  backend: python-internal
+  working_dir: cache/work
+  cache_dir: cache/babeldoc
+  resource_dir: resource/babeldoc
+  worker_mode: subprocess
+  translate_table_text: false
+  ocr_workaround: false
+  auto_enable_ocr_workaround: true
+  enhance_compatibility: true
+  work_retention_days: 7
+
+codex:
+  thread_mode: per-document
+  sandbox: read_only
+  strict_output: true
+  context_prompt: Translate faithfully and preserve terminology. Do not explain the translation.
+  context_max_chars: 4000
+  max_turns_before_compact: 0

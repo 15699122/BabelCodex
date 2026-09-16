@@ -2,28 +2,36 @@ from __future__ import annotations
 
 import argparse
 import json
-import logging
 import os
 import shutil
 import subprocess
 import sys
+from dataclasses import asdict
 from pathlib import Path
 
-from codex_babeldoc.core.config import load_config
-from codex_babeldoc.core.orchestrator import Orchestrator
+from codex_babeldoc.application.service import BabelCodexService
+from codex_babeldoc.core.config import AppConfig, load_config
+from codex_babeldoc.core.logging_config import configure_logging, release_file_handlers
+from codex_babeldoc.translation.glossary import GlossaryStore
 
 
-def _configure_logging(log_dir: Path, verbose: bool) -> None:
-    log_dir.mkdir(parents=True, exist_ok=True)
-    handlers = [
-        logging.StreamHandler(),
-        logging.FileHandler(log_dir / "cbpdf.log", encoding="utf-8"),
-    ]
-    logging.basicConfig(
-        level=logging.DEBUG if verbose else logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-        handlers=handlers,
-    )
+def _configure_logging(log_dir: Path, verbose: bool, settings=None) -> None:
+    configure_logging(log_dir, settings, verbose=verbose)
+
+
+def _release_log_file_handlers() -> None:
+    """Close root-logger file handlers before the CLI process exits.
+
+    Windows validation observed a transient ``PermissionError: [WinError 32]``
+    while a temporary directory containing a freshly written ``logs/cbpdf.log``
+    was removed right after a QA command returned (an earlier round saw the
+    same failure class on the fixture PDF). Closing file handlers explicitly at
+    command completion shortens the window in which the log file handle stays
+    open, instead of relying only on the ``logging.shutdown()`` atexit hook.
+    This is a best-effort mitigation for handle-lifecycle races; it does not
+    change cleanup semantics elsewhere.
+    """
+    release_file_handlers()
 
 
 def _bundled_codex_runtime() -> str | None:
@@ -70,9 +78,10 @@ def collect_doctor_checks(cfg) -> dict[str, str | bool | None]:
         "codex_auth_message": codex_auth_message,
     }
     try:
-        import babeldoc
+        from codex_babeldoc.backends.babeldoc_v064 import detect_version
 
-        checks["babeldoc_python"] = getattr(babeldoc, "__version__", "installed")
+        version = detect_version()
+        checks["babeldoc_python"] = version if version else "installed"
     except Exception as exc:  # noqa: BLE001 - diagnostics must report broken imports
         checks["babeldoc_python"] = f"missing: {exc}"
     try:
@@ -102,7 +111,7 @@ def doctor(cfg) -> int:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="babelcodex")
-    parser.add_argument("--config", default="config/example.toml")
+    parser.add_argument("--config", default="config/config.yaml")
     parser.add_argument("--verbose", action="store_true")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("doctor")
@@ -111,14 +120,115 @@ def main(argv=None) -> int:
     one = sub.add_parser("one")
     one.add_argument("pdf")
     one.add_argument("--force", action="store_true")
+    inspect = sub.add_parser("inspect")
+    inspect.add_argument("job_id")
+    validate = sub.add_parser("validate")
+    validate.add_argument("job_id")
+    retry = sub.add_parser("retry")
+    retry.add_argument("job_id")
+    cleanup = sub.add_parser("cleanup")
+    cleanup.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Report what would be removed without deleting anything.",
+    )
+    qa = sub.add_parser("qa")
+    qa.add_argument("job_id", help="Run the output PDF QA battery for a terminal job.")
+    qa.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Include info-level findings in the summary.",
+    )
+    mcp = sub.add_parser("mcp")
+    mcp_sub = mcp.add_subparsers(dest="mcp_command", required=True)
+    mcp_sub.add_parser("serve")
+    glossary = sub.add_parser("glossary")
+    glossary_sub = glossary.add_subparsers(dest="glossary_command", required=True)
+    glossary_sub.add_parser("list")
+    glossary_import = glossary_sub.add_parser("import")
+    glossary_import.add_argument("csv_path")
+    glossary_import.add_argument("--document")
+    glossary_export = glossary_sub.add_parser("export")
+    glossary_export.add_argument("csv_path")
+    glossary_export.add_argument("--document")
     args = parser.parse_args(argv)
 
     cfg = load_config(args.config)
-    _configure_logging(cfg.project.log_dir, args.verbose)
+    _configure_logging(cfg.project.log_dir, args.verbose, cfg.logging)
+    try:
+        return _dispatch_command(args, cfg)
+    finally:
+        # Close file handlers before returning so the freshly written log file
+        # is not held open while callers (and Windows validation harnesses)
+        # remove the containing temporary directory.
+        _release_log_file_handlers()
+
+
+def _dispatch_command(args: argparse.Namespace, cfg: AppConfig) -> int:
     if args.command == "doctor":
         return doctor(cfg)
 
-    orch = Orchestrator(cfg)
+    if args.command == "mcp":
+        from codex_babeldoc.application.mcp import serve
+
+        serve(BabelCodexService(cfg), sys.stdin, sys.stdout)
+        return 0
+
+    if args.command == "glossary":
+        store = GlossaryStore(cfg.project.glossary_dir)
+        if args.glossary_command == "list":
+            entries = store.load()
+            print(json.dumps({"entries": [asdict(entry) for entry in entries]}, ensure_ascii=False))
+        elif args.glossary_command == "import":
+            count = store.import_csv(Path(args.csv_path).resolve(), document_stem=args.document)
+            print(json.dumps({"imported": count, "document": args.document}, ensure_ascii=False))
+        else:
+            count = store.export_csv(Path(args.csv_path).resolve(), document_stem=args.document)
+            print(json.dumps({"exported": count, "document": args.document}, ensure_ascii=False))
+        return 0
+
+    service = BabelCodexService(cfg)
+    if args.command == "inspect":
+        try:
+            result = service.inspect_job(args.job_id)
+        except ValueError as exc:
+            print(json.dumps({"error": str(exc)}, ensure_ascii=False))
+            return 1
+        if result is None:
+            print(json.dumps({"error": "job was not found"}, ensure_ascii=False))
+            return 1
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "validate":
+        try:
+            result = service.validate_output(args.job_id)
+        except ValueError as exc:
+            print(json.dumps({"error": str(exc)}, ensure_ascii=False))
+            return 1
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0 if result["validated"] else 1
+    if args.command == "retry":
+        try:
+            result = service.retry_job(args.job_id)
+        except ValueError as exc:
+            print(json.dumps({"error": str(exc)}, ensure_ascii=False))
+            return 1
+        print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "cleanup":
+        result = service.cleanup_work_dirs(dry_run=args.dry_run)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "qa":
+        try:
+            result = service.run_qa(args.job_id, verbose=args.verbose)
+        except ValueError as exc:
+            print(json.dumps({"error": str(exc)}, ensure_ascii=False))
+            return 1
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0 if result["ok"] else 1
+
+    orch = service.orchestrator
     if args.command == "run":
         print(json.dumps(orch.run_all(force=args.force), ensure_ascii=False, indent=2))
         return 0

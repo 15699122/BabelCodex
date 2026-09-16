@@ -11,6 +11,9 @@ htmlcov/
 !.env.example
 *.log
 dist/
+gui/dist/
+gui/node_modules/
+gui/src-tauri/target/
 build/
 *.egg-info/
 incoming/*.pdf
@@ -20,3 +23,15 @@ state/*
 !state/.gitkeep
 logs/*
 !logs/.gitkeep
+glossary/*
+!glossary/.gitkeep
+context/*
+!context/.gitkeep
+
+# generated test fixtures
+tests/fixtures/*.pdf
+
+# GUI E2E: workspace, sidecar placeholder, and build artifacts
+gui/src-tauri/binaries/babelcodex-service-*
+gui/build/
+gui/wdio-error-screenshots/

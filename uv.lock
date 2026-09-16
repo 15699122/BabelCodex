@@ -41,6 +41,7 @@ dev = [
 runtime = [
     { name = "babeldoc" },
     { name = "openai-codex" },
+    { name = "pyyaml" },
 ]
 
 [package.metadata]
@@ -48,6 +49,7 @@ requires-dist = [
     { name = "babeldoc", marker = "extra == 'runtime'", specifier = ">=0.6.4,<0.7" },
     { name = "openai-codex", marker = "extra == 'runtime'" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
+    { name = "pyyaml", marker = "extra == 'runtime'", specifier = ">=6,<7" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9" },
 ]
 provides-extras = ["runtime", "dev"]

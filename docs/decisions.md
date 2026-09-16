@@ -249,6 +249,55 @@ UNKNOWN
 
 认证、模型不可用、输入损坏、磁盘不足和 BabelDOC 不兼容默认不自动重试；网络超时、服务过载、空响应、非法输出和占位符错误可进行有界重试。
 
+### ADR-024：保守崩溃恢复
+
+**状态：已接受**
+
+真实执行会在持久化 JobState 中记录 owning runner PID。任何入口（CLI、GUI sidecar、MCP）创建 Orchestrator 时扫描遗留 `RUNNING` / `RETRY_PENDING` 状态：
+
+- runner PID 缺失或已死亡：状态保守终止为 `FAILED` + `ErrorCategory.WORKER` / `WORKER_CRASHED`，指向显式 `babelcodex retry <job-id>`；不自动重跑、不消耗 Codex 用量；
+- runner PID 仍存活：状态保持不变；存活判断不回收其他入口的活动任务，避免 CLI、GUI 与 MCP 进程互相误判。
+
+选择保守终止而非自动恢复的原因：崩溃后的输入状态（输出半写、工作目录残留）未经验证，自动续跑可能覆盖证据或重复消耗用量；显式 retry 会走与正常执行相同的 manifest 验证路径。BabelDOC part-level resume、失败工作目录保留期限和可配置 cleanup policy 属于后续演进，不改变本契约。
+
+### ADR-025：按错误类别的操作员可见 retry policy
+
+**状态：已接受**
+
+重试上限按 `ErrorCategory` 分级，默认值编码在 `core.errors.DEFAULT_RETRY_LIMITS`，并可通过 `[translation] retry_policy` 覆盖。全局 `max_retries` 仍是每任务总尝试次数上限，类别策略只能降低它、不能提高它。认证/配置/输入/验证/输出类默认不自动重试（1 次）；翻译/资源类允许有界重试。既有的单一 `retryable` 标志保留为领域层第二道门禁：`attempt < 类别上限` 且 `error.retryable` 才会进入 `RETRY_PENDING`。因此认证错误即使被领域层误标为 retryable，类别上限也会阻止自动循环（接受标准）。
+
+操作员可见性：`retry_policy` 出现在 `config/example.toml`；失败时日志与 persisted job state 记录 category、code 与 `retry_limit/max_retries`。
+
+### ADR-026：BabelDOC part-level resume 对当前流水线不可行，按 job 记录 pipeline 元数据
+
+**状态：已接受（评估结论）**
+
+BabelDOC 0.6.x 高层单遍 `async_translate` 是不透明调用；内部 `SplitManager` 仅在可选 `split_strategy`（CLI 的 `--max-pages-per-part`）启用时被调用，且 `determine_split_points` 的结果只用于分片复杂度估算与内存分片执行，不输出稳定的 part 级可续跑产物。本项目适配器也未启用 split。因此崩溃任务只能整任务重跑，恢复语义由 ADR-024（保守终止 + 显式 retry）和 ADR-025（类别重试）定义。
+
+落地：每次执行把 `pipeline_meta` 写入 persisted JobState（backend、babeldoc_version、source_page_count、`part_resume_supported=False`、note），`babelcodex inspect <job-id>` 直接可见评估结论与数据。若未来仍需 part 级续跑，只能走 Phase 14 实验性 two-phase extract/translate/render 路径，并以 BabelDOC 提供稳定 IL/hook contract 为前提（见 `docs/development-plan.md` Phase 14 启用条件）。
+
+### ADR-027：失败工作目录保留期限与可配置 cleanup policy
+
+**状态：已接受**
+
+`[babeldoc] work_retention_days`（默认 7 天）控制终态（completed / failed / cancelled）job 工作目录的保留时间；0 表示终态目录可立即清理。`babelcodex cleanup [--dry-run]` 走 Application Service 共享逻辑，CLI/GUI/MCP 不重复实现。活动 job（`RUNNING` / `RETRY_PENDING`）永不清理；清理路径复用与 MCP per-job cleanup 相同的安全规则（解析后必须位于 `working_dir` 内、拒绝删除根目录、拒绝符号链接、Windows 瞬时文件锁有界重试），共享实现于 `core.workdir`，MCP `babelcodex_cleanup_job` 与保留清扫共用同一套助手。
+
+保留失败工作目录而不是失败即删，是为操作员留诊断证据（日志、分片中间文件、worker request）；清理是到期自动清扫或显式运维动作，不会在失败瞬间自动执行，避免掩盖证据。
+
+### ADR-028：PDF QA 报告是安全摘要，error 级 finding 阻断完全成功
+
+**状态：已接受**
+
+`babelcodex qa <job-id>`（service `run_qa`，MCP `babelcodex_run_qa`）对终态 job 的 mono/dual 输出执行 L0 文件、L1 结构、L2 文本、布局启发、渲染空白与磁盘检查，报告写入 `output_dir/qa/<stem>.<type>.qa.json`，并在 job 上写 `qa_status`。
+
+规则：
+
+- 任何 `error` 级 finding 使 `qa_status=failed`；输出异常（文件缺失、PDF 打不开、全页空白等）永不标记为完全成功。`warning` 级（如 `MAYBE_UNTRANSLATED` 未翻译比例启发）不阻断，但会出现在摘要里；
+- 报告是**摘要**：finding 只含代码、严重度、页码和短 detail，不带入或转写段落原文，遵守"失败报告不包含敏感全文"验收；
+- QA 报告**不加入** `job.artifacts` manifest：报告可反复重新生成，不能改变 artifact 内容完整性校验（哈希/大小），避免操作员运行 QA 导致后续 `validate` 误报篡改；
+- 视觉回归以渲染空白/非空白像素启发覆盖缺失字体导致的空墨，替代全量像素级黄金基线对比（后者留待 Phase 14/专门视觉 QA）；
+- 夹具两栏 PDF 的 mock 输出作为稳定基线测试：`test_mock_output_has_a_stable_qa_baseline` 锁定"必为 PASS、可复现"，防止启发式漂移破坏发布流程。
+
 ## 6. 后续演进路径
 
 ### 短期
@@ -263,7 +312,7 @@ UNKNOWN
 - 完成 PDF QA
 - 完成 worker 恢复
 - 完成 thread 轮换
-- 评估 part-level resume
+- part-level resume：已评估为当前单遍高层流水线不可行（ADR-026），仅 Phase 14 two-phase 重新考察
 
 ### 长期
 
@@ -368,7 +417,7 @@ Windows 首期发布 `BabelCodex-Windows-x64.zip`，Linux 首期发布 portable 
 
 ### ADR-017：GUI 采用 Tauri 2 + React/TypeScript
 
-**状态：已接受，需先通过技术验证**
+**状态：已接受，Tauri 2 host spike 已通过技术验证；正式平台打包仍待完成**
 
 GUI 参考 `15699122/CopyPolish` 的工程实践，采用 Tauri 2、React、TypeScript、Vite、Tailwind CSS、shadcn/ui/Radix UI、Lucide Icons，并使用 Vitest、React Testing Library 和 WebdriverIO 进行测试。
 
@@ -380,6 +429,11 @@ GUI 参考 `15699122/CopyPolish` 的工程实践，采用 Tauri 2、React、Type
 - 适合构建任务中心、诊断页、设置页和多状态进度界面。
 
 如果 Tauri sidecar 无法稳定承载 BabelCodex 发布包，再评估 PySide6 等 Python 原生 GUI 方案。
+
+2026 年 9 月 8 日的 host spike 已验证 Tauri 2 Rust host、React/TypeScript
+前端、Vite 构建、固定 `externalBin` sidecar 配置和最小 capability allowlist
+可以在 Linux 开发环境中编译检查。正式 Windows/Linux target triple 二进制、
+签名/发布包和桌面 E2E 不属于本次 spike 的完成范围。
 
 ### ADR-018：GUI 通过固定 Python sidecar 调用 Application Service
 
@@ -402,11 +456,53 @@ Tauri 2 Host
 
 Tauri shell capability 只允许启动固定 sidecar 和预定义参数，不允许任意 shell、任意 executable、任意 `-c` 参数或任意命令拼接。sidecar 使用平台 target triple 命名并随 Windows/Linux portable bundle 发布。
 
+配置参数进一步收紧为固定的 `config/example.toml`，renderer 不得通过
+sidecar 参数选择任意 TOML 文件或重定义输入、输出和状态目录。
+
 ### ADR-020：GUI、CLI、MCP 共用任务状态和事件协议
 
 **状态：已接受**
 
 GUI、CLI 和 MCP 使用同一个 Application Service、JobState、ProgressEvent、ErrorCode 和 Artifact 模型。GUI 断线重连后通过查询任务状态校准，而不只依赖瞬时事件。
+
+协议层使用最小 job view DTO；内部 StateStore 只由 Application Service 访问，
+MCP/sidecar 不直接拼接或暴露完整持久化状态。
+
+### ADR-030：Codex 翻译 thread 采用 deny-all 工具边界
+
+**状态：已接受**
+
+PDF 翻译输入是不可信文档内容，不能把 Codex 当作普通无工具文本 API。每个
+thread 使用 `Sandbox.read_only`、`ApprovalMode.deny_all`、隔离工作目录和
+developer-level text-only instructions；worker 子进程使用最小环境变量集合。
+任何无法提供该安全边界的 SDK 版本都不得作为默认生产翻译路径。
+
+### ADR-031：本地用户数据使用私有权限和最小化缓存
+
+**状态：已接受**
+
+state、cache、glossary、context、thread state、日志和 worker 目录在 POSIX
+系统使用私有目录/文件权限。缓存默认不保留源文本；缓存仍会保存译文以支持
+命中，因此敏感文档可通过 `cache_enabled = false` 或 TTL 完全规避长期缓存。
+
+### ADR-032：Windows portable directory 与 YAML-only 配置
+
+**状态：已接受（2026-09-16）**
+
+当前发布目标仅为 Windows portable directory，不提供安装器作为本阶段的发布入口。
+GUI `.exe` 所在目录是 portable root，配置固定为 `config/config.yaml`；可写运行数据
+固定进入 `cache/`、`logs/`、`output/`，只读随包资源进入 `resource/`。配置格式完全使用
+YAML，TOML 不再是受支持的运行时输入。
+
+设置通过 sidecar 读取和原子保存，保存后重启 sidecar；日志支持 `error`、`warning`、
+`info`、`debug`、`silent`，默认 `info`，最多保留 5 个日志文件，诊断读取必须过滤常见
+凭据样式。GUI 选择的 PDF 通过受限 `stage_input` 复制到 `cache/incoming/`，不能通过
+放宽 sidecar allowlist 直接访问任意路径。首次创建输出目录需要用户确认；拒绝时返回
+Windows Downloads known-folder 回退候选路径。
+
+Codex 官方登录状态继续使用官方用户目录，BabelCodex 不修改 `HOME`/`USERPROFILE`、
+不复制认证文件，也不把认证转换为 API 兼容接口。Linux 仅作为开发和可执行验证环境，
+Windows 原生 portable、known-folder、WebView2、权限和打包行为必须在 Windows 单独验证。
 
 ### ADR-021：MCP 与 GUI 都采用异步 Job 交互
 
@@ -427,3 +523,37 @@ PDF 翻译属于长任务。GUI 启动任务后显示 `job_id` 和事件流；MC
 **状态：已接受**
 
 Windows 首期发布 portable ZIP，Linux 首期发布 portable tarball，后续评估 AppImage。发布包必须包括固定 sidecar、资源清单、许可证和 SHA-256 校验，不包括用户数据、登录状态或开发环境。
+
+### ADR-029：陈旧 sidecar 双层防线（构建新鲜度审计 + 运行时握手）
+
+**状态：已接受**
+
+GUI portable bundle 内嵌的 sidecar 二进制可能落后于仓库源码，此前只会在运行期以难以定位的协议错误暴露。采用两层互补防线：
+
+1. **构建新鲜度审计**：`scripts/check_gui_bundle.py --source-tree <repo>` 校验打包内 sidecar 的 mtime 不早于其嵌入的 Python 源码、`pyproject.toml` 与 PyInstaller spec；不新鲜即失败。CI 与发布流程必须执行该审计。
+2. **运行时能力握手**：sidecar 新增 `get_server_info`（协议版本、包版本、能力列表），GUI 建立连接后立即调用并校验协议兼容性；不兼容时连接进入 `failed` 并呈现明确的可操作错误，而不是静默的功能异常。
+
+两层防线各自独立生效：审计拦截构建期污染，握手拦截人工替换二进制等绕过审计的情况。
+
+### ADR-030：采用 @wdio/tauri-service 作为 GUI 桌面 E2E 基础设施
+
+**状态：已接受**
+
+BabelCodex GUI 需要可重复、可进入 CI 的桌面自动化测试。Tauri 官方推荐 WebdriverIO + `@wdio/tauri-service` 作为 WebDriver 测试方案，支持 embedded provider、Tauri API 调用、IPC mock 和前后端日志捕获。
+
+**决策：**
+
+1. 采用 `@wdio/tauri-service` 的 embedded provider 作为默认测试路径，不需要单独运行 `tauri-driver`。
+2. MCP Debug Bridge 与 WDIO E2E 使用互斥的 Cargo feature（`mcp-dev` vs `e2e`），编译期拒绝同时启用。
+3. E2E capability 作为 `CapabilityEntry::Inlined` 直接内联于 `tauri.e2e.conf.json`（通过 `--config` 合并），从不写入 `src-tauri/capabilities/`，因而不会污染默认 / mcp-dev 的 `cargo check`；回归 Guard 位于 `tests/test_gui_flavor_capabilities.py`。
+4. E2E 运行使用 `config/e2e.toml`（`translator = "mock"`），不访问真实 Codex。
+5. 前端通过 `import.meta.env.VITE_E2E` 在 build time 条件加载 `@wdio/tauri-plugin`。
+6. 测试分为三层：Vitest（组件/状态）、WDIO Browser（renderer 用户旅程）、WDIO Native（真实 Tauri WebView + sidecar）。
+7. Windows 验证只需执行仓库标准 npm 命令（`npm run e2e:native`），不单独配置测试体系。
+8. Computer Use 作为补充验收层，覆盖 WDIO 无法处理的系统文件选择器、DPI、NVDA、安装器等场景。
+
+**理由：**
+
+- MCP Bridge 更适合作为 AI 探索/调试工具，WDIO 更适合作为确定性、可重复、能进入 CI 的回归框架。
+- 两者可共存，但控制面必须互斥，避免生命周期互相干扰和权限泄漏。
+- 共享测试 specs 避免 Linux/Windows 双套维护，只有平台特有测试放在 `tests/e2e/windows/`。
