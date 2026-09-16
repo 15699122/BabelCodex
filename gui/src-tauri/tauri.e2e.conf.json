@@ -20,7 +20,7 @@
                   "args": [
                     "--config",
                     {
-                      "validator": "\\.\\./config/e2e\\.toml"
+                      "validator": "\\.\\./config/e2e\\.yaml"
                     }
                   ]
                 }

@@ -9,7 +9,7 @@ filesystem or shell interface.
 Start it from the repository root with:
 
 ```bash
-uv run babelcodex --config config/example.toml mcp serve
+uv run babelcodex --config config/config.yaml mcp serve
 ```
 
 An MCP client should launch this command with stdin/stdout pipes and treat each
@@ -48,7 +48,7 @@ string or user-provided executable:
   "mcpServers": {
     "babelcodex": {
       "command": "uv",
-      "args": ["run", "babelcodex", "--config", "config/example.toml", "mcp", "serve"]
+      "args": ["run", "babelcodex", "--config", "config/config.yaml", "mcp", "serve"]
     }
   }
 }

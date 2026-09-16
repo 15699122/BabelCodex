@@ -103,6 +103,35 @@ export interface ServerInfo {
   capabilities: string[];
 }
 
+export interface RuntimeLayout {
+  portable_root: string;
+  paths: Record<string, string>;
+  output_exists: boolean;
+  output_configured: string;
+}
+
+export interface SettingsResult {
+  logging: { level: "error" | "warning" | "info" | "debug" | "silent"; max_files: number };
+  output_dir: string;
+  input_dir: string;
+  requires_restart: boolean;
+  saved_path?: string;
+}
+
+export interface StageInputResult {
+  source_path: string;
+  display_name: string;
+  size: number;
+}
+
+export interface OutputDirectoryResult {
+  configured_path: string;
+  exists: boolean;
+  created: boolean;
+  requires_confirmation: boolean;
+  fallback_path: string;
+}
+
 /**
  * Fail fast when the bundled sidecar was built from older sources.
  *

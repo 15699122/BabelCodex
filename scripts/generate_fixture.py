@@ -14,7 +14,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import fitz  # type: ignore[import-untyped]
+import pymupdf as fitz  # official package name; the fitz shim prints a deprecation notice
 
 WIDTH, HEIGHT = 595, 842  # A4 points
 MARGIN = 50

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -336,6 +337,89 @@ class TestWorkerEntry:
         assert text.index("multiprocessing.freeze_support()") < text.index(
             "from codex_babeldoc.application.sidecar import main"
         )
+
+
+class TestWorkerDiagnosticsLogging:
+    """Regression: worker stderr stays machine-readable (Windows WVQ follow-up)."""
+
+    def test_diagnostics_warnings_are_routed_to_file_not_stderr(
+        self, tmp_path: Path, capsys
+    ) -> None:
+        from codex_babeldoc.backends import babeldoc_worker
+
+        working_dir = tmp_path / "work"
+        babeldoc_worker._configure_worker_logging(working_dir)
+        try:
+            logging.getLogger("codex_babeldoc.test.diagnostics").warning(
+                "Validation failed (attempt 1/2): marker"
+            )
+            for handler in logging.getLogger().handlers:
+                handler.flush()
+        finally:
+            root = logging.getLogger()
+            for handler in list(root.handlers):
+                root.removeHandler(handler)
+                handler.close()
+            root.setLevel(logging.WARNING)
+
+        log_file = working_dir / babeldoc_worker.DIAGNOSTICS_LOG_FILENAME
+        content = log_file.read_text(encoding="utf-8")
+        assert "Validation failed (attempt 1/2): marker" in content
+        captured = capsys.readouterr()
+        assert "Validation failed" not in captured.err
+
+    def test_main_wires_diagnostics_log_from_request_working_dir(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        from codex_babeldoc.backends import babeldoc_worker
+        from codex_babeldoc.backends.worker_client import build_worker_request
+
+        working_dir = tmp_path / "work"
+        working_dir.mkdir()
+        request = build_worker_request(
+            {
+                "job_id": "job-log",
+                "source_path": str(tmp_path / "doc.pdf"),
+                "output_dir": str(tmp_path / "out"),
+                "working_dir": str(working_dir),
+                "lang_in": "en",
+                "lang_out": "zh",
+            },
+            {"name": "mock", "lang_in": "en", "lang_out": "zh"},
+        )
+        request_path = tmp_path / "request.json"
+        request_path.write_text(request.to_json(), encoding="utf-8")
+
+        seen: list[Path] = []
+        monkeypatch.setattr(
+            babeldoc_worker,
+            "_configure_worker_logging",
+            lambda working_dir_arg: seen.append(Path(working_dir_arg)),
+        )
+        monkeypatch.setattr(babeldoc_worker, "_run", lambda _request, _stdout: 0)
+
+        exit_code = babeldoc_worker.main([str(request_path)], protocol_stdout=None)
+        assert exit_code == 0
+        assert seen == [working_dir]
+
+    def test_diagnostics_configuration_is_idempotent(self, tmp_path: Path) -> None:
+        from codex_babeldoc.backends import babeldoc_worker
+
+        working_dir = tmp_path / "work"
+        babeldoc_worker._configure_worker_logging(working_dir)
+        babeldoc_worker._configure_worker_logging(working_dir)
+        try:
+            handlers = [
+                handler
+                for handler in logging.getLogger().handlers
+                if isinstance(handler, logging.FileHandler)
+            ]
+            assert len(handlers) == 1
+        finally:
+            root = logging.getLogger()
+            for handler in list(root.handlers):
+                root.removeHandler(handler)
+                handler.close()
 
 
 class TestRunWorker:

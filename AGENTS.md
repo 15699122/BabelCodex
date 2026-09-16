@@ -111,8 +111,8 @@ Phase 0A/0B, the domain/error model, placeholder validation, BabelDOC compatibil
 ```bash
 uv sync --extra runtime --extra dev
 uv run pytest
-uv run cbpdf --config config/example.toml doctor
-uv run cbpdf --config config/example.toml run
+uv run cbpdf --config config/config.yaml doctor
+uv run cbpdf --config config/config.yaml run
 # controlled packaged sidecar build (scripts/babelcodex-service.spec)
 uv run --extra runtime --with pyinstaller pyinstaller \
     --clean --noconfirm scripts/babelcodex-service.spec
@@ -126,6 +126,7 @@ uv run --extra runtime --with pyinstaller pyinstaller \
 - Never log auth tokens or full sensitive document text by default.
 - Prefer small compatibility adapters over widespread version checks.
 - Every bug fix gets a regression test when practical.
+- Default to incremental validation: pick the smallest sufficient test scope for the change, escalate only when evidence requires it, and record which checks were not run. Strategy in `docs/development/testing.md`; Windows minimization and revalidation rules in `docs/development/cross-platform-validation.md`.
 
 ## Documentation ownership
 

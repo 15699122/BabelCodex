@@ -15,7 +15,7 @@
           "args": [
             "--config",
             {
-              "validator": "\\.\\./config/example\\.toml"
+              "validator": "\\.\\./config/config\\.yaml"
             }
           ]
         }

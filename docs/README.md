@@ -20,7 +20,7 @@
 | 构建、审计、签名、打包与发布操作 | `docs/release.md` |
 | Windows 验证工作流（Linux→Windows 同步、状态模型） | `docs/development/cross-platform-validation.md` |
 | 逐文件职责、公共入口、对应测试和维护提示 | `docs/development/codebase-map.md` |
-| Linux 测试矩阵、markers、付费测试边界 | `docs/development/testing.md` |
+| Linux 测试矩阵、markers、付费测试边界、增量验证策略 | `docs/development/testing.md` |
 | 当前 Windows 验证状态、活跃队列、handoff | `docs/validation/windows.md` |
 | Windows 历史验证运行记录与产物哈希 | `docs/validation/history/` |
 | GUI 子项目开发与打包 | `gui/README.md` |
@@ -47,8 +47,8 @@
 | `release.md` | 发布责任人 | 发布门禁、构建、审计、签名、打包、发布后收尾 | 架构决策、开发计划 |
 | `research/reference-projects.md` | 开发者 | AiNiee、PDFMathTranslate v1、PDFMathTranslate-next、BabelDOC 的借鉴与不复制分析 | 当前系统架构（见 architecture.md） |
 | `development/codebase-map.md` | 开发者 | 逐文件职责、公共入口、调用关系、运行进程、对应测试、维护提示 | 架构级叙述（见 architecture.md） |
-| `development/testing.md` | 开发者 | Linux 测试矩阵、markers、付费测试边界、GUI/集成/打包检查步骤 | Windows 验证结果（见 validation/） |
-| `development/cross-platform-validation.md` | 开发者 | Linux→Windows 工作流、同步规则、状态模型、结果分类与处理 | 具体某次验证结果（见 validation/） |
+| `development/testing.md` | 开发者 | Linux 测试矩阵、markers、付费测试边界、增量验证策略（范围选择与升级规则）、GUI/集成/打包检查步骤 | Windows 验证结果（见 validation/） |
+| `development/cross-platform-validation.md` | 开发者 | Linux→Windows 工作流、同步规则、状态模型、结果分类与处理、Windows 验证最小化与复验规则 | 具体某次验证结果（见 validation/） |
 
 ## `docs/validation/` 文档
 
@@ -67,6 +67,7 @@
 - **做出架构决策**：在 `docs/decisions.md` 新增 ADR。
 - **完成一轮 Windows 验证**：结果摘要写入 `docs/validation/windows.md`，完整记录归档到 `docs/validation/history/`。
 - **版本矩阵变化**：更新 `docs/compatibility.md`。
+- **调整验证策略、测试层级或范围升级规则**：更新 `docs/development/testing.md`；Windows 侧最小化与复验规则同步到 `docs/development/cross-platform-validation.md`。
 - **影响用户的使用方式或隐私边界**：更新 `README.md` 和 `docs/privacy.md`。
 
 ## 防漂移检查

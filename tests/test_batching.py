@@ -9,6 +9,7 @@ import pytest
 
 from codex_babeldoc.core.errors import BabelCodexError
 from codex_babeldoc.translation.batching import (
+    BatchMetrics,
     BatchWorker,
     build_batch_payload,
     parse_batch_response,
@@ -51,6 +52,16 @@ def test_batch_collects_items_and_flushes():
     assert results["a"].translated_text == "translated-a"
     assert results["b"].translated_text == "translated-b"
     assert received == [["a", "b"]]
+    metrics = worker.metrics()
+    assert metrics == BatchMetrics(
+        submitted_items=2,
+        completed_items=2,
+        turns=1,
+        total_batch_items=2,
+        max_batch_size=2,
+    )
+    assert metrics.average_batch_size == 2.0
+    assert metrics.turn_reduction_ratio == 0.5
 
 
 def test_batch_max_items_triggers_immediate_flush():

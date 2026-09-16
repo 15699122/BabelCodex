@@ -4,7 +4,7 @@
 // This is the slowest native spec. Run it explicitly:
 //   npm run e2e:native:mock
 //
-// It relies on ../config/e2e.toml (translator = "mock") and the deterministic
+// It relies on ../config/e2e.yaml (translator = "mock") and the deterministic
 // workspace produced by npm run e2e:prepare.
 
 import path from "node:path";

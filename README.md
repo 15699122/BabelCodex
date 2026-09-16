@@ -68,30 +68,32 @@ babeldoc --warmup
 
 ## 配置
 
-配置文件使用 TOML 格式，默认路径为 `config/example.toml`。
+当前发行目标是 Windows portable directory。配置文件仅支持 YAML，默认路径为 `config/config.yaml`。
 
-常用配置项（详见 `config/example.toml`）：
+常用配置项（详见 `config/config.yaml`）：
 
-```toml
-[project]
-input_dir = "incoming"       # 源 PDF 目录
-output_dir = "translated"    # 输出 PDF 目录
-state_dir = "state"          # 任务状态目录
-
-[translation]
-translator = "codex-sdk"     # 或 "mock"（不做真实翻译的管道测试）
-lang_in = "en"
-lang_out = "zh"
-max_retries = 2
-
-[babeldoc]
-worker_mode = "subprocess"   # 或 "inprocess"
+```yaml
+schema_version: 1
+project:
+  input_dir: cache/incoming
+  output_dir: output
+  state_dir: cache/state
+  log_dir: logs
+logging:
+  level: info                 # error/warning/info/debug/silent
+  max_files: 5
+translation:
+  translator: codex-sdk       # mock 仅用于测试
+  lang_in: en
+  lang_out: zh
 ```
+
+所有可写目录都相对于 GUI `.exe` 所在的 portable 根目录：`config/`、`cache/`、`logs/`、`output/`；`resource/` 只读。Codex 登录继续使用官方用户目录，不复制到 portable 目录。
 
 ## 检查环境
 
 ```bash
-uv run cbpdf --config config/example.toml doctor
+uv run cbpdf --config config/config.yaml doctor
 ```
 
 `doctor` 返回非零退出码时表示关键运行检查失败或 Codex 未认证。
@@ -101,7 +103,7 @@ uv run cbpdf --config config/example.toml doctor
 从 `input/` 中的一个 PDF 开始：
 
 ```bash
-uv run cbpdf --config config/example.toml run
+uv run cbpdf --config config/config.yaml run
 ```
 
 GUI 与 MCP 模式使用相同的配置文件与应用程序服务。更多启动/开发方式见项目文档。

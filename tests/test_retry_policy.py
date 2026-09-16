@@ -136,6 +136,82 @@ def test_operator_policy_caps_translation_attempts(tmp_path, monkeypatch):
     assert job.attempts == 2
 
 
+def test_max_retries_zero_still_performs_one_initial_attempt(tmp_path, monkeypatch):
+    """``max_retries=0`` means one initial attempt and no automatic retry.
+
+    Regression for the Windows observation that ``cbpdf one --config
+    config/e2e.yaml`` previously performed zero attempts because the retry
+    loop range was empty.
+    """
+    monkeypatch.setattr("codex_babeldoc.core.orchestrator.time.sleep", lambda _seconds: None)
+    service = _failing_service(
+        tmp_path,
+        category=ErrorCategory.TRANSLATION,
+        code=ErrorCode.CODEX_TIMEOUT,
+        retryable=True,
+    )
+    service.config.translation.max_retries = 0
+
+    calls: list[int] = []
+
+    class _CountingBackend:
+        def translate(self, *_args, **_kwargs):
+            calls.append(1)
+            raise BabelCodexError(
+                category=ErrorCategory.TRANSLATION,
+                code=ErrorCode.CODEX_TIMEOUT,
+                safe_message="injected failure",
+                retryable=True,
+            )
+
+    service.orchestrator.backend = _CountingBackend()
+    source = _source(tmp_path)
+    with pytest.raises(RuntimeError) as excinfo:
+        service.start_translation(StartTranslationCommand(source_path=source))
+    assert "1 attempt(s)" in str(excinfo.value)
+    assert len(calls) == 1
+    job = _load_failed_job(service, source)
+    assert job.status is JobStatus.FAILED
+    assert job.attempts == 1
+
+
+def test_max_retries_zero_completes_on_first_attempt(tmp_path):
+    """A successful translation with ``max_retries=0`` still completes."""
+    service = _failing_service(
+        tmp_path, category=ErrorCategory.AUTH, code=ErrorCode.CODEX_NOT_LOGGED_IN, retryable=False
+    )
+    service.config.translation.max_retries = 0
+
+    class _OkBackend:
+        def translate(self, source, output_dir, **_kwargs):
+            from codex_babeldoc.backends.base import PdfTranslateResult
+            from codex_babeldoc.core.artifacts import Artifact, ArtifactType
+
+            output_dir.mkdir(parents=True, exist_ok=True)
+            mono = output_dir / f"{source.stem}.mono.pdf"
+            mono.write_bytes(b"%PDF-ok")
+            return PdfTranslateResult(
+                job_id="mock-job",
+                backend_name="python-internal",
+                backend_version="0.6.4",
+                artifacts=[
+                    Artifact(
+                        artifact_type=ArtifactType.MONO_PDF,
+                        path=str(mono),
+                        size=mono.stat().st_size,
+                    )
+                ],
+            )
+
+    service.orchestrator.backend = _OkBackend()
+    source = _source(tmp_path)
+    result = service.start_translation(StartTranslationCommand(source_path=source))
+    assert result.status is JobStatus.COMPLETED
+    job = _load_failed_job(service, source)
+    assert job.status is JobStatus.COMPLETED
+    assert job.attempts == 1
+
+
 def test_pipeline_meta_is_recorded_and_round_trips(tmp_path, monkeypatch):
     monkeypatch.setattr("codex_babeldoc.core.orchestrator.time.sleep", lambda _seconds: None)
     service = _failing_service(

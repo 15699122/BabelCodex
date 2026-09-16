@@ -485,6 +485,25 @@ state、cache、glossary、context、thread state、日志和 worker 目录在 P
 系统使用私有目录/文件权限。缓存默认不保留源文本；缓存仍会保存译文以支持
 命中，因此敏感文档可通过 `cache_enabled = false` 或 TTL 完全规避长期缓存。
 
+### ADR-032：Windows portable directory 与 YAML-only 配置
+
+**状态：已接受（2026-09-16）**
+
+当前发布目标仅为 Windows portable directory，不提供安装器作为本阶段的发布入口。
+GUI `.exe` 所在目录是 portable root，配置固定为 `config/config.yaml`；可写运行数据
+固定进入 `cache/`、`logs/`、`output/`，只读随包资源进入 `resource/`。配置格式完全使用
+YAML，TOML 不再是受支持的运行时输入。
+
+设置通过 sidecar 读取和原子保存，保存后重启 sidecar；日志支持 `error`、`warning`、
+`info`、`debug`、`silent`，默认 `info`，最多保留 5 个日志文件，诊断读取必须过滤常见
+凭据样式。GUI 选择的 PDF 通过受限 `stage_input` 复制到 `cache/incoming/`，不能通过
+放宽 sidecar allowlist 直接访问任意路径。首次创建输出目录需要用户确认；拒绝时返回
+Windows Downloads known-folder 回退候选路径。
+
+Codex 官方登录状态继续使用官方用户目录，BabelCodex 不修改 `HOME`/`USERPROFILE`、
+不复制认证文件，也不把认证转换为 API 兼容接口。Linux 仅作为开发和可执行验证环境，
+Windows 原生 portable、known-folder、WebView2、权限和打包行为必须在 Windows 单独验证。
+
 ### ADR-021：MCP 与 GUI 都采用异步 Job 交互
 
 **状态：已接受**

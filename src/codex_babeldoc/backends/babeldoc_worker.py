@@ -13,10 +13,22 @@ Protocol (see :mod:`codex_babeldoc.backends.worker_protocol`):
 
 Plain ``print`` output from third-party libraries is redirected to stderr
 before any heavy import happens, so stdout carries protocol data only.
+
+stderr channel classification:
+
+- BabelCodex ``logging`` diagnostics (for example gateway validation-retry
+  warnings) are routed to ``worker-diagnostics.log`` inside the job working
+  directory so the stderr channel stays machine-readable.
+- Third-party diagnostics printed directly to stderr by BabelDOC
+  (per-paragraph fallback tracebacks, PyMuPDF deprecation notices) are
+  non-protocol output; :mod:`codex_babeldoc.backends.worker_protocol`
+  parsing ignores them, and they are preserved as failure evidence by the
+  worker client.
 """
 
 from __future__ import annotations
 
+import logging
 import sys
 import time
 from pathlib import Path
@@ -33,6 +45,37 @@ from codex_babeldoc.backends.worker_protocol import (
 )
 
 _ERROR_EXIT_BY_CODE = {"WORKER_REQUEST_INVALID": EXIT_REQUEST_INVALID}
+
+#: Name of the diagnostics log file created inside the job working directory.
+DIAGNOSTICS_LOG_FILENAME = "worker-diagnostics.log"
+
+
+def _configure_worker_logging(working_dir: Path) -> None:
+    """Route worker diagnostics to a file so stderr stays protocol-clean.
+
+    The worker protocol carries JSONL progress on stderr. Without a handler,
+    our library ``logging`` warnings (gateway validation-retry diagnostics and
+    similar) reach stderr through Python's ``lastResort`` handler and pollute
+    the protocol channel. This helper sends WARNING+ records to
+    :data:`DIAGNOSTICS_LOG_FILENAME` inside the job working directory instead.
+    Best-effort: if the file cannot be opened, the previous behavior is kept.
+    """
+    try:
+        working_dir.mkdir(parents=True, exist_ok=True)
+        target = working_dir / DIAGNOSTICS_LOG_FILENAME
+    except OSError:
+        return
+    root = logging.getLogger()
+    for existing in root.handlers:
+        if isinstance(existing, logging.FileHandler) and existing.baseFilename == str(target):
+            return
+    try:
+        handler = logging.FileHandler(target, encoding="utf-8")
+    except OSError:
+        return
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    root.addHandler(handler)
+    root.setLevel(logging.WARNING)
 
 
 def _redirect_stdout_to_stderr() -> object:
@@ -168,6 +211,8 @@ def main(
             ),
             protocol_stdout,
         )
+
+    _configure_worker_logging(Path(str(worker_request.request.get("working_dir", "."))))
 
     return _run(worker_request, protocol_stdout)
 

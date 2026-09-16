@@ -1,6 +1,6 @@
 # BabelCodex Release Operations
 
-本文档定义发布前的自动检查、产物构建、QA 报告与最终安全清单。所有 Linux 可执行步骤必须在发布提交的 worktree 上通过；Windows 专项目从 `docs/validation/windows.md` 累积队列（`WVQ-005` 发布安全审计、`WVQ-002` DPI/NVDA、`WVQ-007` cleanup 行为等）沿用 deferred 规则执行。
+本文档定义发布前的自动检查、产物构建、QA 报告与最终安全清单。当前发布目标仅为 Windows portable directory；Linux 仅用于开发和可执行验证，不生成当前发布包。
 
 ## 1. 发布前自动门禁
 
@@ -19,7 +19,7 @@ git diff --check
 ## 2. 运行时健康检查
 
 ```bash
-uv run cbpdf --config config/example.toml doctor
+uv run cbpdf --config config/config.yaml doctor
 ```
 
 确认 `python_supported`、`babeldoc_python`（0.6.x）、`openai_codex`、`codex_cli`/`codex_bundled_runtime` 均为有效值；`codex_authenticated` 在正式发布验收时为 `true`（需要真实 Codex/ChatGPT 登录）。
@@ -46,20 +46,22 @@ uv run --extra runtime --with pyinstaller pyinstaller \
     --clean --noconfirm scripts/babelcodex-service.spec
 ```
 
-### GUI（Tauri 2）
+### GUI（Tauri 2，Windows portable）
 
 ```bash
 cd gui
 npm ci
 npm run build        # React/TypeScript 产物
-npm run tauri build  # 生成平台 bundle（Windows portable / NSIS、MSI；Linux AppImage 可选）
+npm run build
+powershell -ExecutionPolicy Bypass -File ..\scripts\build_windows_portable.ps1
+powershell -ExecutionPolicy Bypass -File ..\scripts\audit_windows_portable.ps1 -Bundle ..\build\windows-portable
 ```
 
 构建产物、SBOM 与 checksums 必须匹配 `docs/validation/windows.md` 中 `WVQ-005` 的发布安全验收条目。
 
 ## 5. 发布位置与发布安全
 
-- 候选产物：portable bundle、安装器、sidecar 可执行文件、QA 报告样例、SBOM、SHA-256 checksums。
+- 候选产物：Windows portable directory、sidecar 可执行文件、QA 报告样例、SBOM、SHA-256 checksums。
 - 发布前检查：签名/证书、SmartScreen/Defender 表现、SBOM 完整性、checksum 一致性、不含用户 PDF/状态/日志/凭据（仓库规则 #15）。
 - 参考：`README.md`（接口与定位）、`docs/validation/windows.md`（Windows 发布验证）、`docs/development/cross-platform-validation.md`（跨平台流程）。
 

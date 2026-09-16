@@ -1,4 +1,4 @@
-import type { JobEvent, JobState, PollEventsResult, QaResult, SidecarTransport } from "./protocol";
+import type { JobEvent, JobState, OutputDirectoryResult, PollEventsResult, QaResult, RuntimeLayout, SettingsResult, SidecarTransport, StageInputResult } from "./protocol";
 import { createSidecarTransport } from "./sidecar";
 
 export type ConnectionState =
@@ -20,7 +20,7 @@ type TransportFactory = () => SidecarTransport;
 // The sidecar config path is chosen at build time: E2E builds always use the
 // deterministic mock-translator config so automated tests can never consume a
 // real Codex session. Normal builds keep the operator config.
-const defaultConfigPath = import.meta.env.VITE_E2E === "1" ? "../config/e2e.toml" : "../config/example.toml";
+const defaultConfigPath = import.meta.env.VITE_E2E === "1" ? "../config/e2e.yaml" : "../config/config.yaml";
 
 const TERMINAL_STATUSES = new Set<JobState["status"]>(["completed", "failed", "cancelled"]);
 const RECONNECT_BASE_DELAY_MS = 1000;
@@ -115,6 +115,7 @@ export class JobStore {
   async startTranslation(sourcePath: string): Promise<string> {
     const result = await this.requestOnce<{ job_id: string }>("start_translation", { source_path: sourcePath });
     await this.refreshJobs();
+    await this.getJob(result.job_id);
     return result.job_id;
   }
 
@@ -177,6 +178,30 @@ export class JobStore {
 
   async saveContext(documentId: string, text: string): Promise<ContextResult> {
     return this.request<ContextResult>("save_context", { document_id: documentId, text });
+  }
+
+  async getRuntimeLayout(): Promise<RuntimeLayout> {
+    return this.request<RuntimeLayout>("get_runtime_layout");
+  }
+
+  async prepareOutputDirectory(confirmed: boolean): Promise<OutputDirectoryResult> {
+    return this.request<OutputDirectoryResult>("prepare_output_directory", { confirmed });
+  }
+
+  async getSettings(): Promise<SettingsResult> {
+    return this.request<SettingsResult>("get_settings");
+  }
+
+  async saveSettings(settings: Partial<SettingsResult> & { logging?: Partial<SettingsResult["logging"]> }): Promise<SettingsResult> {
+    return this.request<SettingsResult>("save_settings", { settings });
+  }
+
+  async stageInput(sourcePath: string): Promise<StageInputResult> {
+    return this.request<StageInputResult>("stage_input", { source_path: sourcePath });
+  }
+
+  async getLatestLog(): Promise<{ path: string | null; text: string }> {
+    return this.request<{ path: string | null; text: string }>("get_latest_log");
   }
 
   watchJob(jobId: string, intervalMs = 1000): () => void {

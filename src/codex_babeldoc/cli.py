@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import logging
 import os
 import shutil
 import subprocess
@@ -12,20 +11,12 @@ from pathlib import Path
 
 from codex_babeldoc.application.service import BabelCodexService
 from codex_babeldoc.core.config import AppConfig, load_config
+from codex_babeldoc.core.logging_config import configure_logging, release_file_handlers
 from codex_babeldoc.translation.glossary import GlossaryStore
 
 
-def _configure_logging(log_dir: Path, verbose: bool) -> None:
-    log_dir.mkdir(parents=True, exist_ok=True)
-    handlers = [
-        logging.StreamHandler(),
-        logging.FileHandler(log_dir / "cbpdf.log", encoding="utf-8"),
-    ]
-    logging.basicConfig(
-        level=logging.DEBUG if verbose else logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-        handlers=handlers,
-    )
+def _configure_logging(log_dir: Path, verbose: bool, settings=None) -> None:
+    configure_logging(log_dir, settings, verbose=verbose)
 
 
 def _release_log_file_handlers() -> None:
@@ -40,11 +31,7 @@ def _release_log_file_handlers() -> None:
     This is a best-effort mitigation for handle-lifecycle races; it does not
     change cleanup semantics elsewhere.
     """
-    root = logging.getLogger()
-    for handler in list(root.handlers):
-        if isinstance(handler, logging.FileHandler):
-            root.removeHandler(handler)
-            handler.close()
+    release_file_handlers()
 
 
 def _bundled_codex_runtime() -> str | None:
@@ -124,7 +111,7 @@ def doctor(cfg) -> int:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="babelcodex")
-    parser.add_argument("--config", default="config/example.toml")
+    parser.add_argument("--config", default="config/config.yaml")
     parser.add_argument("--verbose", action="store_true")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("doctor")
@@ -167,7 +154,7 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
 
     cfg = load_config(args.config)
-    _configure_logging(cfg.project.log_dir, args.verbose)
+    _configure_logging(cfg.project.log_dir, args.verbose, cfg.logging)
     try:
         return _dispatch_command(args, cfg)
     finally:

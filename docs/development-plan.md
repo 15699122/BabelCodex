@@ -1,11 +1,129 @@
 # BabelCodex Development Plan
 
+## Windows portable/YAML implementation (2026-09-16)
+
+- 已完成 Windows portable directory 的 Linux 可验证实现：YAML-only 配置、`.exe` 根目录相对的 config/cache/logs/output/resource 路径模型、原子 YAML 设置保存、五级日志与最多 5 个日志文件、敏感字段脱敏、受限 `stage_input`、输出目录确认 contract、Settings 页面真实读取/保存/重连，以及 Windows portable staging/audit PowerShell 脚本。
+- sidecar v1 新增 `get_runtime_layout`、`prepare_output_directory`、`get_settings`、`save_settings`、`stage_input`、`get_latest_log`；GUI Mock transport 与 TypeScript protocol 已同步。
+- Linux 验证：Python `257 passed, 5 deselected`；mock integration `5 passed`；GUI `28 passed`；GUI production build、Ruff/format、compileall、docs inventory、`uv lock --check` 均通过。当前 Windows 实证矩阵、命令和证据统一记录在 `docs/validation/windows.md` 的 “Windows validation of current portable/YAML working tree: 2026-09-16”。
+- 当前 Windows portable/YAML 轮次的 Python/GUI/Rust/PowerShell、fresh sidecar、移动根路径 smoke 和 embedded native WDIO 已取得实证；sidecar output confirmation 发现 `FAIL`，人工桌面、安全/安装器和 live Codex/PDF 仍为 `BLOCKED` 或 `NOT RUN`。总体继续保持 `WINDOWS_VERIFICATION_PENDING`；历史 TOML/MSI/NSIS 记录不改写。
+
+## Linux follow-up fixes (2026-09-16)
+
+- 已修复 Windows 记录的 `max_retries=0` 零次尝试缺陷：orchestrator 重试循环与
+  `resolve_retry_limits` 一致地把总尝试数下限钳制为 1，`max_retries=0` 语义为一次初始尝试、
+  无自动重试；错误信息报告实际尝试次数。回归见 `tests/test_retry_policy.py`。
+- 已修复 frozen worker stderr 清洁度 `FAIL`：worker 进程内的 `logging` 诊断（gateway 验证重试
+  等）路由到 job working 目录的 `worker-diagnostics.log`；stderr 仅保留协议 progress JSONL 与
+  上游第三方诊断（BabelDOC 逐段 fallback、`fitz` 弃用警告，均被协议解析忽略并按分类记录）。
+  回归见 `tests/test_worker.py::TestWorkerDiagnosticsLogging`。
+- Linux 回归：Python `257 passed, 5 deselected`；mock integration `5 passed`；GUI Vitest
+  `28 passed` + production build；Ruff/format/compileall/docs inventory 全部通过。
+- 两项修复都需要 Windows 原生复验（重建 sidecar 后重跑 frozen worker；重跑
+  `cbpdf one --config config/e2e.toml` 与 `cbpdf qa` 路径），在此之前保持
+  `WINDOWS_VERIFICATION_PENDING`，详见 `docs/validation/windows.md` 的
+  "Linux follow-up completion (2026-09-16)" 小节。
+- 已完成当前 Windows `output confirmation` FAIL 的 Linux follow-up：
+  `Orchestrator` 初始化只创建 private/runtime 目录，不再预先创建配置的 output 目录；
+  sidecar 的 `confirmed=false` 可以保持 output 不存在，`confirmed=true` 才创建目录。
+  回归见 `tests/test_sidecar.py::test_real_sidecar_startup_does_not_create_output_before_confirmation`。
+  当前 Linux 全量 `257 passed, 5 deselected`，该修复仍需 Windows fresh sidecar 重建和原生 JSONL 重验，
+  在此之前保持 `WINDOWS_VERIFICATION_PENDING`。
+- **（已被下方“Linux reconciliation after Windows revalidation (2026-09-16)”取代；但该取代段落本身也已更新，不再断言当前 portable/YAML 树的 Windows 已闭合全部 follow-up —— 当前 standard reference 是 `docs/validation/windows.md`）**
+  上述 Windows 复验要求曾在 2026-09-16 Windows 轮次完成（该结论针对的是 portable/YAML 实现之前的源树）：
+  frozen worker 诊断路由与 `max_retries=0` 持久化 CLI/QA 均取得 Windows `PASS`，两项 follow-up
+  在当时闭合；历史 `FAIL` 行仍保留在验证文档中。
+ 但当前 portable/YAML 源树的 Windows 复验中，output confirmation 契约为 `FAIL`
+ （sidecar 启动已创建输出目录，`confirmed=false` 不可观测），总体状态仍为
+  `WINDOWS_VERIFICATION_PENDING`，详见 `docs/validation/windows.md`
+  的“Windows validation of current portable/YAML working tree: 2026-09-16”。
+
+## Linux reconciliation after Windows revalidation (2026-09-16)
+
+- 本节是对“Linux follow-up 完成后进行的 Windows 复验”的**Linux 侧重新评估说明**，
+  准确的命令、证据、失败分类和手工修复步骤统一以
+  `docs/validation/windows.md` 的“Windows validation of current portable/YAML working tree:
+  2026-09-16”及其 Failure analysis and Linux follow-up / Current disposition 为准。
+- 当前 portable/YAML 源树的 Windows 复验结果混合存在，产品整体仍处于
+  `WINDOWS_VERIFICATION_PENDING`。已通过项目的证据（锁定 Python 环境、Python suite、
+  Ruff/format/compileall/docs inventory、GUI build/test、PowerShell staging/audit、
+  fresh sidecar build/protocol/allowlist、settings/staging/log retrieval、
+  Tauri Rust/features/Debug/Release build、moved-root audit/layout/process smoke、
+  embedded native WDIO 6 specs/20 tests、cleanup）参见 windows.md 对应行。
+- 产品侧 FAIL 是 output confirmation contract：sidecar 启动时已经创建 output 目录，
+  因此无法观察 `prepare_output_directory(confirmed=false)` 的正确行为。Linux 已完成代码修复，
+  但该项在 Windows 复验成功前仍保持 `WINDOWS_VERIFICATION_PENDING`。
+- BLOCKED/NOT RUN 项目（原生手动 GUI/视觉、安装器/MSI/NSIS、
+  クリーンユーザー/セキュリティ/署名/SBOM、ライブ Codex/実PDF/長文書）も本 portable/YAML
+  本 portable/YAML 轮次尚未解决，交由后续专用 Windows 工作完成。
+- 本节中保留的“Windows 已用当前源（含两项 Linux 修复）完成原生复验……两项 follow-up 由 Windows
+  证据关闭”是 portable/YAML 实现之前源树的历史记录；对当前 portable/YAML 源树**不再作为当前结论**。
+  历史 FAIL 行不删除，当前标准来源为 `docs/validation/windows.md`。
+
+## Windows revalidation after Linux follow-up fixes (2026-09-16)
+
+- 当前 Linux working tree（`dev` / `268102b1`）已按规定单向同步到 E:
+  验证副本。Windows Python/GUI/Rust 回归门禁、fresh PyInstaller sidecar、
+  frozen worker、`max_retries=0` 持久化 CLI、`cbpdf qa` 正向/篡改负向路径、
+  sidecar protocol/allowlist、fresh/stale bundle audit、Release executable、
+  NSIS 和 no-bridge 进程 smoke 均取得 PASS；worker 诊断已进入
+  `worker-diagnostics.log`，此前两项 Linux follow-up 已有 Windows 证据闭环。
+- Windows native WDIO 标准运行与 debug retry 均在 spec 加载前触发 Node
+  `uv_os_get_passwd ... ENOMEM`，因此保留 `BLOCKED_ENV`。WiX `light.exe`
+  在 MSI 阶段触发 LGHT0217（ICE01–ICE07 无法访问 Windows Installer
+  Service），MSI extraction/parity 依赖项为 `BLOCKED`；没有用 ICE suppression
+  绕过门禁。原生 GUI/manual、clean-user、DPI/NVDA、发布安全和授权 live
+  Codex/PDF 仍未完成。
+- 详细命令、证据、失败分类、手动修复指南和 Linux 后续清单只记录在
+  `docs/validation/windows.md` 的
+  “Windows platform validation after Linux follow-up fixes: 2026-09-16”。
+  总体状态继续为 `WINDOWS_VERIFICATION_PENDING`；本轮没有为通过验证修改
+- 业务代码、依赖声明或 Tauri 配置；该描述属于该次 Windows 原始记录，不能覆盖本次 Linux follow-up。
+
 ## Current handoff baseline (2026-09-15)
 
-- 当前最新 Windows 验证源为 `dev` / commit `8f046ef12ab9a9e8d82c260673a303892202ec21`；该提交已推送并与 `origin/dev` 同步。最新 Windows 记录追加到 `docs/validation/windows.md`，当前工作树中的验证文档变更尚未作为新的源代码基线提交。
+## Blocker recovery follow-up (2026-09-15)
+
+- 针对当前 `BLOCKED_ENV`/`BLOCKED_AUTOMATION` 执行了一次低成本恢复：Linux GUI `npm ci --foreground-scripts=false` 已成功，残缺的 Chrome/Chromedriver 缓存已隔离，Chromedriver 已恢复；Chrome for Testing 长时下载在约 58.7% 处因 TLS `unexpected eof while reading` 中止，续传未形成完整包，Browser Mode 仍为 `BLOCKED_ENV`，未进入 spec。
+- Linux `cbpdf doctor` 的依赖形态已正常，bundled runtime 的只读 `codex login status` 明确返回 `Not logged in`；鉴权需用户交互，不自动代办，相关 live Codex/PDF 仍保持阻塞/未运行。
+- Windows 原生 GUI 经过一次 Computer Use inventory 重试仍为 `apps=[]`，所以按测试规范归类为 `BLOCKED_AUTOMATION`；picker、视觉 notice、取消/重连、DPI/NVDA、clean-user 等必须由可控桌面或人工按指南完成。没有为通过验证而修改业务代码、依赖声明、锁文件或 Tauri 配置。
+- 需要 Linux 后续处理的产品/测试候选问题仍是现有记录中的 `max_retries=0` 零次尝试和 frozen-worker stderr 诊断噪声；它们不是本轮环境恢复的结果，按原验证记录单独修复/复验。
+
+- 当前最新 Windows 验证源为 `dev` / commit `268102b1a0c48ad359e54ccf1b6798e82448b4b8`；该提交已推送并与 `origin/dev` 同步。相对于前一验证基线 `8f046ef`，本提交只包含验证/计划文档变更，不包含业务代码、依赖或 Tauri 配置变更。
 - Tauri WDIO 基础设施、确定性 mock contract、E2E-only allowlist、flavor capability 内联化和 7 项 capability regression Guard 已在 Linux 完成验证；GUI Vitest、Vite build、Ruff、docs inventory、Cargo default/mcp-dev/e2e checks 均通过。
-- `WVQ-018` 的 inline capability 配置和上一轮 `WVQ-017` 自动化 native scope 曾有 Windows PASS，但对当前 `8f046ef` 的回归运行在 WDIO 加载阶段因 `uv_os_get_passwd ... ENOMEM` 失败；因此当前提交不得沿用上一轮 native PASS，必须在修复 Windows 运行环境后重新执行。
-- Windows 结果必须写入 `docs/validation/windows.md`；不得把 Linux native 15/15 或直接 sidecar JSONL probe 记录为 Windows GUI 原生 PASS。当前源状态、失败恢复配置和命令见该文档的 “Next Windows handoff after current-head validation (baseline `8f046ef`)”。
+- `WVQ-018` 的 inline capability 配置、Rust flavor boundaries、Tauri debug build 和直接 sidecar protocol/allowlist probe 在本轮仍通过；本轮标准 WDIO 首次因 EdgeDriver 152/Edge 154 环境不匹配在 spec 前失败，但清理项目进程后 `e2e:native:debug` 完成 6 specs/20 tests，因此自动化 `WVQ-017` native scope 更新为 `WINDOWS_PASS`，GUI-only 手工验收仍 pending。
+- 当前源的 fresh frozen worker 功能输出、正式 PDF QA、NSIS/MSI 生成、MSI 提取/parity 和 bundle freshness audit 均取得新证据；worker stderr 清洁度仍 FAIL，`config/e2e.toml` 的 `max_retries=0` 暴露 `cbpdf one` 零次尝试问题。Windows 结果必须写入 `docs/validation/windows.md`，不得把窄化的自动化 PASS 扩大为 GUI、发布安全或 live acceptance。
+- 本轮 Linux 工作树在同步前为 docs-only dirty state；没有修改业务代码、依赖或 Tauri 配置。详细矩阵、失败分类和下一轮 recovery 见 `docs/validation/windows.md` 最新的 “Windows platform validation of the latest Linux working tree” 小节。
+
+## Latest Windows validation after current-source recovery (2026-09-15)
+
+- 本轮重新检查了 WSL `dev` / `268102b1a0c48ad359e54ccf1b6798e82448b4b8`，确认同步前 5 个未提交修改均为文档；只从 WSL 单向同步到 E:，Robocopy 162 copied / 103 skipped / 0 mismatch / 0 failed，抽样 21 个源文件 hash 全部一致。
+- Windows Python/uv、Ruff、compileall、docs inventory、Python full suite `234 passed, 5 deselected`、mock integration `5 passed`、GUI 617-package install/production audit/Vitest 28/build、Cargo flavor checks、E2E/MCP builds全部通过。标准 embedded WDIO 首次受 EdgeDriver 152 vs Edge 154 阻塞，但 debug retry 通过 6 spec/20 tests；该首次环境 FAIL 仍保留在验证记录中。
+- 从当前源 fresh rebuild 的 PyInstaller sidecar、fresh frozen worker、sidecar JSONL allowlist、formal PDF QA、fresh/stale bundle audit、Release/NSIS/MSI、MSI admin extraction/payload parity 和 Release no-bridge process smoke 均获得当前证据。worker stderr 诊断噪声仍 FAIL；`cbpdf one --config config/e2e.toml` 因 `max_retries=0` 进入零次尝试，`cbpdf qa <job-id>` 因无 job 记为 NOT RUN。
+- Computer Use inventory 在一次重试后仍无可控原生 app（`apps=[]`），所以 picker、DPI/NVDA、notice/cancel/reconnect、clean-user 和视觉验收保持 BLOCKED/NOT RUN；没有用 CLI 或 frozen-sidecar 窄化证据替代 GUI 结论。整体仍为 `WINDOWS_VERIFICATION_PENDING`。
+- Linux 后续只需处理文档中列出的 retry-loop contract、worker stderr 清洁度、Windows driver provisioning 诊断，以及授权后的 native desktop/clean-user/release-security/live queue；本轮不新增 production code change。
+
+## Linux dependency-shape recovery (2026-09-15)
+
+- 已按 `pyproject.toml` 与 `uv.lock` 执行 `uv sync --locked --extra runtime --extra dev`，恢复本地 runtime/dev 依赖形态：`BabelDOC==0.6.4`、`openai-codex==0.147.0`、`openai-codex-cli-bin==0.147.0` 及其锁定依赖均已安装并可导入。
+- `babeldoc_v064.detect_version()` 现在返回 `0.6.4`，bundled Codex runtime 可被正确探测；原先因 `BabelDOC`/`openai_codex` 缺失导致的 doctor、pipeline metadata 和相关测试失败已消除。
+- Linux 验证已恢复为 Python `234 passed, 5 deselected`；针对性 CLI/retry/BabelDOC 测试 `34 passed`。`cbpdf doctor` 当前仍因本机未登录 Codex 返回非零，输出明确为 `codex_authenticated=false` / `Not logged in`，该状态不能通过测试或代码修改掩盖。
+- 这次处理没有新增业务代码、依赖声明或锁文件变更；修复是恢复项目声明的本地环境。Windows 端仍需独立使用其自己的 Python/uv 环境验证，Linux 依赖恢复不能提升任何 Windows 状态。
+
+## Linux detailed validation run (2026-09-15)
+
+- 按新的验证 Agent 分层规则完成 Level 1：Python `234 passed, 5 deselected`，integration mock `5 passed`，Ruff/format/compileall/docs inventory、GUI Vitest `28 passed`、GUI build、Cargo default/mcp-dev/e2e 和 fmt 全部通过；`doctor` 仅因本机未登录 Codex 分类为 `BLOCKED_ENV`，不是依赖缺失或产品失败。
+- Linux Native WDIO 使用真实 Tauri WebView + embedded WebDriver，4 个 spec、15 个测试全部通过：mock lifecycle 4、path rejection 4、sidecar handshake 3、native smoke 4。进程和 4444/4445/5173/9223 端口清理通过。
+- Browser Mode 未进入 spec：本机没有系统 Chrome/Chromium 或 chromedriver，WDIO managed Chrome 下载在 99.57% 停滞；按规则分类为 `BLOCKED_ENV`，清理了仅属于本项目的旧 WDIO/Vite 会话，未触碰其他工作区进程。安装稳定浏览器/driver/cache 后只需局部重跑 Browser Mode。
+- Windows-only 路径、WebView2、安装器、DPI/NVDA、clean-user、MCP localhost、发布安全和 live Codex/PDF 在 Linux 中统一记为 `SKIPPED_PLATFORM`，不得转化为 Windows PASS；完整 Windows handoff 仍以 `docs/validation/windows.md` 为准。
+- 本轮 Linux 结构化汇总为 `total=20`：`pass=16`、`blocked_env=2`、`skipped_platform=1`，另有 1 个 Native cleanup/预检合并项已包含在 PASS 计数中；`regression_status=PASS_WITH_ISSUES`。Browser Mode 和 Codex authentication 是环境问题，不是产品缺陷。
+
+## Latest Windows validation reconciliation (2026-09-15, current HEAD `268102b`)
+
+- 本轮 Windows 针对 `268102b` 执行；相对 `8f046ef` 只有文档变化，因此没有新的 Linux 业务代码修复项。Windows GUI unit/build、capability separation、Cargo default/mcp-dev/e2e、Tauri E2E/MCP Debug build、直接 sidecar protocol/allowlist、release executable/NSIS narrow smoke、MCP localhost narrow smoke 和 process cleanup 通过。
+- `npm ci` 在 Windows 因 `EBUSY`/`ENOTEMPTY` 文件锁失败；验证目录内的单包恢复只用于独立 GUI 检查，不构成 clean dependency-install PASS。Python/uv 因不可用解释器、cache/权限问题为 `BLOCKED`，production npm audit endpoint 也为 `BLOCKED`。
+- native WDIO 及 debug retry 在 spec 加载前均因 `uv_os_get_passwd ... ENOMEM` 失败；frozen worker 在新 E: TEMP/work/output 配置下仍报 `unable to open database file`；当前 MSI 生成在 WiX `light.exe` 失败。三项均不得由旧轮次结果覆盖。
+- 原生 GUI picker/path/DPI/accessibility、clean-user、MSI admin extraction/parity、external provider 和授权 live Codex/PDF 仍未取得足够证据。整体状态继续为 `WINDOWS_VERIFICATION_PENDING`。
+- Linux follow-up 已完成文档层面的基线重评估和下一轮 Windows recovery handoff；当前不新增 production code。下一步是 Windows 侧恢复 Python/uv、锁定可写 cache/TEMP、从当前源重建 sidecar、修复匹配的 WiX toolset，再按 handoff 顺序重跑。
 
 ## Next Windows validation scope after WVQ-018/WVQ-017 (2026-09-15)
 
@@ -702,6 +820,11 @@ Fixture 内容：
 - 同一 thread 无并发 turn
 - shutdown 无死锁
 - 任一等待调用均有确定结果或异常
+
+当前 Linux 完成补充：`scripts/benchmark_batching.py` 提供 deterministic、mock-only 的批处理基准，
+输出 turn 数、平均 batch size、turn reduction ratio、结果一致性以及“未使用网络/真实 Codex”标记；
+`tests/test_benchmark_batching.py` 固定 10 项、batch size 4 时为 3 turns、70% turn reduction 且结果与单段基线一致。
+该基准只证明本地 batching 机制，不替代真实 Codex throughput、token、P50/P95 latency 或长文档验收。
 
 ### Phase 7：SQLite 翻译缓存
 

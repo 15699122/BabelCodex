@@ -18,7 +18,7 @@ from codex_babeldoc.core.state import JobStatus
 
 def _service(tmp_path: Path) -> BabelCodexService:
     root = Path(__file__).parents[1]
-    cfg = load_config(root / "config" / "example.toml")
+    cfg = load_config(root / "config" / "config.yaml")
     cfg.project.input_dir = tmp_path / "incoming"
     cfg.project.output_dir = tmp_path / "translated"
     cfg.project.state_dir = tmp_path / "state"

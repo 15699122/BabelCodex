@@ -11,14 +11,28 @@ from codex_babeldoc.cli import (
 from codex_babeldoc.core.config import load_config
 
 
-def _toml_string(value: Path) -> str:
-    """Serialize a filesystem path as a TOML basic string."""
-    return json.dumps(str(value), ensure_ascii=False)
+def _write_config(path: Path, **paths: Path) -> None:
+    """Write the smallest valid YAML config used by CLI tests."""
+    import yaml
+
+    root = path.parent
+    values = {
+        "schema_version": 1,
+        "project": {
+            "input_dir": str(paths.get("input_dir", root / "incoming")),
+            "output_dir": str(paths.get("output_dir", root / "translated")),
+            "state_dir": str(paths.get("state_dir", root / "state")),
+            "log_dir": str(paths.get("log_dir", root / "logs")),
+            "glossary_dir": str(paths.get("glossary_dir", root / "glossary")),
+            "context_dir": str(paths.get("context_dir", root / "context")),
+        },
+    }
+    path.write_text(yaml.safe_dump(values, sort_keys=False), encoding="utf-8")
 
 
 def test_collect_doctor_checks_detects_installed_runtime():
     root = Path(__file__).parents[1]
-    cfg = load_config(root / "config" / "example.toml")
+    cfg = load_config(root / "config" / "config.yaml")
 
     checks = collect_doctor_checks(cfg)
 
@@ -30,7 +44,7 @@ def test_collect_doctor_checks_detects_installed_runtime():
 
 def test_doctor_succeeds_when_all_critical_checks_pass(monkeypatch, capsys):
     root = Path(__file__).parents[1]
-    cfg = load_config(root / "config" / "example.toml")
+    cfg = load_config(root / "config" / "config.yaml")
     checks = collect_doctor_checks(cfg)
     checks["codex_authenticated"] = True
     checks["codex_auth_message"] = "Logged in"
@@ -43,7 +57,7 @@ def test_doctor_succeeds_when_all_critical_checks_pass(monkeypatch, capsys):
 
 def test_doctor_fails_when_codex_is_not_authenticated(monkeypatch, capsys):
     root = Path(__file__).parents[1]
-    cfg = load_config(root / "config" / "example.toml")
+    cfg = load_config(root / "config" / "config.yaml")
     checks = collect_doctor_checks(cfg)
     checks["codex_authenticated"] = False
     checks["codex_auth_message"] = "Not logged in"
@@ -59,16 +73,15 @@ def test_glossary_cli_import_and_list(tmp_path, monkeypatch, capsys):
 
     source = tmp_path / "terms.csv"
     source.write_text("source,target\nmodel,模型\n", encoding="utf-8")
-    isolated = tmp_path / "config.toml"
-    isolated.write_text(
-        "[project]\n"
-        f"input_dir = {_toml_string(tmp_path / 'incoming')}\n"
-        f"output_dir = {_toml_string(tmp_path / 'translated')}\n"
-        f"state_dir = {_toml_string(tmp_path / 'state')}\n"
-        f"log_dir = {_toml_string(tmp_path / 'logs')}\n"
-        f"glossary_dir = {_toml_string(tmp_path / 'glossary')}\n"
-        f"context_dir = {_toml_string(tmp_path / 'context')}\n",
-        encoding="utf-8",
+    isolated = tmp_path / "config.yaml"
+    _write_config(
+        isolated,
+        input_dir=tmp_path / "incoming",
+        output_dir=tmp_path / "translated",
+        state_dir=tmp_path / "state",
+        log_dir=tmp_path / "logs",
+        glossary_dir=tmp_path / "glossary",
+        context_dir=tmp_path / "context",
     )
     monkeypatch.chdir(tmp_path)
     assert main(["--config", str(isolated), "glossary", "import", str(source)]) == 0
@@ -78,23 +91,19 @@ def test_glossary_cli_import_and_list(tmp_path, monkeypatch, capsys):
     assert listed["entries"][0]["target"] == "模型"
 
 
-def test_toml_string_escapes_windows_path() -> None:
-    isolated = _toml_string(Path(r"C:\Users\Tester\BabelCodex\incoming"))
-    assert isolated == '"C:\\\\Users\\\\Tester\\\\BabelCodex\\\\incoming"'
+def test_yaml_config_preserves_windows_path() -> None:
+    import yaml
+
+    isolated = Path(r"C:\Users\Tester\BabelCodex\incoming")
+    payload = yaml.safe_dump({"input_dir": str(isolated)}, sort_keys=False)
+    assert str(isolated) in payload
 
 
 def test_inspect_and_validate_cli_for_missing_job(tmp_path, capsys):
     from codex_babeldoc.cli import main
 
-    config = tmp_path / "config.toml"
-    config.write_text(
-        "[project]\n"
-        f"input_dir = {_toml_string(tmp_path / 'incoming')}\n"
-        f"output_dir = {_toml_string(tmp_path / 'translated')}\n"
-        f"state_dir = {_toml_string(tmp_path / 'state')}\n"
-        f"log_dir = {_toml_string(tmp_path / 'logs')}\n",
-        encoding="utf-8",
-    )
+    config = tmp_path / "config.yaml"
+    _write_config(config)
     assert main(["--config", str(config), "inspect", "0" * 64]) == 1
     assert json.loads(capsys.readouterr().out)["error"] == "job was not found"
     assert main(["--config", str(config), "validate", "0" * 64]) == 1
@@ -104,15 +113,8 @@ def test_inspect_and_validate_cli_for_missing_job(tmp_path, capsys):
 def test_cleanup_cli_dry_run_reports_without_deleting(tmp_path, capsys):
     from codex_babeldoc.cli import main
 
-    config = tmp_path / "config.toml"
-    config.write_text(
-        "[project]\n"
-        f"input_dir = {_toml_string(tmp_path / 'incoming')}\n"
-        f"output_dir = {_toml_string(tmp_path / 'translated')}\n"
-        f"state_dir = {_toml_string(tmp_path / 'state')}\n"
-        f"log_dir = {_toml_string(tmp_path / 'logs')}\n",
-        encoding="utf-8",
-    )
+    config = tmp_path / "config.yaml"
+    _write_config(config)
     work_dir = tmp_path / "state" / "babeldoc-work" / "job-doc"
     work_dir.mkdir(parents=True)
     (work_dir / "worker-request.json").write_text("{}", encoding="utf-8")
@@ -130,15 +132,8 @@ def test_qa_cli_reports_passing_output(tmp_path, capsys):
     from codex_babeldoc.core.artifacts import Artifact, ArtifactType
     from codex_babeldoc.core.state import JobStatus, StateStore
 
-    config = tmp_path / "config.toml"
-    config.write_text(
-        "[project]\n"
-        f"input_dir = {_toml_string(tmp_path / 'incoming')}\n"
-        f"output_dir = {_toml_string(tmp_path / 'translated')}\n"
-        f"state_dir = {_toml_string(tmp_path / 'state')}\n"
-        f"log_dir = {_toml_string(tmp_path / 'logs')}\n",
-        encoding="utf-8",
-    )
+    config = tmp_path / "config.yaml"
+    _write_config(config)
     for name in ("incoming", "translated"):
         (tmp_path / name).mkdir()
     source = tmp_path / "incoming" / "doc.pdf"
@@ -181,15 +176,8 @@ def test_qa_cli_stdout_is_machine_readable_in_clean_subprocess(tmp_path):
 
     import pymupdf
 
-    config = tmp_path / "config.toml"
-    config.write_text(
-        "[project]\n"
-        f"input_dir = {_toml_string(tmp_path / 'incoming')}\n"
-        f"output_dir = {_toml_string(tmp_path / 'translated')}\n"
-        f"state_dir = {_toml_string(tmp_path / 'state')}\n"
-        f"log_dir = {_toml_string(tmp_path / 'logs')}\n",
-        encoding="utf-8",
-    )
+    config = tmp_path / "config.yaml"
+    _write_config(config)
     for name in ("incoming", "translated"):
         (tmp_path / name).mkdir()
     source = tmp_path / "incoming" / "doc.pdf"
@@ -261,8 +249,9 @@ def test_cli_releases_log_file_handlers_at_exit(tmp_path):
         file_handlers = [h for h in root.handlers if isinstance(h, logging.FileHandler)]
         assert len(file_handlers) == 1
         handler = file_handlers[0]
-        log_file = log_dir / "cbpdf.log"
-        assert log_file.exists()
+        log_files = list(log_dir.glob("babelcodex-*.log"))
+        assert len(log_files) == 1
+        log_file = log_files[0]
         assert not handler.stream.closed
 
         _release_log_file_handlers()

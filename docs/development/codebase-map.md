@@ -14,14 +14,16 @@
 | `src/codex_babeldoc/application/sidecar.py` | Fixed JSONL sidecar boundary for GUI job operations, including async translation, cancellation, retry, artifact validation, QA and scoped glossary/context access | `SidecarMethod`; `SidecarError`; `JsonlSidecar`; `run_jsonl`; `main` | service | — | `tests/test_sidecar.py` |
 | `src/codex_babeldoc/backends/babeldoc_internal.py` | Backward-compatible facade over the versioned BabelDOC backend | `BabelDocInternalBackend` | service | — | — |
 | `src/codex_babeldoc/backends/babeldoc_v064.py` | BabelDOC 0.6.x compatibility implementation | `detect_version`; `is_supported_version`; `assert_supported`; `normalize_watermark_mode`; `artifacts_from_result`; `convert_progress` | service | — | — |
-| `src/codex_babeldoc/backends/babeldoc_worker.py` | BabelDOC worker process entry point | `main` | worker | — | — |
+| `src/codex_babeldoc/backends/babeldoc_worker.py` | BabelDOC worker process entry point; routes worker `logging` diagnostics to `worker-diagnostics.log` so stderr stays protocol-clean | `main`; `DIAGNOSTICS_LOG_FILENAME` | worker | — | `tests/test_worker.py` |
 | `src/codex_babeldoc/backends/base.py` | base module | `PdfTranslateRequest`; `PdfTranslateResult`; `PdfBackend`; `ProgressEvent`; `EventSink` | service | — | — |
 | `src/codex_babeldoc/backends/worker_client.py` | Main-process client for the BabelDOC worker subprocess | `worker_environment`; `WorkerClientError`; `worker_command`; `build_worker_request`; `run_worker` | service | — | — |
 | `src/codex_babeldoc/backends/worker_protocol.py` | Versioned JSON protocol between the orchestrator and the BabelDOC worker | `TranslatorSpec`; `WorkerRequest`; `WorkerArtifact`; `WorkerProgress`; `WorkerResult`; `WorkerError` | service | — | — |
 | `src/codex_babeldoc/cli.py` | cli module | `collect_doctor_checks`; `doctor`; `main` | service | — | — |
 | `src/codex_babeldoc/core/artifact_manifest.py` | artifact_manifest module | `file_sha256`; `validate_artifacts` | service | — | — |
 | `src/codex_babeldoc/core/artifacts.py` | artifacts module | `ArtifactType`; `Artifact` | service | — | — |
-| `src/codex_babeldoc/core/config.py` | config module | `ProjectConfig`; `TranslationConfig`; `BabelDocConfig`; `CodexConfig`; `AppConfig`; `load_config` | service | — | — |
+| `src/codex_babeldoc/core/config.py` | YAML-only config module and atomic settings persistence | `ProjectConfig`; `LoggingConfig`; `TranslationConfig`; `BabelDocConfig`; `CodexConfig`; `AppConfig`; `load_config`; `save_config` | service | PyYAML | `tests/test_config.py` |
+| `src/codex_babeldoc/core/logging_config.py` | Shared bounded five-level logging and owned handler lifecycle | `configure_logging`; `release_file_handlers` | service/worker | Python logging | `tests/test_logging_config.py`; `tests/test_cli.py` |
+| `src/codex_babeldoc/core/portable_paths.py` | Fixed portable-root directory resolver for config/cache/logs/output/resources | `PortableLayout`; `resolve_portable_root`; `portable_layout` | service/gui packaging | pathlib | `tests/test_portable_paths.py` |
 | `src/codex_babeldoc/core/errors.py` | errors module | `ErrorCategory`; `ErrorCode`; `BabelCodexError`; `classify_exception`; `safe_internal_error`; `resolve_retry_limits` | service | — | — |
 | `src/codex_babeldoc/core/events.py` | events module | `EventType`; `JobEvent` | service | — | — |
 | `src/codex_babeldoc/core/orchestrator.py` | orchestrator module | `Orchestrator` | service | — | — |
@@ -58,12 +60,18 @@
 | 文件 | 职责 | 入口/公共符号 | 运行位置 | 主要依赖 | 测试 |
 |---|---|---|---|---|---|
 | `tests/test_application_service.py` | test_application_service module | `test_start_translation_records_invocation_source`; `test_get_and_list_jobs`; `test_validate_output_refreshes_manifest_and_detects_tampering`; `test_service_startup_recovers_legacy_active_job_without_runner_pid`; `test_run_qa_marks_failed_on_tampered_output` | test | — | — |
-| `tests/test_babeldoc_compat.py` | Tests for the BabelDOC 0.6.x compatibility layer (no BabelDOC runtime needed) | `TestVersionDetection`; `TestWatermarkMapping`; `TestProgressConversion`; `TestArtifactsFromResult`; `TestLegacyFacade` | test | — | — |
+| `tests/test_babeldoc_compat.py` | Tests for the BabelDOC 0.6.x compatibility layer (no BabelDOC runtime needed) | `TestVersionDetection`; `TestWatermarkMapping`; `TestProgressConversion`; `TestArtifactsFromResult`; `TestLegacyFacade`; `TestPyMuPDFPackageNameHygiene` | test | — | — |
 | `tests/test_batching.py` | Tests for the batch worker and response parser | `test_batch_collects_items_and_flushes`; `test_batch_max_items_triggers_immediate_flush`; `test_batch_missing_id_raises`; `test_batch_shutdown_wakes_pending`; `test_build_batch_payload_structure`; `test_parse_batch_response_valid` | test | — | — |
+| `src/codex_babeldoc/translation/benchmark.py` | Deterministic mock-only batching benchmark and aggregate metrics | `run_benchmark` | service/test | Python stdlib; `translation.batching` | `tests/test_benchmark_batching.py` |
+| `scripts/benchmark_batching.py` | Deterministic mock-only batching benchmark and JSON metrics | `run_benchmark`; `main` | test/CLI | Python stdlib; `translation.batching` | `tests/test_benchmark_batching.py` |
+| `scripts/__init__.py` | Import boundary for project-maintained development scripts | — | test/CLI | Python stdlib | — |
+| `tests/test_benchmark_batching.py` | Regression tests for mock batching benchmark metrics and parameter validation | `test_mock_batch_benchmark_reports_reduction_and_matching_results`; `test_mock_batch_benchmark_rejects_invalid_parameters` | test | — | — |
 | `tests/test_cache.py` | Tests for the SQLite translation cache | `test_cache_round_trip`; `test_cache_disabled_when_path_is_none`; `test_cache_key_includes_every_input`; `test_cache_ttl_expires`; `test_cache_stats_and_clear` | test | — | — |
 | `tests/test_check_gui_bundle.py` | Regression tests for scripts/check_gui_bundle.py | `audit_module`; `test_https_urls_are_not_flagged_as_absolute_paths`; `test_windows_drive_path_is_flagged`; `test_unix_development_paths_are_flagged`; `test_file_scheme_url_path_is_still_flagged`; `test_url_strings_are_not_absolute_paths` | test | — | — |
-| `tests/test_cli.py` | test_cli module | `test_collect_doctor_checks_detects_installed_runtime`; `test_doctor_succeeds_when_all_critical_checks_pass`; `test_doctor_fails_when_codex_is_not_authenticated`; `test_glossary_cli_import_and_list`; `test_toml_string_escapes_windows_path`; `test_inspect_and_validate_cli_for_missing_job` | test | — | — |
-| `tests/test_config.py` | test_config module | `test_load_example_config` | test | — | — |
+| `tests/test_cli.py` | CLI runtime, YAML fixture, QA stdout and log-handler lifecycle tests | `test_collect_doctor_checks_detects_installed_runtime`; `test_doctor_succeeds_when_all_critical_checks_pass`; `test_doctor_fails_when_codex_is_not_authenticated`; `test_glossary_cli_import_and_list`; `test_yaml_config_preserves_windows_path`; `test_inspect_and_validate_cli_for_missing_job`; `test_cli_releases_log_file_handlers_at_exit` | test | — | — |
+| `tests/test_config.py` | YAML-only config, portable paths, schema validation and atomic persistence tests | `test_load_example_config`; `test_yaml_config_uses_portable_layout`; `test_toml_configuration_is_rejected`; `test_config_round_trip_is_atomic_and_keeps_backup`; `test_invalid_logging_settings_are_rejected`; `test_config_round_trip_does_not_persist_internal_root` | test | PyYAML | — |
+| `tests/test_logging_config.py` | Five-level bounded logging, pruning and credential-redaction tests | `test_logging_levels_and_silent_mode`; `test_logging_prunes_old_files_before_creating_new_session`; `test_log_diagnostics_redact_credential_like_values` | test | Python logging | — |
+| `tests/test_portable_paths.py` | Portable-root path resolution tests independent of host working directory | `test_portable_layout_is_relative_to_config_parent`; `test_portable_layout_does_not_depend_on_current_working_directory` | test | pathlib | — |
 | `tests/test_docs_inventory.py` | Tests for scripts/check_docs_inventory.py | `test_repo_inventory_complete`; `test_repo_map_paths_exist`; `test_repo_readme_commands_registered`; `test_repo_doc_links_exist`; `test_repo_check_passes`; `test_repo_readme_has_cli_commands` | test | — | — |
 | `tests/test_e2e_mock.py` | End-to-end tests: real BabelDOC pipeline driven through the orchestrator | `TestMockEndToEnd` | test | — | — |
 | `tests/test_gateway.py` | Tests for the Translation Gateway pipeline | `test_gateway_passthrough_without_cache_or_batch`; `test_gateway_uses_cache_hit`; `test_gateway_cache_isolated_by_translator_metadata`; `test_gateway_repairs_invalid_output`; `test_gateway_invalid_source_returns_untranslated`; `test_gateway_translate_request_model` | test | — | — |
@@ -91,7 +99,7 @@
 |---|---|---|---|---|---|
 | `scripts/check_docs_inventory.py` | Documentation inventory checks | `documented_cli_commands`; `registered_cli_commands`; `mapped_source_paths`; `tracked_source_paths`; `broken_doc_links`; `main` | build | — | — |
 | `scripts/check_gui_bundle.py` | Audit a staged BabelCodex GUI bundle without executing platform binaries | `contains_development_machine_absolute_path`; `sha256`; `newest_source_mtime`; `audit`; `main` | build | — | — |
-| `scripts/generate_fixture.py` | Generate the self-made integration fixture PDF for BabelCodex | `build` | build | — | — |
+| `scripts/generate_fixture.py` | Generate the self-made integration fixture PDF for BabelCodex using the official `pymupdf` package name | `build` | build | — | `tests/test_babeldoc_compat.py` |
 | `scripts/generate_windows_icon.py` | Generate the Windows ``.ico`` application icon from the PNG source icon | `main` | build | — | — |
 | `scripts/sidecar_entry.py` | Controlled top-level entry point for the PyInstaller-packaged sidecar | — | build | — | — |
 
@@ -139,19 +147,27 @@
 |---|---|---|---|---|---|
 | `gui/scripts/prepare-e2e.mjs` | Prepare deterministic E2E workspace under `gui/build/e2e`; conservative path validation | — | build | — | — |
 
+## scripts — 发布与 bundle 审计脚本（build/release 进程）
+
+| 文件 | 职责 | 入口/公共符号 | 运行位置 | 主要依赖 | 测试 |
+|---|---|---|---|---|---|
+| `scripts/build_windows_portable.ps1` | Windows portable staging：复制 YAML/resource，按需构建 sidecar | — | Windows build | PowerShell, uv, PyInstaller | Windows manual validation |
+| `scripts/audit_windows_portable.ps1` | Windows portable bundle 禁止内容、路径泄漏和必需目录审计 | — | Windows build | PowerShell | Windows manual validation |
+
 
 ## config — 项目配置（service/gui 进程）
 
 | 文件 | 职责 | 入口/公共符号 | 运行位置 | 主要依赖 | 测试 |
 |---|---|---|---|---|---|
-| `config/example.toml` | User-facing example config; normal runtime uses `translator = "codex-sdk"` | — | service | — | — |
-| `config/e2e.toml` | E2E config: `translator = "mock"`, all state under `gui/build/e2e/`; never touches real Codex | — | service | — | — |
+| `config/config.yaml` | User-facing portable config; normal runtime uses `translation.translator: codex-sdk` | — | service/gui | PyYAML | `tests/test_config.py` |
+| `config/development.yaml` | Debug-level local development config | — | service/gui | PyYAML | `tests/test_config.py` |
+| `config/e2e.yaml` | E2E config: `translation.translator: mock`, all state under `gui/build/e2e/`; never touches real Codex | — | service/gui | PyYAML | `tests/test_config.py`; GUI E2E |
 
 ## src-tauri/capabilities — 运行时能力（gui 进程，生产 + flavor 注入）
 
 | 文件 | 职责 | 入口/公共符号 | 运行位置 | 主要依赖 | 测试 |
 |---|---|---|---|---|---|
-| `gui/src-tauri/capabilities/default.json` | Main capability: dialog + fixed sidecar allowlist for `config/example.toml`; the only file in this directory — flavor capabilities are inlined, never generated here | `main-capability` | gui | `tauri-plugin-shell` | `tests/test_gui_flavor_capabilities.py` |
+| `gui/src-tauri/capabilities/default.json` | Main capability: dialog + fixed sidecar allowlist for `config/config.yaml`; the only file in this directory — flavor capabilities are inlined, never generated here | `main-capability` | gui | `tauri-plugin-shell` | `tests/test_gui_flavor_capabilities.py` |
 
 
 ## src-tauri — Tauri 配置与源码（gui 进程）
@@ -160,7 +176,7 @@
 |---|---|---|---|---|---|
 | `gui/src-tauri/tauri.conf.json` | Production Tauri config: explicitly lists `main-capability` only | — | gui | — | — |
 | `gui/src-tauri/tauri.mcp.conf.json` | MCP debug flavor: inlines `mcp-debug-capability` (`mcp-bridge:default`) as `CapabilityEntry::Inlined` for `--features mcp-dev` builds via `--config` merge | — | gui | `tauri-plugin-mcp-bridge` | `tests/test_gui_flavor_capabilities.py` |
-| `gui/src-tauri/tauri.e2e.conf.json` | E2E flavor: inlines `e2e-capability` (`wdio:default` + fixed sidecar allowlist for `config/e2e.toml`) for `--features e2e` builds via `--config` merge | — | gui | `tauri-plugin-wdio`, `tauri-plugin-wdio-webdriver` | `tests/test_gui_flavor_capabilities.py` |
+| `gui/src-tauri/tauri.e2e.conf.json` | E2E flavor: inlines `e2e-capability` (`wdio:default` + fixed sidecar allowlist for `config/e2e.yaml`) for `--features e2e` builds via `--config` merge | — | gui | `tauri-plugin-wdio`, `tauri-plugin-wdio-webdriver` | `tests/test_gui_flavor_capabilities.py` |
 
 
 ## 维护规则

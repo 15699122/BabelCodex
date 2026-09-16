@@ -1,5 +1,109 @@
 # Compatibility Baseline
 
+## Linux worker/retry follow-up fixes (2026-09-16)
+
+- Orchestrator retry loop now clamps the total-attempt ceiling to at least 1,
+  matching `resolve_retry_limits`: `max_retries=0` means one initial attempt
+  with no automatic retry, and the final error reports the actual attempt
+  count. Regressions in `tests/test_retry_policy.py`.
+- The BabelDOC worker now routes its own `logging` diagnostics (gateway
+  validation-retry warnings and similar) to `worker-diagnostics.log` inside
+  the job working directory, keeping the stderr channel machine-readable
+  (protocol progress JSONL plus tolerated third-party output only). Remaining
+  stderr noise is upstream-only: BabelDOC per-paragraph fallback diagnostics
+  and the PyMuPDF `fitz` deprecation notice. Regressions in
+  `tests/test_worker.py::TestWorkerDiagnosticsLogging`.
+- Both fixes require fresh native Windows evidence (rebuild the PyInstaller
+  sidecar and rerun the frozen worker gate; rerun the persisted
+  `cbpdf one --config config/e2e.toml` and `cbpdf qa` path) before the
+  corresponding Windows `FAIL` items can be closed; they remain
+  `WINDOWS_VERIFICATION_PENDING`. Details in
+  [`docs/validation/windows.md`](validation/windows.md).
+  **Superseded:** the 2026-09-16 Windows run rebuilt the current-source
+  sidecar and closed both items — see “Windows revalidation of the Linux
+  follow-up fixes (2026-09-16)” above. The historical Windows `FAIL` rows are
+  preserved unchanged in the validation document.
+
+## Linux output confirmation follow-up (2026-09-16)
+
+- The current Windows portable/YAML validation identified a product-code defect:
+  constructing the application service through `Orchestrator` created the configured
+  output directory before the sidecar could honor `confirmed=false`.
+- Linux fixed the lifecycle boundary by initializing `Orchestrator` with
+  `ensure_dirs(include_output=False)`. The sidecar now leaves output absent before
+  confirmation and creates it only after `confirmed=true`; translation rendering
+  retains responsibility for creating output when a job actually writes artifacts.
+- Regression coverage is
+  `tests/test_sidecar.py::test_real_sidecar_startup_does_not_create_output_before_confirmation`.
+-   Linux verification for the current tree is Python `257 passed, 5 deselected`, mock
+  integration `5 passed`, GUI `28 passed` plus production build, Ruff/format,
+  compileall, docs inventory and lock checks all passing.
+- This is Linux evidence only. A fresh Windows sidecar build and native JSONL
+  `prepare_output_directory` probe must be executed before the Windows item can move
+  from `WINDOWS_VERIFICATION_PENDING` to `WINDOWS_PASS`.
+
+## Linux PyMuPDF package-name hygiene follow-up (2026-09-16)
+
+- Decision on the residual `fitz` deprecation notice recorded by Windows: the
+  project does not add a `fitz` alias shim and does not suppress upstream
+  stderr. The remaining notice comes from upstream BabelDOC importing the
+  deprecated shim and belongs to a future dependency update.
+- Action: `scripts/generate_fixture.py` now imports `pymupdf as fitz` — it was
+  the last project file still importing the deprecated shim directly.
+- Regressions: `tests/test_babeldoc_compat.py::TestPyMuPDFPackageNameHygiene`
+  pins (a) no `import fitz` / `from fitz` anywhere under `src/`, `scripts/` or
+  `tests/`, and (b) the fixture generator produces a non-empty PDF in a
+  subprocess with no `deprecated` text on stdout/stderr (`pymupdf` unavailable
+  skips).
+- Windows MSI (`light.exe` LGHT0217), native WDIO (`uv_os_get_passwd ...
+  ENOMEM`), MSI extraction/parity, native GUI/manual, clean-user/security and
+  live Codex/PDF remain `FAIL`/`BLOCKED`/`NOT RUN` Windows-operator items; no
+  Linux-side change is implied.
+
+## Windows revalidation of the Linux follow-up fixes (2026-09-16)
+
+- 本节是“Linux follow-up 完成后进行的 Windows 复验”的**计划参考**，
+  准确的命令、证据、失败分类和手工修复步骤统一以
+  `docs/validation/windows.md` 的“Windows validation of current portable/YAML working tree:
+  2026-09-16”及其 Failure analysis and Linux follow-up / Current disposition 为准。
+- 当前 portable/YAML 源树的 Windows 结果混合存在，产品整体仍处于
+  `WINDOWS_VERIFICATION_PENDING`。已通过项目的证据（锁定 Python 环境、Python suite、
+  Ruff/format/compileall/docs inventory、GUI build/test、PowerShell staging/audit、
+  fresh sidecar build/protocol/allowlist、settings/staging/log retrieval、
+  Tauri Rust/features/Debug/Release build、moved-root audit/layout/process smoke、
+  embedded native WDIO 6 specs/20 tests、cleanup）参见 windows.md 对应行。
+- 产品侧 FAIL 是 output confirmation contract：sidecar 启动时已经创建 output 目录，
+  因此无法观察 `prepare_output_directory(confirmed=false)`。Linux 已完成生命周期修复，
+  但该项在 Windows 复验成功前仍保持 `WINDOWS_VERIFICATION_PENDING`。
+- BLOCKED/NOT RUN 项目（原生手动 GUI/视觉、安装器/MSI/NSIS、
+  クリーンユーザー/セキュリティ/署名/SBOM、ライブ Codex/実PDF/長文書）も本 portable/YAML
+  ラウンドで解決済みではなく、後の専用作業に委ねる。
+- 文書内で「Windows 再検証により両 follow-up が閉じた」と記述している箇所がある場合は、
+  それは過去の別源木に対する記録であり、現在の portable/YAML 木については
+  windows.md の本輪結果が標準となる。歴史 FAIL 行は消さず、参照だけで整合させる。
+
+## Linux dependency-shape recovery (2026-09-15)
+
+- The local virtual environment was resynchronized with the declared lockfile using `uv sync --locked --extra runtime --extra dev`. `BabelDOC 0.6.4`, `openai-codex 0.147.0` and the bundled Codex CLI runtime are now installed and importable.
+- The previous local failures caused by `babeldoc`/`openai_codex` absence are resolved: version detection returns `0.6.4`, bundled runtime discovery succeeds, targeted CLI/retry/BabelDOC tests pass (`34 passed`), and the full Python suite passes (`234 passed, 5 deselected`).
+- `cbpdf doctor` still reports `codex_authenticated=false` / `Not logged in` on this machine. This is an expected unauthenticated local state, not a dependency-shape failure; no live Codex request was made.
+- This Linux environment recovery does not alter Windows validation status. Windows Python/uv, frozen sidecar, native WDIO, MSI and desktop acceptance still require independent Windows evidence and remain governed by `docs/validation/windows.md`.
+
+## Linux detailed validation run (2026-09-15)
+
+- Level 1 passed: Python `234 passed, 5 deselected`, integration mock `5 passed`, GUI Vitest `28 passed`, GUI build, Ruff, compileall, docs inventory, Cargo default/mcp-dev/e2e and formatting checks. `cbpdf doctor` is `BLOCKED_ENV` only for the unauthenticated Codex state (`Not logged in`); runtime dependencies themselves are healthy.
+- Linux Native E2E passed with 4 specs and 15 tests through the real Tauri WebView and embedded WebDriver. Native mock lifecycle, path rejection, sidecar handshake and smoke all passed; project process/port cleanup passed.
+- Browser Mode is `BLOCKED_ENV`, not a product failure: no system Chrome/Chromium or chromedriver was available, and the managed Chrome download stalled before spec execution. The project-owned stale WDIO/Vite session was cleaned; no unrelated workspace process was touched.
+- Windows-only behavior remains outside Linux evidence and must stay `WINDOWS_VERIFICATION_PENDING` until actual Windows execution. Linux `PASS` does not promote any Windows queue item.
+
+## Latest Windows current-head reconciliation (2026-09-15)
+
+- Windows validated documentation commit `268102b1a0c48ad359e54ccf1b6798e82448b4b8`; relative to `8f046ef`, it contains documentation only, so no new product-code fix is indicated on Linux.
+- GUI unit/build, capability separation, Rust default/mcp-dev/e2e checks, Tauri debug builds, direct sidecar protocol/allowlist, narrow release/NSIS process checks, narrow MCP localhost observation and cleanup passed.
+- Current Windows blockers/failures remain: `npm ci` file-lock recovery (`EBUSY`/`ENOTEMPTY`), Python/uv runtime/cache access, native WDIO pre-spec `uv_os_get_passwd ... ENOMEM`, frozen worker `unable to open database file`, and WiX `light.exe` MSI failure. Validation-only dependency repair does not convert clean installation into PASS.
+- Native GUI/picker/DPI/accessibility, clean-user installation, MSI admin extraction/parity, external-provider diagnostics and authorized live Codex/PDF remain incomplete. Overall compatibility state remains `WINDOWS_VERIFICATION_PENDING`.
+- The next Windows run must restore a writable local environment, rebuild the sidecar from the current source, diagnose WDIO before the full suite, repair the matching WiX toolchain, and record all results in `docs/validation/windows.md`; previous artifacts and Linux results do not substitute for current Windows evidence.
+
 ## Latest Windows current-head configuration result (2026-09-15)
 
 - The latest Windows run targeted `dev` commit `8f046ef12ab9a9e8d82c260673a303892202ec21`. GUI unit/build, inline capability separation, Rust default/mcp-dev/e2e boundaries, Tauri debug builds, direct sidecar protocol/allowlist and narrow release process checks passed.

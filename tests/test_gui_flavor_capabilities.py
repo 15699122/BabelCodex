@@ -86,7 +86,7 @@ def test_e2e_flavor_capability_is_inlined_and_allowlisted() -> None:
     assert "wdio-webdriver:default" in perms
 
     # The sidecar config allowlist must point only at the E2E config so the
-    # production example.toml can never be launched by the test binary.
+    # production config.yaml can never be launched by the test binary.
     spawn = next(
         p
         for p in inline["permissions"]
@@ -97,7 +97,7 @@ def test_e2e_flavor_capability_is_inlined_and_allowlisted() -> None:
         for arg in rule.get("args", []):
             if isinstance(arg, dict) and "validator" in arg:
                 validators.append(arg["validator"])
-    assert validators == [r"\.\./config/e2e\.toml"], validators
+    assert validators == [r"\.\./config/e2e\.yaml"], validators
     assert not (CAPS / "e2e.json").exists()
 
 

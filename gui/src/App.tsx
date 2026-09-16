@@ -3,6 +3,7 @@ import { Activity, ArrowUpRight, BookOpen, CheckCircle2, FolderOpen, Gauge, Libr
 import { createFilePicker, isTauriRuntime } from "./filePicker";
 import { isActiveJob, JobStore } from "./jobStore";
 import type { ConnectionState, ContextResult, GlossaryEntry, GlossaryResult } from "./jobStore";
+import type { SettingsResult } from "./protocol";
 import type { JobState } from "./protocol";
 import { Button } from "./components/ui/button";
 import { Card, CardContent, CardHeader } from "./components/ui/card";
@@ -32,6 +33,15 @@ function App() {
     };
   }, [store]);
 
+  useEffect(() => {
+    if (snapshot.connection.status !== "ready" || snapshot.notice) return;
+    void store.prepareOutputDirectory(false).then((result) => {
+      if (result.requires_confirmation) {
+        showNotice(`首次使用请确认创建输出目录；否则将回退到 ${result.fallback_path}。`);
+      }
+    }).catch(() => undefined);
+  }, [snapshot.connection.status, store]);
+
   const jobs = snapshot.jobs;
   const showNotice = (notice: string) => store.setNotice(notice);
 
@@ -41,7 +51,8 @@ function App() {
       return;
     }
     try {
-      const jobId = await store.startTranslation(sourcePath.trim());
+      const staged = await store.stageInput(sourcePath.trim());
+      const jobId = await store.startTranslation(staged.source_path);
       setView("jobs");
       showNotice(`已加入翻译队列：${jobId}`);
     } catch (error) {
@@ -165,7 +176,7 @@ function App() {
         )}
         {view === "glossary" && <GlossaryEditor store={store} />}
         {view === "diagnostics" && <Diagnostics connection={snapshot.connection} onReconnect={() => void reconnect()} />}
-        {view === "settings" && <Settings />}
+        {view === "settings" && <Settings store={store} />}
       </main>
     </div>
   );
@@ -327,6 +338,10 @@ function StageBadge({ stage, status }: { stage: JobState["stage"]; status: JobSt
 function JobDetails({ job, store, onBack }: { job: JobState | null; store: JobStore; onBack: () => void }) {
   const [busy, setBusy] = useState<"retry" | "validate" | "qa" | null>(null);
   const [feedback, setFeedback] = useState("");
+
+  useEffect(() => {
+    if (job?.job_id) void store.getJob(job.job_id).catch(() => undefined);
+  }, [job?.job_id, store]);
 
   if (!job) {
     return (
@@ -563,20 +578,53 @@ function Diagnostic({ icon, title, value, detail }: { icon: React.ReactNode; tit
   );
 }
 
-function Settings() {
+function Settings({ store }: { store: JobStore }) {
+  const [settings, setSettings] = useState<SettingsResult | null>(null);
+  const [level, setLevel] = useState<SettingsResult["logging"]["level"]>("info");
+  const [maxFiles, setMaxFiles] = useState(5);
+  const [outputDir, setOutputDir] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    void store.getSettings().then((value) => {
+      setSettings(value);
+      setLevel(value.logging.level);
+      setMaxFiles(value.logging.max_files);
+      setOutputDir(value.output_dir);
+    }).catch(() => undefined);
+  }, [store]);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const value = await store.saveSettings({ logging: { level, max_files: maxFiles }, output_dir: outputDir });
+      setSettings(value);
+      store.setNotice("设置已保存，正在重新连接本地服务。");
+      await store.reconnect();
+    } catch (error) {
+      store.setNotice(error instanceof Error ? error.message : "设置保存失败。");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="content-column reveal">
       <div className="section-heading">
         <div>
           <p className="eyebrow">设置</p>
           <h2>运行配置</h2>
-          <p className="hero-panel-muted">核心运行参数由 config.toml 管理；此处展示当前配置摘要。</p>
+          <p className="hero-panel-muted">配置保存在 portable 目录的 `config/config.yaml`，Codex 登录仍使用官方用户目录。</p>
         </div>
       </div>
       <Card className="settings-card">
-        <div><span>输入目录</span><strong>由 config.toml 配置</strong></div>
+        <div><span>输入目录</span><strong>{settings?.input_dir ?? "读取中…"}</strong></div>
+        <div><span>输出目录</span><input aria-label="输出目录" value={outputDir} onChange={(event) => setOutputDir(event.target.value)} /></div>
         <div><span>翻译模式</span><strong>Codex SDK · 按文档保持上下文</strong></div>
         <div><span>执行方式</span><strong>单次 BabelDOC 子进程</strong></div>
+        <div><span>日志等级</span><select aria-label="日志等级" value={level} onChange={(event) => setLevel(event.target.value as SettingsResult["logging"]["level"])}><option value="error">error</option><option value="warning">warning</option><option value="info">info</option><option value="debug">debug</option><option value="silent">silent</option></select></div>
+        <div><span>日志文件数</span><input aria-label="日志文件数" type="number" min={1} max={50} value={maxFiles} onChange={(event) => setMaxFiles(Number(event.target.value))} /></div>
+        <Button onClick={() => void save()} disabled={saving || settings === null}>{saving ? "保存中…" : "保存设置"}</Button>
         <div className="settings-language-row">
           <div className="settings-language-copy">
             <span>界面语言</span>

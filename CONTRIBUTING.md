@@ -38,6 +38,12 @@ python -m pip install -e ".[runtime,dev]"
    uv run pytest
    ```
 
+   Validation scope should match the change risk: by default run the directly affected
+   tests, their regressions and the relevant lint/compile checks. Reserve the full suite
+   for release work, architecture or dependency overhauls, and changes whose blast radius
+   cannot be determined. See the incremental validation strategy in
+   `docs/development/testing.md`, and state explicitly which checks were not run.
+
 5. Describe user-visible behavior, compatibility impact and test coverage in the pull request.
 
 ## GUI development

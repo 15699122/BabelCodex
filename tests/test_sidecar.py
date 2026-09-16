@@ -19,7 +19,8 @@ from codex_babeldoc.core.state import JobStage, JobStatus, StateStore
 
 def _service(tmp_path: Path) -> BabelCodexService:
     root = Path(__file__).parents[1]
-    cfg = load_config(root / "config" / "example.toml")
+    cfg = load_config(root / "config" / "config.yaml")
+    cfg.config_path = tmp_path / "config.yaml"
     cfg.project.input_dir = tmp_path / "incoming"
     cfg.project.state_dir = tmp_path / "state"
     cfg.project.output_dir = tmp_path / "translated"
@@ -143,6 +144,117 @@ def test_sidecar_reads_and_writes_scoped_glossary_and_context(tmp_path):
         }
     )[0]
     assert loaded["result"]["text"] == "A Paper\nAbstract\nA useful context."
+    sidecar.close()
+
+
+def test_sidecar_exposes_portable_layout_and_settings(tmp_path):
+    service = _service(tmp_path)
+    sidecar = JsonlSidecar(service)
+    layout = sidecar.handle(
+        {
+            "protocol_version": PROTOCOL_VERSION,
+            "request_id": "layout",
+            "method": "get_runtime_layout",
+        }
+    )[0]
+    assert layout["ok"] is True
+    assert layout["result"]["paths"]["output"] == "<external>"
+    assert layout["result"]["paths"]["resource"] == "resource"
+
+    settings = sidecar.handle(
+        {"protocol_version": PROTOCOL_VERSION, "request_id": "settings", "method": "get_settings"}
+    )[0]
+    assert settings["result"]["logging"] == {"level": "info", "max_files": 5}
+    saved = sidecar.handle(
+        {
+            "protocol_version": PROTOCOL_VERSION,
+            "request_id": "settings-save",
+            "method": "save_settings",
+            "settings": {"logging": {"level": "debug", "max_files": 3}},
+        }
+    )[0]
+    assert saved["ok"] is True
+    assert saved["result"]["requires_restart"] is True
+    assert service.config.logging.level == "debug"
+    sidecar.close()
+
+
+def test_sidecar_stages_pdf_and_requires_output_confirmation(tmp_path):
+    service = _service(tmp_path)
+    sidecar = JsonlSidecar(service)
+    source = tmp_path / "selected.pdf"
+    source.write_bytes(b"%PDF-staged")
+    staged = sidecar.handle(
+        {
+            "protocol_version": PROTOCOL_VERSION,
+            "request_id": "stage",
+            "method": "stage_input",
+            "source_path": str(source),
+        }
+    )[0]
+    assert staged["ok"] is True
+    staged_path = Path(staged["result"]["source_path"])
+    assert staged_path.parent == service.config.project.input_dir
+    assert staged_path.read_bytes() == source.read_bytes()
+
+    service.config.project.output_dir.rmdir()
+    pending = sidecar.handle(
+        {
+            "protocol_version": PROTOCOL_VERSION,
+            "request_id": "output",
+            "method": "prepare_output_directory",
+            "confirmed": False,
+        }
+    )[0]
+    assert pending["result"]["requires_confirmation"] is True
+    ready = sidecar.handle(
+        {
+            "protocol_version": PROTOCOL_VERSION,
+            "request_id": "output-confirm",
+            "method": "prepare_output_directory",
+            "confirmed": True,
+        }
+    )[0]
+    assert ready["result"]["exists"] is True
+    sidecar.close()
+
+
+def test_real_sidecar_startup_does_not_create_output_before_confirmation(tmp_path):
+    from codex_babeldoc.application.service import BabelCodexService
+    from codex_babeldoc.core.config import AppConfig
+
+    config = AppConfig(root=tmp_path)
+    config.project.output_dir = tmp_path / "output"
+    config.config_path = tmp_path / "config.yaml"
+    config.resolve_paths()
+    service = BabelCodexService(config)
+    assert not config.project.output_dir.exists()
+    sidecar = JsonlSidecar(service)
+    pending = sidecar.handle(
+        {
+            "protocol_version": PROTOCOL_VERSION,
+            "request_id": "output-real",
+            "method": "prepare_output_directory",
+            "confirmed": False,
+        }
+    )[0]
+    assert pending["ok"] is True
+    assert pending["result"]["requires_confirmation"] is True
+    assert not config.project.output_dir.exists()
+    sidecar.close()
+
+
+def test_sidecar_latest_log_redacts_credential_like_values(tmp_path):
+    service = _service(tmp_path)
+    log = service.config.project.log_dir / "babelcodex-test.log"
+    log.write_text("authorization=Bearer top-secret ordinary=ok\n", encoding="utf-8")
+    sidecar = JsonlSidecar(service)
+    result = sidecar.handle(
+        {"protocol_version": PROTOCOL_VERSION, "request_id": "log", "method": "get_latest_log"}
+    )[0]
+    assert result["ok"] is True
+    assert "top-secret" not in result["result"]["text"]
+    assert "ordinary=ok" in result["result"]["text"]
     sidecar.close()
 
 

@@ -107,6 +107,29 @@ WINDOWS_FAIL
 
 Linux 端不得在 Windows 实际重新验证之前，将修复后的项目标记为 `WINDOWS_PASS`。
 
+### Fine-grained test status mapping
+
+验证 Agent 的单用例记录使用 `docs/development/testing.md` 中的细粒度状态：
+`PASS`、`PASS_FLAKY`、`PASS_AFTER_FIX`、`PASS_AFTER_TEST_FIX`、`FAIL_PRODUCT`、
+`FAIL_PRODUCT_NEEDS_DEVELOPMENT`、`FAIL_TEST`、`BLOCKED_ENV`、
+`BLOCKED_AUTOMATION`、`SKIPPED_PLATFORM`、`NEEDS_REVIEW` 和
+`NEEDS_DEVELOPMENT_REVIEW`。
+
+本文件的跨平台汇总状态继续使用本节已有状态，不与单用例状态混用：
+
+| 单用例状态 | 跨平台汇总/Windows 记录建议 |
+|---|---|
+| `PASS`、`PASS_FLAKY`、`PASS_AFTER_FIX`、`PASS_AFTER_TEST_FIX` | 只有目标平台实际执行后才可计入该平台的 `WINDOWS_PASS`；Linux 结果只能是 `LINUX_VERIFIED` |
+| `FAIL_PRODUCT` | 记录为 `WINDOWS_FAIL` 或 Linux 对应失败，并进入 `Linux fix → LINUX_VERIFIED → WINDOWS_VERIFICATION_PENDING` 流程 |
+| `FAIL_PRODUCT_NEEDS_DEVELOPMENT`、`NEEDS_DEVELOPMENT_REVIEW` | 记录开发阻塞和建议，不得通过局部重试伪装为 PASS |
+| `FAIL_TEST`、`NEEDS_REVIEW` | 记录测试/需求问题；修复或决策前不得宣称被测功能通过 |
+| `BLOCKED_ENV` | 汇总为 `WINDOWS_BLOCKED`，只阻塞依赖该环境的项目 |
+| `BLOCKED_AUTOMATION` | 汇总为 `WINDOWS_BLOCKED`，并附人工 fallback；不代表产品失败 |
+| `SKIPPED_PLATFORM` | 汇总为 `NOT_APPLICABLE` 或 `NOT_RUN`，不得计入 FAIL |
+
+历史记录中已有的旧版 `PASS` / `FAIL` / `BLOCKED` 文本不得改写。新记录应同时
+保留细粒度单用例状态和跨平台汇总状态，并明确 commit、平台、layer 和证据范围。
+
 ## 5. Linux Development Responsibilities
 
 Linux Codex 负责：
@@ -346,6 +369,12 @@ Codex 应优先从仓库自动确定验证命令，包括：
 
 验证范围应根据当前实现和目标平台能力确定，并明确区分 Required、Applicable、Not applicable 以及最终结果状态。与认证 Codex、外部服务或付费额度有关的检查必须显式标记依赖条件，不能由普通单元测试隐式执行。
 
+默认采用增量验证：先按最终 diff、受影响模块、依赖关系和平台相关行为确定最小必要
+范围，再按 `Targeted -> Module -> Subsystem -> Full` 逐级升级（见
+`docs/development/testing.md` 的「增量验证策略」，Windows 侧最小化与复验规则见第 16 章）。
+范围超出预检或目标平台能力时，记录 `BLOCKED` / `NOT RUN` 及原因，不得
+用缩小范围的方式掩盖未验证项。
+
 ## 14. Final Diff Review
 
 每轮 Linux 开发结束时检查最终 `git diff`。
@@ -434,6 +463,45 @@ Linux 代码已实现或 Linux 测试已通过，只能分别支持 `IMPLEMENTED
 | Blocks further Linux development | Yes / No and reason |
 
 `docs/validation/windows.md` 是累计队列和最终交接的权威位置。
+
+### Windows validation scope minimization
+
+Windows 验证同样采用最小必要范围。开始前根据最终 Linux diff、Windows Validation
+Queue、受影响的 Windows-specific 模块和上一轮 Windows 结果确定需要重新验证的项目。
+变更分类、测试过滤与升级阶梯与 Linux 一致，统一规则见
+`docs/development/testing.md` 的「增量验证策略」。
+
+- 本轮 diff 未触及某项的代码、依赖或行为时，不重复执行该项。
+- GUI 和 Computer Use 成本最高，放在最后执行，且只在改动涉及 layout、视觉行为、
+  窗口生命周期、交互、原生对话框或 GUI 驱动流程时触发；后端、算法和纯数据层改动
+  不自动触发完整 GUI 回归。
+- Computer Use 不可用时记录 `BLOCKED_AUTOMATION`，继续其他验证，并把用例加入人工
+  验证队列（格式见 `docs/validation/windows.md` 的 manual repair and retest 小节）。
+- Windows 阶段不默认重跑整个 Windows test suite，但每轮保留 Level 1 回归门禁：
+  锁定依赖同步、GUI Vitest/build、Ruff/compile/docs 检查、Cargo flavor checks。
+- 平台不适用项目记 `SKIPPED_PLATFORM`，不视为失败。
+
+### Revalidation rules
+
+每个队列项推荐记录以下字段（可选，兼容现有条目）：
+
+| Field | Content |
+| --- | --- |
+| last validated revision | 最近一次取得 Windows `PASS` 的 commit 或轮次 |
+| related files/modules | 影响该项的路径或组件 |
+| dependencies | 该项依赖的构建产物、包、账户或环境 |
+| status | 当前队列状态 |
+
+复验判定：
+
+```text
+current diff ∩ test impact area = empty  -> 保留上一轮有效结果，不重复执行
+存在交集或依赖变化                        -> REVALIDATION_REQUIRED
+```
+
+`REVALIDATION_REQUIRED` 的项目必须在本轮 Windows 工作清单中显式列出，并说明是代码、
+依赖还是环境变化使原结论可能失效。历史 `PASS` 不因未重跑而失效，但未重跑的旧结果
+也不得当作本轮证据引用。
 
 ## 17. End of Development Phase
 

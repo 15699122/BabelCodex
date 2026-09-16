@@ -34,6 +34,29 @@ class _PendingRequest:
     error: Exception | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class BatchMetrics:
+    """Aggregate, non-sensitive counters for one batch-worker lifetime."""
+
+    submitted_items: int = 0
+    completed_items: int = 0
+    turns: int = 0
+    total_batch_items: int = 0
+    max_batch_size: int = 0
+
+    @property
+    def average_batch_size(self) -> float:
+        """Return the average number of items sent per completed turn."""
+        return self.total_batch_items / self.turns if self.turns else 0.0
+
+    @property
+    def turn_reduction_ratio(self) -> float:
+        """Return the reduction against one turn per submitted item."""
+        if not self.submitted_items:
+            return 0.0
+        return 1.0 - (self.turns / self.submitted_items)
+
+
 class BatchWorker:
     """Collects translation requests and flushes them in small batches."""
 
@@ -56,6 +79,11 @@ class BatchWorker:
         self._queue: list[_PendingRequest] = []
         self._flush_event = threading.Event()
         self._shutdown = False
+        self._submitted_items = 0
+        self._completed_items = 0
+        self._turns = 0
+        self._total_batch_items = 0
+        self._max_batch_size = 0
         self._worker = threading.Thread(
             target=self._run,
             name="babelcodex-batch-worker",
@@ -68,6 +96,7 @@ class BatchWorker:
         pending = _PendingRequest(request=request, future=threading.Event())
         with self._lock:
             self._queue.append(pending)
+            self._submitted_items += 1
             if len(self._queue) >= self._max_items:
                 self._flush_event.set()
 
@@ -82,6 +111,17 @@ class BatchWorker:
             raise pending.error
         assert pending.result is not None
         return pending.result
+
+    def metrics(self) -> BatchMetrics:
+        """Return a consistent snapshot of aggregate worker counters."""
+        with self._lock:
+            return BatchMetrics(
+                submitted_items=self._submitted_items,
+                completed_items=self._completed_items,
+                turns=self._turns,
+                total_batch_items=self._total_batch_items,
+                max_batch_size=self._max_batch_size,
+            )
 
     def shutdown(self, *, timeout: float = 5.0) -> None:
         """Stop the worker and wake every waiting caller with an error."""
@@ -126,6 +166,10 @@ class BatchWorker:
         return batch
 
     def _flush(self, batch: list[_PendingRequest]) -> None:
+        with self._lock:
+            self._turns += 1
+            self._total_batch_items += len(batch)
+            self._max_batch_size = max(self._max_batch_size, len(batch))
         try:
             results = self._handler(batch)
         except Exception as exc:  # noqa: BLE001 - surface to every waiter
@@ -150,6 +194,8 @@ class BatchWorker:
                     retryable=True,
                 )
             pending.future.set()
+        with self._lock:
+            self._completed_items += len(batch)
 
 
 def build_batch_payload(batch: list[_PendingRequest]) -> dict[str, Any]:

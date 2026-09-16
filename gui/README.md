@@ -70,7 +70,7 @@ at compile time). E2E capabilities are inlined as `CapabilityEntry::Inlined` obj
 written into `src-tauri/capabilities/`, so default/mcp-dev Cargo checks are
 never exposed to `wdio:default`. They never enter production builds. The E2E
 sidecar runs against
-`config/e2e.toml` (`translator = "mock"`) and never touches real Codex.
+`config/e2e.yaml` (`translation.translator: mock`) and never touches real Codex.
 
 The frontend loads `@wdio/tauri-plugin` only when `VITE_E2E=1` is set at build
 time, so normal builds never include the WDIO frontend plugin.

@@ -191,3 +191,52 @@ class TestLegacyFacade:
         assert request.enhance_compatibility is False
         assert request.translate_table_text is True
         assert captured["factory"] is factory
+
+
+class TestPyMuPDFPackageNameHygiene:
+    """Project code must not import the deprecated ``fitz`` shim.
+
+    Windows validation recorded a residual PyMuPDF deprecation notice on the
+    worker/sidecar stderr channel. Upstream BabelDOC still imports the shim,
+    but BabelCodex code must use the official ``pymupdf`` package name so the
+    project never adds to that noise.
+    """
+
+    def test_no_project_file_imports_the_deprecated_fitz_shim(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        offenders: list[str] = []
+        for scope, pattern in (("src", "*.py"), ("scripts", "*.py"), ("tests", "*.py")):
+            for path in sorted((root / scope).rglob(pattern)):
+                if "__pycache__" in path.parts:
+                    continue
+                for lineno, line in enumerate(
+                    path.read_text(encoding="utf-8").splitlines(), start=1
+                ):
+                    stripped = line.strip()
+                    if stripped.startswith(("import fitz", "from fitz")):
+                        offenders.append(
+                            f"{path.relative_to(root).as_posix()}:{lineno}: {stripped}"
+                        )
+        assert offenders == [], (
+            "use `import pymupdf` instead of the deprecated fitz shim: " + "; ".join(offenders)
+        )
+
+    def test_fixture_generator_runs_without_deprecation_notice(self, tmp_path: Path) -> None:
+        pytest.importorskip("pymupdf")
+        import subprocess
+        import sys
+
+        root = Path(__file__).resolve().parents[1]
+        output = tmp_path / "fixture.pdf"
+        proc = subprocess.run(
+            [sys.executable, str(root / "scripts" / "generate_fixture.py"), str(output)],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+            timeout=180,
+            check=False,
+        )
+        assert proc.returncode == 0, proc.stderr
+        assert output.is_file() and output.stat().st_size > 0
+        combined = f"{proc.stdout}\n{proc.stderr}"
+        assert "deprecated" not in combined, combined

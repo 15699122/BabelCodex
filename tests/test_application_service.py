@@ -12,7 +12,7 @@ from codex_babeldoc.core.state import JobStage, JobStatus
 
 def test_start_translation_records_invocation_source(tmp_path, monkeypatch):
     root = Path(__file__).parents[1]
-    cfg = load_config(root / "config" / "example.toml")
+    cfg = load_config(root / "config" / "config.yaml")
     cfg.project.state_dir = tmp_path / "state"
     cfg.ensure_dirs()
 
@@ -120,7 +120,7 @@ def test_service_startup_recovers_legacy_active_job_without_runner_pid(tmp_path)
     from codex_babeldoc.core.state import StateStore
 
     root = Path(__file__).parents[1]
-    cfg = load_config(root / "config" / "example.toml")
+    cfg = load_config(root / "config" / "config.yaml")
     cfg.project.state_dir = tmp_path / "state"
     cfg.project.input_dir = tmp_path / "incoming"
     cfg.project.output_dir = tmp_path / "translated"

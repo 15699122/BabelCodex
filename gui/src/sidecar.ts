@@ -255,6 +255,56 @@ export class MockSidecarTransport implements SidecarTransport {
         version: "mock-context-version",
       } as T;
     }
+    if (method === "get_runtime_layout") {
+      return {
+        portable_root: ".",
+        paths: {
+          root: ".",
+          config: "config",
+          cache: "cache",
+          incoming: "cache/incoming",
+          state: "cache/state",
+          logs: "logs",
+          output: "output",
+          resource: "resource",
+          babeldoc_cache: "cache/babeldoc",
+        },
+        output_exists: true,
+        output_configured: "output",
+      } as T;
+    }
+    if (method === "get_settings") {
+      return {
+        logging: { level: "info", max_files: 5 },
+        output_dir: "output",
+        input_dir: "cache/incoming",
+        requires_restart: false,
+      } as T;
+    }
+    if (method === "save_settings") {
+      return {
+        logging: (params.settings as { logging?: unknown } | undefined)?.logging ?? { level: "info", max_files: 5 },
+        output_dir: "output",
+        input_dir: "cache/incoming",
+        requires_restart: true,
+        saved_path: "config/config.yaml",
+      } as T;
+    }
+    if (method === "prepare_output_directory") {
+      const confirmed = Boolean(params.confirmed);
+      return {
+        configured_path: "output",
+        exists: confirmed,
+        created: confirmed,
+        requires_confirmation: !confirmed,
+        fallback_path: "Downloads",
+      } as T;
+    }
+    if (method === "stage_input") {
+      const sourcePath = String(params.source_path ?? "sample.pdf");
+      return { source_path: sourcePath, display_name: sourcePath.split(/[\\/]/).pop() ?? "sample.pdf", size: 0 } as T;
+    }
+    if (method === "get_latest_log") return { path: null, text: "" } as T;
     if (method === "get_server_info") {
       return {
         protocol_version: PROTOCOL_VERSION,
@@ -273,6 +323,12 @@ export class MockSidecarTransport implements SidecarTransport {
           "get_context",
           "save_context",
           "get_server_info",
+          "get_runtime_layout",
+          "prepare_output_directory",
+          "get_settings",
+          "save_settings",
+          "stage_input",
+          "get_latest_log",
           "shutdown",
         ],
       } as T;

@@ -27,7 +27,11 @@ log = logging.getLogger(__name__)
 class Orchestrator:
     def __init__(self, cfg: AppConfig):
         self.cfg = cfg
-        self.cfg.ensure_dirs()
+        # Output creation is user-confirmed by the GUI/sidecar on first use.
+        # Initialize only the private/runtime directories here; the translation
+        # backend creates the configured output directory when a job actually
+        # renders artifacts.
+        self.cfg.ensure_dirs(include_output=False)
         self.state = StateStore(cfg.project.state_dir)
         recovered = self.state.recover_interrupted_jobs()
         if recovered:
@@ -218,8 +222,14 @@ class Orchestrator:
         t = self.cfg.translation
         b = self.cfg.babeldoc
         last_error = None
+        # ``max_retries`` is a total-attempt ceiling (see core.errors). Values
+        # below 1 still mean one initial attempt without automatic retries,
+        # matching the ``max(1, ...)`` clamping in ``resolve_retry_limits``.
+        max_attempts = max(t.max_retries, 1)
+        attempts_made = 0
         job.pipeline_meta = record_pipeline_meta(source, backend_name=job.backend_name)
-        for attempt in range(job.attempts + 1, t.max_retries + 1):
+        for attempt in range(job.attempts + 1, max_attempts + 1):
+            attempts_made = attempt
             job.attempts = attempt
             job.status = JobStatus.RUNNING
             job.stage = JobStage.PREPARING_RUNTIME
@@ -303,7 +313,7 @@ class Orchestrator:
                     error.category.value,
                     error.code.value,
                     limit,
-                    t.max_retries,
+                    max_attempts,
                 )
                 if attempt < limit and error.retryable:
                     job.status = JobStatus.RETRY_PENDING
@@ -313,7 +323,9 @@ class Orchestrator:
                     job.runner_pid = None
                     self.state.save(job)
                     break
-        raise RuntimeError(f"Translation failed after {t.max_retries} attempts: {last_error}")
+        raise RuntimeError(
+            f"Translation failed after {attempts_made or job.attempts} attempt(s): {last_error}"
+        )
 
     def run_all(self, *, force: bool = False) -> dict[str, str]:
         results = {}

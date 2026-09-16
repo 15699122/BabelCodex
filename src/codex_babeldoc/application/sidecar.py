@@ -8,6 +8,8 @@ delegated to :class:`BabelCodexService`.
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import sys
 from collections import deque
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -20,6 +22,7 @@ from typing import TextIO
 
 from codex_babeldoc.backends.base import ProgressEvent
 from codex_babeldoc.backends.worker_client import WORKER_MODE_ARG
+from codex_babeldoc.core.config import SUPPORTED_LOG_LEVELS, save_config
 from codex_babeldoc.core.errors import BabelCodexError, ErrorCategory, ErrorCode, classify_exception
 from codex_babeldoc.core.events import EventType, JobEvent
 from codex_babeldoc.core.state import JobState, JobStatus
@@ -45,6 +48,12 @@ class SidecarMethod(StrEnum):
     GET_CONTEXT = "get_context"
     SAVE_CONTEXT = "save_context"
     GET_SERVER_INFO = "get_server_info"
+    GET_RUNTIME_LAYOUT = "get_runtime_layout"
+    PREPARE_OUTPUT_DIRECTORY = "prepare_output_directory"
+    GET_SETTINGS = "get_settings"
+    SAVE_SETTINGS = "save_settings"
+    STAGE_INPUT = "stage_input"
+    GET_LATEST_LOG = "get_latest_log"
     SHUTDOWN = "shutdown"
 
 
@@ -139,6 +148,18 @@ class JsonlSidecar:
                 result = self._save_context(request)
             elif method is SidecarMethod.GET_SERVER_INFO:
                 result = self._server_info()
+            elif method is SidecarMethod.GET_RUNTIME_LAYOUT:
+                result = self._runtime_layout()
+            elif method is SidecarMethod.PREPARE_OUTPUT_DIRECTORY:
+                result = self._prepare_output_directory(request)
+            elif method is SidecarMethod.GET_SETTINGS:
+                result = self._get_settings()
+            elif method is SidecarMethod.SAVE_SETTINGS:
+                result = self._save_settings(request)
+            elif method is SidecarMethod.STAGE_INPUT:
+                result = self._stage_input(request)
+            elif method is SidecarMethod.GET_LATEST_LOG:
+                result = self._latest_log()
             elif method is SidecarMethod.SHUTDOWN:
                 result = {"closing": True}
                 self.close()
@@ -182,6 +203,128 @@ class JsonlSidecar:
             "package_version": _package_version(),
             "capabilities": [method.value for method in SidecarMethod],
         }
+
+    def _runtime_layout(self) -> dict[str, object]:
+        config = self.service.config
+        paths = {
+            "root": config.root,
+            "config": config.root / "config",
+            "cache": config.project.cache_dir,
+            "incoming": config.project.input_dir,
+            "state": config.project.state_dir,
+            "logs": config.project.log_dir,
+            "output": config.project.output_dir,
+            "resource": config.project.resource_dir,
+            "babeldoc_cache": config.babeldoc.cache_dir,
+        }
+
+        def safe_layout_path(path: Path) -> str:
+            try:
+                return path.relative_to(config.root).as_posix()
+            except ValueError:
+                return "<external>"
+
+        return {
+            "portable_root": str(config.root),
+            "paths": {name: safe_layout_path(path) for name, path in paths.items()},
+            "output_exists": config.project.output_dir.is_dir(),
+            "output_configured": str(config.project.output_dir),
+        }
+
+    @staticmethod
+    def _downloads_dir() -> Path:
+        profile = os.environ.get("USERPROFILE")
+        if profile:
+            return Path(profile) / "Downloads"
+        return Path.home() / "Downloads"
+
+    def _prepare_output_directory(self, request: dict[str, object]) -> dict[str, object]:
+        output = self.service.config.project.output_dir
+        confirmed = bool(request.get("confirmed", False))
+        created = False
+        if confirmed:
+            output.mkdir(parents=True, exist_ok=True)
+            created = True
+        fallback = self._downloads_dir()
+        return {
+            "configured_path": str(output),
+            "exists": output.is_dir(),
+            "created": created,
+            "requires_confirmation": not output.is_dir(),
+            "fallback_path": str(fallback),
+        }
+
+    def _get_settings(self) -> dict[str, object]:
+        config = self.service.config
+        return {
+            "logging": {
+                "level": config.logging.level,
+                "max_files": config.logging.max_files,
+            },
+            "output_dir": str(config.project.output_dir),
+            "input_dir": str(config.project.input_dir),
+            "requires_restart": False,
+        }
+
+    def _save_settings(self, request: dict[str, object]) -> dict[str, object]:
+        config = self.service.config
+        settings = request.get("settings")
+        if not isinstance(settings, dict):
+            raise SidecarError("settings must be an object")
+        logging_values = settings.get("logging", {})
+        if logging_values is not None:
+            if not isinstance(logging_values, dict):
+                raise SidecarError("settings.logging must be an object")
+            if "level" in logging_values:
+                level = str(logging_values["level"])
+                if level not in SUPPORTED_LOG_LEVELS:
+                    raise SidecarError("unsupported log level")
+                config.logging.level = level
+            if "max_files" in logging_values:
+                try:
+                    config.logging.max_files = int(logging_values["max_files"])
+                except (TypeError, ValueError) as exc:
+                    raise SidecarError("logging.max_files must be an integer") from exc
+        if "output_dir" in settings:
+            output = Path(str(settings["output_dir"])).expanduser().resolve()
+            try:
+                output.relative_to(config.root)
+            except ValueError as exc:
+                raise SidecarError("output_dir must stay inside the portable root") from exc
+            config.project.output_dir = output
+        config.logging.validate()
+        path = save_config(config)
+        return {**self._get_settings(), "saved_path": str(path), "requires_restart": True}
+
+    def _stage_input(self, request: dict[str, object]) -> dict[str, object]:
+        source = Path(str(request.get("source_path", ""))).expanduser().resolve()
+        if source.suffix.lower() != ".pdf" or not source.is_file():
+            raise SidecarError("source_path must be an existing PDF")
+        incoming = self.service.config.project.input_dir.resolve()
+        incoming.mkdir(parents=True, exist_ok=True)
+        target = (incoming / source.name).resolve()
+        try:
+            target.relative_to(incoming)
+        except ValueError as exc:
+            raise SidecarError("staged input path is invalid") from exc
+        shutil.copy2(source, target)
+        return {
+            "source_path": str(target),
+            "display_name": target.name,
+            "size": target.stat().st_size,
+        }
+
+    def _latest_log(self) -> dict[str, object]:
+        from codex_babeldoc.core.logging_config import redact_log_text
+
+        files = sorted(
+            self.service.config.project.log_dir.glob("*.log"), key=lambda path: path.stat().st_mtime
+        )
+        if not files:
+            return {"path": None, "text": ""}
+        target = files[-1]
+        text = redact_log_text(target.read_text(encoding="utf-8", errors="replace")[-64_000:])
+        return {"path": target.name, "text": text}
 
     def _start(self, request: dict[str, object]) -> dict[str, object]:
         if self._closed:
@@ -518,13 +661,16 @@ def main(argv: list[str] | None = None) -> int:
     import argparse
 
     parser = argparse.ArgumentParser(prog="babelcodex-service")
-    parser.add_argument("--config", default="config/example.toml")
+    parser.add_argument("--config", default="config/config.yaml")
     args = parser.parse_args(argv)
 
     from codex_babeldoc.core.config import load_config
 
     config = load_config(args.config)
-    config.ensure_dirs()
+    config.ensure_dirs(include_output=False)
+    from codex_babeldoc.core.logging_config import configure_logging
+
+    configure_logging(config.project.log_dir, config.logging, stream=False)
     run_jsonl(BabelCodexService(config), sys.stdin, sys.stdout)
     return 0
 

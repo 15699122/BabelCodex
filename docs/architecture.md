@@ -709,11 +709,10 @@ type JobStatus =
 - schema version；
 - 不支持能力自动降级。
 
-建议路径：
-
-- Windows：`%APPDATA%/BabelCodex/config.toml`；
-- Linux：`$XDG_CONFIG_HOME/BabelCodex/config.toml`；
-- 便携模式：显式指定程序目录下的配置。
+当前路径模型：GUI 以 `.exe` 所在目录为 portable root，配置固定为
+`config/config.yaml`；可写数据进入 `cache/`、`logs/`、`output/`，只读资源进入
+`resource/`。Codex 官方登录状态仍位于用户目录，不由 BabelCodex 复制、重定向或伪造。
+GUI 选择的 PDF 必须通过 sidecar `stage_input` 复制到 `cache/incoming/`。
 
 ### 12.10 能力检测
 
