@@ -145,7 +145,8 @@ jobs:
           & 7z.exe x -y "-o$extractDir" $archive
           if ($LASTEXITCODE -ne 0) { throw "7z extraction failed with exit code $LASTEXITCODE" }
           $files = @(Get-ChildItem -LiteralPath $extractDir -File -Recurse | ForEach-Object {
-            ($_.FullName.Substring($extractDir.Length) -replace '^[\\/]+', '') -replace '\\\\', '/'
+            $relative = $_.FullName.Substring($extractDir.Length).TrimStart([char]92, [char]47)
+            $relative.Replace([char]92, [char]47)
           } | Sort-Object)
           $expected = @($required | Sort-Object)
           if (($files -join "`n") -ne ($expected -join "`n")) {
