@@ -24,6 +24,7 @@
 | 当前 Windows 验证状态、活跃队列、handoff | `docs/validation/windows.md` |
 | Windows 历史验证运行记录与产物哈希 | `docs/validation/history/` |
 | GUI 子项目开发与打包 | `gui/README.md` |
+| v0.1.0 Release Notes | `docs/releases/v0.1.0.md` |
 
 ## 根目录文档
 

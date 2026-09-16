@@ -1,0 +1,124 @@
+name: Release Windows executable
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to package, for example v0.1.0"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-windows-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-windows-executable:
+    runs-on: windows-latest
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      PYTHONUTF8: "1"
+
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.12.10"
+          enable-cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: gui/package-lock.json
+
+      - name: Install locked Python dependencies
+        run: uv sync --locked --extra runtime --extra dev
+
+      - name: Run Python release gates
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+          uv run python -m compileall -q src tests scripts
+          uv run python scripts/check_docs_inventory.py
+          uv run pytest -q
+
+      - name: Run GUI release gates
+        working-directory: gui
+        run: |
+          npm.cmd ci
+          npm.cmd test -- --run
+          npm.cmd run build
+
+      - name: Build Windows Python sidecar
+        run: uv run --extra runtime --with pyinstaller pyinstaller --clean --noconfirm scripts/babelcodex-service.spec
+
+      - name: Stage the Windows Tauri sidecar
+        shell: pwsh
+        run: |
+          $source = Join-Path $env:GITHUB_WORKSPACE "dist/babelcodex-service.exe"
+          $targetDir = Join-Path $env:GITHUB_WORKSPACE "gui/src-tauri/binaries"
+          $target = Join-Path $targetDir "babelcodex-service-x86_64-pc-windows-msvc.exe"
+          if (-not (Test-Path -LiteralPath $source)) { throw "Missing sidecar: $source" }
+          New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+          Copy-Item -LiteralPath $source -Destination $target -Force
+
+      - name: Build the Windows GUI executable
+        working-directory: gui
+        run: npm.cmd run tauri -- build --no-bundle
+
+      - name: Create and validate the single-file 7z archive
+        shell: pwsh
+        run: |
+          $exe = Join-Path $env:GITHUB_WORKSPACE "gui/src-tauri/target/release/babelcodex-gui.exe"
+          if (-not (Test-Path -LiteralPath $exe)) { throw "Missing GUI executable: $exe" }
+          $releaseDir = Join-Path $env:GITHUB_WORKSPACE "release-assets"
+          $extractDir = Join-Path $env:RUNNER_TEMP "babelcodex-7z-check"
+          New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
+          if (Test-Path -LiteralPath $extractDir) { Remove-Item -Recurse -Force $extractDir }
+          New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
+          $assetExe = Join-Path $releaseDir "BabelCodex-$env:RELEASE_TAG-windows-x64.exe"
+          $archive = Join-Path $releaseDir "BabelCodex-$env:RELEASE_TAG-windows-x64.7z"
+          Copy-Item -LiteralPath $exe -Destination $assetExe -Force
+          & 7z.exe a -t7z -mx=9 $archive $assetExe
+          if ($LASTEXITCODE -ne 0) { throw "7z creation failed with exit code $LASTEXITCODE" }
+          & 7z.exe x -y "-o$extractDir" $archive
+          if ($LASTEXITCODE -ne 0) { throw "7z extraction failed with exit code $LASTEXITCODE" }
+          $files = @(Get-ChildItem -LiteralPath $extractDir -File -Recurse)
+          if ($files.Count -ne 1) { throw "Expected exactly one archived file, found $($files.Count)" }
+          if ($files[0].Name -ne $assetExe.Split('\')[-1]) { throw "Unexpected archived filename: $($files[0].Name)" }
+          Write-Host "Validated single-file archive: $archive"
+
+      - name: Create or update GitHub Release and upload assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $releaseDir = Join-Path $env:GITHUB_WORKSPACE "release-assets"
+          $assets = @(Get-ChildItem -LiteralPath $releaseDir -File)
+          if ($assets.Count -ne 2) { throw "Expected exactly two release assets, found $($assets.Count)" }
+          gh release view $env:RELEASE_TAG *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $env:RELEASE_TAG --title "BabelCodex $env:RELEASE_TAG" --notes-file docs/releases/v0.1.0.md
+            if ($LASTEXITCODE -ne 0) { throw "Failed to create GitHub Release" }
+          }
+          gh release upload $env:RELEASE_TAG $assets.FullName --clobber
+          if ($LASTEXITCODE -ne 0) { throw "Failed to upload GitHub Release assets" }
