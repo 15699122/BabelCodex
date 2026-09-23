@@ -7,12 +7,12 @@ This file contains only the active handoff, using the template defined in `docs/
 - Task: Documentation batch — formalize Git-based cross-platform handoff (new `docs/development/git-platform-handoff.md`, expanded root `AGENTS.md` platform-handoff rules, docs index and workflow cross-references).
 - Branch: `dev`
 - Current owner: Cross-platform Owner (Linux)
-- Current state: `CROSS_PLATFORM_IN_PROGRESS` (uncommitted working-tree batch; no formal handoff yet)
+- Current state: `READY_FOR_WINDOWS`
 
 ## Revisions
 
 - Cross-platform input revision: `d56f3e4`
-- Cross-platform handoff revision: `NOT_RUN` (batch must be committed and pushed before formal handoff)
+- Cross-platform handoff revision: `d6db6dc` (batch content revision; recorded by the immediately following documentation-only commit — Windows should fetch and use the tip of `dev`)
 - Windows input revision: `NOT_RUN`
 - Windows implementation revision: `NOT_RUN`
 - Windows validation revision: `NOT_RUN`
@@ -41,7 +41,6 @@ This file contains only the active handoff, using the template defined in `docs/
 ## Known Risks
 
 - Native GUI, filesystem/process semantics, packaging, and clean-environment behavior must not be inferred from Linux.
-- This batch is currently uncommitted; no formal handoff exists until it is committed and pushed to the configured remote.
 
 ## Windows Results
 
@@ -58,7 +57,7 @@ This file contains only the active handoff, using the template defined in `docs/
 
 ## Next Owner
 
-- Owner: Windows Platform Owner — after Linux commits and pushes this batch
+- Owner: Windows Platform Owner (batch committed as `d6db6dc`; this file records the revision and is pushed together with it)
 - Required actions:
-  - Linux: review final `git diff`, update this file and the Plan, commit this documentation batch, push to the configured remote, record the handoff revision above, set state `READY_FOR_WINDOWS`.
-  - Windows: fetch remote, verify a clean working tree, update the formal Windows repository to the handoff revision, confirm it against this file, then start the Windows batch. Never overwrite the formal Windows working tree by direct file sync.
+  - Linux: completed for this batch — final `git diff` reviewed, handoff revision recorded, state `READY_FOR_WINDOWS`.
+  - Windows: fetch remote, verify a clean working tree, update the formal Windows repository to the tip of `dev` (batch content revision `d6db6dc`), confirm it against this file, then start the Windows batch. Never overwrite the formal Windows working tree by direct file sync.
