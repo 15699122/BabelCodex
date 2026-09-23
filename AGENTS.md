@@ -156,43 +156,118 @@ Keep responsibility separable, but never split files mechanically by line count.
 6. Refactors must preserve behavior, wire protocol, and public import paths. Run the full Linux suite plus GUI tests after each refactor batch.
 7. Split tests by the responsibility they cover instead of accumulating one aggregate test file.
 8. Every module entry, its runtime location (which process), its main dependencies, and its tests must be documented in `docs/development/codebase-map.md`.
+## Platform ownership and handoff
 
-## Cross-platform development and Windows validation workflow
+### Development model
 
-For Linux ↔ Windows development and validation workflow, follow:
+This repository uses a dual-owner model:
 
-`docs/development/cross-platform-validation.md`
+- Linux is the **Cross-platform Owner**.
+- Windows is the **Windows Platform Owner**.
 
-This workflow is mandatory for Windows-specific implementation and validation tasks.
+Linux owns shared and cross-platform implementation: shared architecture, shared APIs and contracts, cross-platform business logic, shared persistence/data models, protocol definitions, platform abstractions, and cross-platform tests.
 
-## Windows validation policy
+Windows owns Windows-specific implementation, integration, runtime behavior, GUI, packaging, and platform validation: Windows-native integration, filesystem/process behavior, Windows-specific GUI behavior, services/registry integration, Windows configuration, compatibility fixes, installer/packaging, and Windows-specific tests.
 
-The current WSL project directory is the source of truth for source code, project state, project documentation, and final validation records. A Windows `E:`-drive checkout is only a disposable validation workspace. Windows changes must not be synchronized back to WSL, except for validation results written to the designated WSL validation documentation.
+Detailed ownership and routing rules: `docs/development/platform-ownership.md`.
 
-### Deferred Windows validation rule
+### Canonical project state
 
-Linux is the primary development environment. Use **batch development, concentrated validation**:
+**正式开发状态通过 Git 交接；直接文件同步只用于临时诊断，不产生正式项目状态。**
+
+The canonical project state is the Git repository state plus committed project documentation, current Plan/task state, and recorded platform validation results. A machine-local working directory is not, by itself, the canonical project state. Both owners must integrate their changes into the canonical repository before those changes are considered project state.
+
+Formal platform handoff must always identify:
+
+- branch;
+- source commit;
+- handoff commit when applicable;
+- uncommitted-state status;
+- current owner.
+
+Do not treat copied files as a formal handoff.
+
+### Formal platform handoff
+
+The normal production workflow is Git-based:
 
 ```text
-Linux Feature A → Linux Feature B → Linux Feature C
-→ Linux verification → Windows Validation Preparation → Windows validation phase
+Linux working tree → Git commit → Git remote → Windows working tree
+Windows working tree → Git commit → Git remote → Linux working tree
 ```
 
-Do not interrupt normal Linux development merely because a completed feature will eventually require Windows verification. After each Linux-implementable change, run its applicable Linux checks, add the Windows-only follow-up to the cumulative Windows Validation Queue in `docs/validation/windows.md`, and continue with the next non-blocked Linux task.
+The configured Git remote (GitHub) is the exchange point between platform owners. Formal handoff must use Git history and record the handoff revision. Full workflow: `docs/development/git-platform-handoff.md`.
 
-Use `WINDOWS_VERIFICATION_PENDING` by default. Use `WINDOWS_VERIFICATION_BLOCKING` only when a Windows-specific result is a hard prerequisite for reliable further development: for example, a critical Windows API/filesystem/process/installer assumption, a Windows-only reproducible failure that blocks progress, or an explicit user request for immediate Windows validation. See `docs/development/cross-platform-validation.md` for the required queue fields, preparation phase, and final handoff format.
+### Direct sync — diagnostics only
 
-Use `docs/validation/windows.md` for the detailed Windows validation procedure and result format. The procedure is mandatory whenever Windows platform validation is requested:
+Direct filesystem synchronization from Linux to Windows is allowed only as a temporary diagnostic or experimental path. It must not be used as the normal ownership handoff mechanism.
 
-1. Investigate the current WSL repository before synchronization. Record the branch, commit, working-tree state, repository structure, languages/frameworks, Windows documentation, scripts/configuration, available test/lint/typecheck/build/package commands, compatibility requirements, agent instructions, and external dependencies or credentials.
-2. Before synchronization, inspect both the WSL source and Windows target. Check for uncommitted, manually created, machine-specific, credential, cache, or other files that must be preserved. Do not blindly delete unknown files or overwrite Windows-local configuration.
-3. Synchronize only from WSL to the Windows `E:` validation directory. Prefer existing checkout, worktree, deployment, or synchronization scripts. Do not copy `.git`, `node_modules`, Python virtual environments, Rust `target`, build/dist caches, IDE caches, temporary files, secrets, or machine-specific configuration unless project documentation explicitly requires them.
-4. Verify that the Windows workspace contains the intended source state, including key files and any working-tree modifications. Record the WSL branch, commit, whether uncommitted changes were included, the Windows workspace path, and the synchronization date. Never describe a working-tree validation as a clean commit validation.
-5. Derive the Windows validation scope from this repository's instructions, documentation, CI/build configuration, package scripts, and current implementation. Before execution, classify checks as `Required`, `Applicable`, or `Not applicable`; do not invent requirements that the project does not define.
-6. In the Windows workspace, use the project's existing package managers, commands, and scripts. Do not change business code, architecture, dependencies, or configuration merely to make validation pass. Continue with independent checks after non-fatal failures, and mark dependent checks as `BLOCKED`.
-7. Record every applicable check with its name, exact command, working directory, relevant versions, result, and concise output/error summary. Allowed result states are `PASS`, `FAIL`, `BLOCKED`, `NOT RUN`, and `NOT APPLICABLE`.
-8. For every failure, preserve the key error or relevant stack trace, identify the likely category (`Windows-specific`, project code, environment configuration, missing dependency, external service, test defect, or unknown), state whether it blocks other checks, and document recommended follow-up work. Never mark a skipped or failed check as successful.
-9. After Windows validation, write results back to the WSL repository's existing validation documentation, preferably `docs/validation/windows.md`, while preserving its structure and avoiding large raw logs. Include environment, source-state, synchronization, results, errors, and all not-run/blocked reasons.
-10. Before finishing, confirm that the Windows workspace corresponds to the intended WSL state, every applicable check has a status, all `FAIL`/`BLOCKED`/`NOT RUN` entries have reasons, no validation-scope code changes were made, and the final WSL diff contains only expected documentation changes.
+- Direct sync must target a disposable or explicitly designated scratch workspace.
+- It must never overwrite the Windows Platform Owner's canonical working tree.
+- Direct-sync results are experimental until reproduced or integrated through the formal Git workflow.
+- Never treat a direct-sync workspace as the source of truth.
+- Use direct sync only for a fast Windows experiment, an undesirable-to-commit intermediate state, behavior needed to unblock design, or an experiment that can be safely discarded.
 
-Windows validation is platform verification, not an excuse for opportunistic development. If a code change appears necessary, record the issue and proposed fix location in the validation document instead of implementing it as part of the validation run.
+Hard rule:
+
+- `E:\Projects\<project>` (the formal Windows Owner repository) is updated **only through Git**.
+- `E:\Scratch\<project>` (the scratch workspace) is the **only** target allowed for direct Linux sync.
+
+### Workspace model
+
+- Linux uses a Linux-native filesystem working tree, owns cross-platform development, and should not perform normal development from `/mnt/<drive>`.
+- Windows uses an NTFS working tree such as `E:\Projects\<project>`, owns Windows platform development, and should not use the WSL repository itself as its normal working tree.
+
+The two owner workspaces are independent Git working trees; they exchange formal state through Git revisions, not file mirroring.
+
+### Ownership boundaries
+
+Routing: shared behavior → Linux; Windows-specific cause or implementation → Windows. If a Windows fix requires changing a shared contract, architecture, protocol, schema, or cross-platform behavior, Windows marks `CROSS_PLATFORM_CHANGE_REQUIRED` and hands the shared change to Linux. A small, contract-preserving shared implementation change may be implemented by Windows and must be marked `CROSS_PLATFORM_REVIEW_REQUIRED`. Unclear ownership is `NEEDS_VERIFICATION`.
+
+Windows is not merely a validation environment: it may modify Windows production code, configuration, packaging, tests, and scripts within its ownership boundary. It must not change shared semantics solely to make a Windows check pass.
+
+### Batch development
+
+Prefer batch ownership:
+
+```text
+Cross-platform batch → handoff → Windows batch → handoff if required
+```
+
+Default flow is batched Linux cross-platform work → targeted Linux verification → Windows handoff → Windows implementation/verification → Linux follow-up only for shared changes. Avoid unnecessary platform ping-pong; a normal Windows validation requirement does not interrupt Linux development. Accumulate non-blocking Windows work/verification into the next Windows batch. Use `WINDOWS_BLOCKING` only when Windows behavior must be a known hard prerequisite before cross-platform development can safely continue.
+
+### Validation
+
+Use risk-based incremental validation (`Targeted → Module → Subsystem → Full`); do not run the full test suite after every change. Detailed rules: `docs/validation/validation-policy.md`; Windows minimization and revalidation: `docs/development/cross-platform-validation.md`. Validation results must identify the revision they tested.
+
+Computer Use / GUI automation failure is an automation failure, not a product failure: perform limited retry, mark affected tests `BLOCKED` with blocker `COMPUTER_USE_UNAVAILABLE`, continue independent validation, and create or update the Manual Windows Validation Queue. Never mark an unexecuted GUI test as PASS.
+
+### Handoff state
+
+Current platform handoff state (batch, branch, revisions, owner) is maintained in `docs/status/platform-handoff.md`; that file describes the current batch, not the complete historical log. Validation history stays in the `docs/validation/` history documents.
+
+Routing index:
+
+- `docs/development/platform-ownership.md` — ownership and routing
+- `docs/development/git-platform-handoff.md` — Git-based handoff workflow, workspace model, direct-sync boundary
+- `docs/validation/validation-policy.md` — risk-based validation and Computer Use fallback
+- `docs/status/platform-handoff.md` — active batch state
+- `docs/review/code-audit-guidelines.md` — audit rules
+- `docs/development/cross-platform-validation.md` — Windows validation execution details
+
+Use repository Skills under `.agents/skills/` for repeatable audits, handoffs, and Windows validation. A nearer `AGENTS.md` may refine these rules for a platform-specific directory.
+
+### General rules
+
+All agents must:
+
+- inspect the current repository before relying on previous assumptions;
+- prefer the smallest correct change;
+- avoid unrelated refactoring;
+- respect platform ownership;
+- use Git for formal handoff;
+- distinguish implementation from verification;
+- distinguish experimental direct-sync results from formal project state;
+- use minimal necessary validation;
+- review final `git diff` before finishing;
+- never claim platform validation that was not actually performed.

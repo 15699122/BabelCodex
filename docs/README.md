@@ -1,6 +1,10 @@
 # BabelCodex 文档索引
 
+项目采用双 Owner：Linux 是 Cross-platform Owner，Windows 是 Windows Platform Owner。canonical project state 是 Git 仓库状态、已提交项目文档、当前 Plan/task state 和平台验证记录；任何机器目录都不是唯一事实来源。
+
 本文档是 BabelCodex 仓库文档的唯一入口。它说明每一份文档的读者、负责内容、不负责内容以及更新触发条件，防止同一事实被复制到多个文档后漂移。
+
+正式开发状态通过 Git 交接；直接文件同步只用于临时诊断，不产生正式项目状态（流程见 `docs/development/git-platform-handoff.md`）。
 
 ## 文档归属总则
 
@@ -9,20 +13,26 @@
 | 产品功能、安装、使用、许可证 | `README.md` |
 | 贡献流程、开发环境、测试命令、PR 规则 | `CONTRIBUTING.md` |
 | 安全边界、漏洞报告 | `SECURITY.md` |
-| 编码不变量、文档归属规则、模块设计规则 | `AGENTS.md` |
+| 编码不变量、文档归属规则、模块设计规则、平台交接总则 | `AGENTS.md` |
 | 当前稳定架构、进程模型、数据流 | `docs/architecture.md` |
 | 当前开发进度、剩余路线图、Phase 状态 | `docs/development-plan.md` |
+| 平台所有权、路由与完成状态 | `docs/development/platform-ownership.md` |
+| Git 跨平台交接流程、workspace/direct-sync 边界、handoff revision 记录 | `docs/development/git-platform-handoff.md` |
+| 当前 handoff 批次状态 | `docs/status/platform-handoff.md` |
 | 架构决策（ADR） | `docs/decisions.md` |
 | 参考项目调研（AiNiee、PDFMathTranslate、BabelDOC） | `docs/research/reference-projects.md` |
 | 当前版本兼容矩阵、平台支持、升级策略 | `docs/compatibility.md` |
 | 本地数据、发送到 Codex 的数据、日志与缓存边界 | `docs/privacy.md` |
 | MCP 启动、工具、协议、安全范围 | `docs/mcp.md` |
 | 构建、审计、签名、打包与发布操作 | `docs/release.md` |
-| Windows 验证工作流（Linux→Windows 同步、状态模型） | `docs/development/cross-platform-validation.md` |
+| Windows 验证执行细节、结果分类与最小化/复验规则 | `docs/development/cross-platform-validation.md` |
 | 逐文件职责、公共入口、对应测试和维护提示 | `docs/development/codebase-map.md` |
 | Linux 测试矩阵、markers、付费测试边界、增量验证策略 | `docs/development/testing.md` |
+| 统一验证策略与 Computer Use fallback | `docs/validation/validation-policy.md` |
 | 当前 Windows 验证状态、活跃队列、handoff | `docs/validation/windows.md` |
 | Windows 历史验证运行记录与产物哈希 | `docs/validation/history/` |
+| Windows Owner 历史索引 | `docs/validation/windows-validation-history.md` |
+| 代码审计规则 | `docs/review/code-audit-guidelines.md` |
 | GUI 子项目开发与打包 | `gui/README.md` |
 | v0.1.0 Release Notes | `docs/releases/v0.1.0.md` |
 
@@ -33,7 +43,7 @@
 | `README.md` | 用户、首次访问者 | 产品功能、技术栈、安装、认证、配置、使用、CLI/GUI/MCP 入口、隐私摘要、许可证 | 开发机信息、分支/commit、测试数量、Windows 验证轮次、内部开发顺序 |
 | `CONTRIBUTING.md` | 贡献者 | 开发环境、分支/PR 流程、测试与 lint 命令、数据与凭证规则、文档同步要求 | 用户安装步骤（见 README）、ADR（见 decisions）、历史验证记录 |
 | `SECURITY.md` | 用户、安全报告者 | 支持状态、安全边界、漏洞报告方式 | 架构论证、开发计划 |
-| `AGENTS.md` | 后续编码 Agent | 项目目标、架构不变量、开发优先级、文档归属规则、模块设计规则、Windows 验证约束 | 用户文档、逐文件职责细节（见 codebase map） |
+| `AGENTS.md` | 后续编码 Agent | 项目目标、架构不变量、开发优先级、文档归属规则、模块设计规则、平台交接规则、Windows 验证约束 | 用户文档、逐文件职责细节（见 codebase map） |
 
 ## `docs/` 下级文档
 
@@ -49,7 +59,9 @@
 | `research/reference-projects.md` | 开发者 | AiNiee、PDFMathTranslate v1、PDFMathTranslate-next、BabelDOC 的借鉴与不复制分析 | 当前系统架构（见 architecture.md） |
 | `development/codebase-map.md` | 开发者 | 逐文件职责、公共入口、调用关系、运行进程、对应测试、维护提示 | 架构级叙述（见 architecture.md） |
 | `development/testing.md` | 开发者 | Linux 测试矩阵、markers、付费测试边界、增量验证策略（范围选择与升级规则）、GUI/集成/打包检查步骤 | Windows 验证结果（见 validation/） |
-| `development/cross-platform-validation.md` | 开发者 | Linux→Windows 工作流、同步规则、状态模型、结果分类与处理、Windows 验证最小化与复验规则 | 具体某次验证结果（见 validation/） |
+| `development/cross-platform-validation.md` | 开发者 | Windows 验证执行细节、结果分类与处理、验证最小化与复验规则、Computer Use fallback 执行 | Git 交接机制（见 git-platform-handoff.md）、具体某次验证结果（见 validation/） |
+| `development/git-platform-handoff.md` | 开发者、平台 Owner | Git-based 交接流程、workspace 模型、handoff revision 记录、direct-sync 诊断边界、日常交接 Prompt | 具体验证执行与复验规则（见 cross-platform-validation.md）、当前批次状态（见 status/platform-handoff.md） |
+| `status/platform-handoff.md` | 平台 Owner | 当前批次的 branch、handoff revision、Owner、Windows 工作/验证队列、follow-up | 历史轮次记录（见 validation/history/）、交接流程本身（见 development/git-platform-handoff.md） |
 
 ## `docs/validation/` 文档
 
@@ -69,6 +81,7 @@
 - **完成一轮 Windows 验证**：结果摘要写入 `docs/validation/windows.md`，完整记录归档到 `docs/validation/history/`。
 - **版本矩阵变化**：更新 `docs/compatibility.md`。
 - **调整验证策略、测试层级或范围升级规则**：更新 `docs/development/testing.md`；Windows 侧最小化与复验规则同步到 `docs/development/cross-platform-validation.md`。
+- **改变平台交接机制、workspace 模型或 direct-sync 边界**：更新 `docs/development/git-platform-handoff.md` 与根 `AGENTS.md`。
 - **影响用户的使用方式或隐私边界**：更新 `README.md` 和 `docs/privacy.md`。
 
 ## 防漂移检查

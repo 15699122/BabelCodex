@@ -154,7 +154,7 @@ Agent 规范。它约束 Linux/Cline 与 Windows/Codex 的执行顺序、失败�
 | 环境 | 主要职责 |
 |---|---|
 | Linux + Cline | 功能开发、重构、测试维护、Python/GUI/Rust 验证、WDIO Browser Mode 和 Linux Native E2E；完成当前阶段全部 Linux 可执行工作后再整理 Windows 队列 |
-| Windows + Codex | Windows 真实环境验证；优先共享 `@wdio/tauri-service`，然后 Windows-only WDIO，最后才使用 Computer Use；诊断、低风险修复、相关重跑和结果回写 |
+| Windows + Codex | Windows 平台开发与验证（职责与范围边界见 `cross-platform-validation.md` 第 6 章）；执行共享自动化测试和 Windows-only 测试；优先共享 `@wdio/tauri-service`，然后 Windows-only WDIO，最后才使用 Computer Use；诊断、职责内修复、相关重跑和结果回写 |
 
 核心原则：确定性自动化优先于视觉 GUI 自动化，自动诊断优先于人工判断，
 局部失败不得无条件阻塞无关测试。不得为了让结果变绿而删除断言、降低
@@ -256,9 +256,9 @@ Windows 文档中的旧状态必须保留；新增记录使用上述细粒度状
 ### 自动修复边界
 
 允许优先修复：明确的测试脚本错误、局部实现错误、类型/编译错误和明确配置错误。
-不得自动进行架构调整、重大数据模型变更、安全模型变化、生产 capability 扩权、
 删除安全检查、用户数据格式变更或 breaking API。Windows 纯环境问题不得通过修改
-Linux 业务代码“绕过”。
+Linux 业务代码“绕过”。超出该边界的 Windows 问题不得当场实现，应记录为
+`NEEDS_CROSS_PLATFORM_DEVELOPMENT`（定义见 `cross-platform-validation.md` 第 6 章）。
 
 ### 测试独立性与重试粒度
 
@@ -278,7 +278,7 @@ Windows 工作流固定为：
 
 ```text
 读取文档 → 检查 Linux 结果 → 构建 E2E → 共享 WDIO
-→ Windows-only WDIO → 自动诊断/低风险修复/相关重跑
+→ Windows-only WDIO → 自动诊断/职责内修复/相关重跑
 → Computer Use 剩余系统级测试 → 汇总并回写验证文档
 ```
 
